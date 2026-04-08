@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeverDry — Smart Irrigation for Home Assistant</title>
+    <style>
+        :root {
+            --accent: #1f6aa5;
+            --accent-light: #d6e8f5;
+            --bg: #f8fafb;
+            --text: #2c3e50;
+            --card-bg: #ffffff;
+            --green: #27ae60;
+            --orange: #f39c12;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            line-height: 1.6;
+        }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, var(--accent), #2980b9);
+            color: white;
+            padding: 80px 20px 60px;
+            text-align: center;
+        }
+        .hero h1 {
+            font-size: 3em;
+            font-weight: 700;
+            margin-bottom: 0.3em;
+        }
+        .hero .tagline {
+            font-size: 1.3em;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto 1.5em;
+        }
+        .hero .badges { margin: 1.5em 0; }
+        .hero .badges img { margin: 0 4px; vertical-align: middle; }
+        .hero .cta {
+            display: inline-block;
+            background: white;
+            color: var(--accent);
+            padding: 12px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1em;
+            margin: 0.5em;
+            transition: transform 0.2s;
+        }
+        .hero .cta:hover { transform: translateY(-2px); }
+        .hero .cta.secondary {
+            background: rgba(255,255,255,0.15);
+            color: white;
+            border: 2px solid rgba(255,255,255,0.5);
+        }
+
+        /* Content */
+        .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+
+        /* Features */
+        .features {
+            padding: 60px 0;
+        }
+        .features h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 1em;
+            color: var(--accent);
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .feature-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .feature-card h3 {
+            font-size: 1.2em;
+            margin-bottom: 0.5em;
+            color: var(--accent);
+        }
+        .feature-card .icon {
+            font-size: 2em;
+            margin-bottom: 0.3em;
+        }
+
+        /* How it works */
+        .how-it-works {
+            padding: 60px 0;
+            background: white;
+        }
+        .how-it-works h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 0.5em;
+            color: var(--accent);
+        }
+        .how-it-works .formula {
+            text-align: center;
+            font-size: 1.2em;
+            background: var(--accent-light);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 1.5em auto;
+            max-width: 700px;
+            font-family: "Georgia", serif;
+        }
+        .how-it-works p {
+            max-width: 700px;
+            margin: 1em auto;
+            text-align: center;
+        }
+
+        /* Plant families */
+        .families {
+            padding: 60px 0;
+        }
+        .families h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 1em;
+            color: var(--accent);
+        }
+        .families table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .families th {
+            background: var(--accent);
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+        }
+        .families td {
+            padding: 10px 16px;
+            border-bottom: 1px solid #eee;
+        }
+        .families tr:nth-child(even) { background: #f9f9f9; }
+
+        /* Install */
+        .install {
+            padding: 60px 0;
+            background: white;
+        }
+        .install h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 1em;
+            color: var(--accent);
+        }
+        .install-steps {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .install-steps ol {
+            padding-left: 1.5em;
+        }
+        .install-steps li {
+            margin-bottom: 0.8em;
+            font-size: 1.05em;
+        }
+        .install-steps code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        /* Support */
+        .support {
+            padding: 60px 0;
+            text-align: center;
+        }
+        .support h2 {
+            font-size: 2em;
+            margin-bottom: 0.5em;
+            color: var(--accent);
+        }
+        .support p {
+            max-width: 500px;
+            margin: 0.5em auto 1.5em;
+        }
+        .support .patreon-btn {
+            display: inline-block;
+            background: #FF424D;
+            color: white;
+            padding: 14px 36px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1em;
+            transition: transform 0.2s;
+        }
+        .support .patreon-btn:hover { transform: translateY(-2px); }
+
+        /* Footer */
+        footer {
+            background: var(--text);
+            color: rgba(255,255,255,0.7);
+            padding: 30px 20px;
+            text-align: center;
+            font-size: 0.9em;
+        }
+        footer a { color: rgba(255,255,255,0.9); }
+    </style>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+    <h1>NeverDry</h1>
+    <p class="tagline">Smart irrigation for Home Assistant. Scientific water balance model that knows when and how long to water your garden.</p>
+    <div class="badges">
+        <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
+        <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
+        <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS">
+    </div>
+    <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repository</a>
+    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Documentation</a>
+</section>
+
+<!-- Features -->
+<section class="features">
+    <div class="container">
+        <h2>Features</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🌡️</div>
+                <h3>Scientific ET Model</h3>
+                <p>Simplified FAO-56 water balance. Estimates evapotranspiration from temperature with two calibratable parameters.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌱</div>
+                <h3>10 Plant Families</h3>
+                <p>Per-zone crop coefficient (Kc) with seasonal variation. Lawn, vegetables, succulents, fruit trees, and more. Auto-adapts to hemisphere.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚿</div>
+                <h3>Direct Valve Control</h3>
+                <p>Opens and closes valves automatically. Sequential multi-zone irrigation with emergency stop.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>Per-Zone Deficit</h3>
+                <p>Each zone tracks its own soil water deficit. Different plants dry out at different rates — as they should.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌧️</div>
+                <h3>Rain-Aware</h3>
+                <p>Automatically skips irrigation on rainy days. Deficit decreases with each rain event.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>UI Config Flow</h3>
+                <p>Set up entirely from the Home Assistant interface. No YAML editing required.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How it works -->
+<section class="how-it-works">
+    <div class="container">
+        <h2>How It Works</h2>
+        <p>NeverDry tracks a simple water balance for each irrigation zone:</p>
+        <div class="formula">
+            D<sub>zone</sub>(t) = D<sub>zone</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; rain
+        </div>
+        <p>When the deficit is high, your soil is dry and needs water. When it rains, the deficit drops. After irrigation, it resets to zero. <strong>1 mm of deficit = 1 liter per square meter needed.</strong></p>
+    </div>
+</section>
+
+<!-- Plant families -->
+<section class="families">
+    <div class="container">
+        <h2>Plant Families</h2>
+        <table>
+            <thead>
+                <tr><th>Family</th><th>Winter</th><th>Spring</th><th>Summer</th><th>Autumn</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Lawn / Turf grass</td><td>0.45</td><td>0.85</td><td>1.00</td><td>0.70</td></tr>
+                <tr><td>Vegetables</td><td>0.30</td><td>0.70</td><td>1.10</td><td>0.50</td></tr>
+                <tr><td>Fruit trees</td><td>0.35</td><td>0.70</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Ornamental shrubs</td><td>0.40</td><td>0.65</td><td>0.80</td><td>0.55</td></tr>
+                <tr><td>Herbs (Mediterranean)</td><td>0.30</td><td>0.55</td><td>0.70</td><td>0.40</td></tr>
+                <tr><td>Citrus / Evergreen</td><td>0.60</td><td>0.65</td><td>0.70</td><td>0.65</td></tr>
+                <tr><td>Roses</td><td>0.35</td><td>0.75</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Succulents / Cacti</td><td>0.15</td><td>0.25</td><td>0.35</td><td>0.20</td></tr>
+                <tr><td>Native ground cover</td><td>0.25</td><td>0.45</td><td>0.55</td><td>0.35</td></tr>
+                <tr><td>Mixed garden</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Install -->
+<section class="install">
+    <div class="container">
+        <h2>Installation</h2>
+        <div class="install-steps">
+            <h3>Via HACS (recommended)</h3>
+            <ol>
+                <li>Open HACS &rarr; Integrations &rarr; <strong>Custom repositories</strong></li>
+                <li>Add <code>https://github.com/drake69/NeverDry</code> as <strong>Integration</strong></li>
+                <li>Search for <strong>NeverDry</strong> and install</li>
+                <li>Restart Home Assistant</li>
+                <li>Go to Settings &rarr; Devices &amp; Services &rarr; <strong>Add Integration</strong> &rarr; NeverDry</li>
+            </ol>
+            <h3 style="margin-top: 1.5em;">Manual</h3>
+            <ol>
+                <li>Copy <code>custom_components/never_dry/</code> to your HA config directory</li>
+                <li>Restart Home Assistant</li>
+                <li>Add the integration from the UI</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<!-- Support -->
+<section class="support">
+    <div class="container">
+        <h2>Support the Project</h2>
+        <p>NeverDry is free and open source. If it saves your garden (and your water bill), consider buying me a coffee.</p>
+        <a class="patreon-btn" href="https://www.patreon.com/c/69Drake">☕ Support on Patreon — $5</a>
+    </div>
+</section>
+
+<!-- Footer -->
+<footer>
+    <p>NeverDry &mdash; MIT License &mdash; Made with 🌱 by <a href="https://github.com/drake69">drake69</a></p>
+</footer>
+
+</body>
+</html>

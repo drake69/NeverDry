@@ -1,0 +1,66 @@
+# ============================================================
+#  NeverDry — Automation examples for Home Assistant
+# ============================================================
+#
+#  The integration controls valves directly via services.
+#  No need to manually call switch.turn_on/turn_off.
+#
+
+# ══════════════════════════════════════════════════════════
+#  Mode A: Reactive threshold trigger (per zone)
+# ══════════════════════════════════════════════════════════
+
+- alias: "Irrigation threshold — Vegetable Garden"
+  id: irrigation_threshold_vegetables
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.never_dry
+      above: 15
+  condition:
+    - condition: time
+      after: "06:00:00"
+      before: "09:00:00"
+    - condition: numeric_state
+      entity_id: sensor.daily_rainfall
+      below: 3
+  action:
+    - service: never_dry.irrigate_zone
+      data:
+        zone_name: "Vegetable Garden"
+
+- alias: "Irrigation threshold — Lawn"
+  id: irrigation_threshold_lawn
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.never_dry
+      above: 25
+  condition:
+    - condition: time
+      after: "06:00:00"
+      before: "09:00:00"
+  action:
+    - service: never_dry.irrigate_zone
+      data:
+        zone_name: "Lawn"
+
+# ══════════════════════════════════════════════════════════
+#  Mode B: Nightly deficit-based (all zones)
+# ══════════════════════════════════════════════════════════
+#
+#  The integration handles:
+#  - Sequential zone irrigation
+#  - Pause between zones (configurable, default 30s)
+#  - Automatic deficit reset after completion
+#
+
+- alias: "Nightly irrigation — all zones"
+  id: irrigation_daily_deficit_all
+  trigger:
+    - platform: time
+      at: "23:00:00"
+  condition:
+    - condition: numeric_state
+      entity_id: sensor.never_dry
+      above: 1
+  action:
+    - service: never_dry.irrigate_all

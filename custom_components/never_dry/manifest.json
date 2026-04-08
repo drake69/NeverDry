@@ -1,0 +1,11 @@
+{
+  "domain": "never_dry",
+  "name": "NeverDry",
+  "version": "0.1.0",
+  "documentation": "https://github.com/drake69/NeverDry",
+  "requirements": [],
+  "dependencies": [],
+  "codeowners": ["@drake69"],
+  "iot_class": "local_push",
+  "config_flow": true
+}

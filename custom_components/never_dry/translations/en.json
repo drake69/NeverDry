@@ -1,0 +1,97 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "NeverDry — Sensors & Model",
+        "description": "Select your weather sensors and configure the ET model parameters.",
+        "data": {
+          "temperature_sensor": "Temperature sensor",
+          "rain_sensor": "Rain sensor (mm/event)",
+          "alpha": "ET coefficient (α)",
+          "t_base": "Base temperature",
+          "d_max": "Maximum deficit cap",
+          "vwc_sensor": "Soil moisture sensor (optional)"
+        },
+        "data_description": {
+          "temperature_sensor": "Outdoor temperature sensor in °C",
+          "rain_sensor": "Rain gauge reporting mm per event (tipping bucket)",
+          "alpha": "Evapotranspiration coefficient. Start with 0.22, adjust after observing your garden for a week",
+          "t_base": "Temperature below which evapotranspiration is zero (plants dormant)",
+          "d_max": "Upper limit for the deficit index",
+          "vwc_sensor": "If set, deficit is calculated directly from soil moisture instead of the ET model"
+        }
+      },
+      "zone": {
+        "title": "Add irrigation zone",
+        "description": "Configure zone #{zone_count}. You can add more zones after this.",
+        "data": {
+          "name": "Zone name",
+          "valve": "Valve switch",
+          "area_m2": "Irrigated area",
+          "system_type": "Irrigation system type",
+          "efficiency": "Custom efficiency (overrides system type default)",
+          "plant_family": "Plant family",
+          "kc": "Custom crop coefficient Kc (overrides plant family)",
+          "flow_rate_lpm": "Valve flow rate",
+          "threshold": "Threshold for Mode A"
+        },
+        "data_description": {
+          "name": "Display name for this zone (e.g., Vegetable Garden, Lawn)",
+          "valve": "The switch entity that controls this zone's irrigation valve",
+          "area_m2": "Surface area of this irrigation zone in square meters",
+          "system_type": "Type of irrigation system — sets default efficiency",
+          "efficiency": "Leave empty to use the system type default. Set to override",
+          "plant_family": "Select the type of plants in this zone. Sets a seasonal crop coefficient (Kc) that adjusts water demand throughout the year",
+          "kc": "Leave empty to use the plant family seasonal profile. Set to override with a fixed Kc value (0.1–2.0)",
+          "flow_rate_lpm": "Water flow rate of the valve in liters per minute. Measure with a bucket and stopwatch",
+          "threshold": "Deficit level that triggers Mode A irrigation for this zone"
+        }
+      },
+      "add_another": {
+        "title": "Add another zone?",
+        "description": "You have configured {zone_count} zone(s): {zone_names}.",
+        "data": {
+          "add_another": "Add another irrigation zone"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "NeverDry is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NeverDry — Options",
+        "description": "Choose what to configure.",
+        "menu_options": {
+          "model_params": "Edit model parameters (α, T_base, D_max)",
+          "add_zone": "Add a new irrigation zone"
+        }
+      },
+      "model_params": {
+        "title": "ET Model Parameters",
+        "description": "Adjust the evapotranspiration model. Changes take effect immediately.",
+        "data": {
+          "alpha": "ET coefficient (α)",
+          "t_base": "Base temperature",
+          "d_max": "Maximum deficit cap"
+        }
+      },
+      "add_zone": {
+        "title": "Add irrigation zone",
+        "data": {
+          "name": "Zone name",
+          "valve": "Valve switch",
+          "area_m2": "Irrigated area",
+          "system_type": "Irrigation system type",
+          "efficiency": "Custom efficiency",
+          "plant_family": "Plant family",
+          "kc": "Custom crop coefficient Kc",
+          "flow_rate_lpm": "Valve flow rate",
+          "threshold": "Threshold for Mode A"
+        }
+      }
+    }
+  }
+}

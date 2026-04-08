@@ -1,0 +1,51 @@
+# ============================================================
+#  NeverDry — Configuration example for Home Assistant
+# ============================================================
+
+sensor:
+  - platform: never_dry
+    # ── Input sensors (required) ─────────────────────────
+    temperature_sensor: sensor.outdoor_temperature
+    rain_sensor: sensor.rainfall_event_mm     # mm per event (tipping bucket)
+
+    # ── ET model parameters ──────────────────────────────
+    alpha: 0.22                                # ET coefficient [mm/°C/day]
+    t_base: 9.0                                # base temperature [°C]
+    # d_max: 100.0                             # max deficit cap [mm]
+    # inter_zone_delay: 30                     # seconds between zones
+
+    # ── Irrigation zones ─────────────────────────────────
+    zones:
+      - name: "Vegetable Garden"
+        valve: switch.valve_orto
+        area_m2: 20
+        system_type: drip                      # auto-sets efficiency=0.92
+        flow_rate_lpm: 8
+        threshold: 15.0                        # Mode A trigger [mm]
+
+      - name: "Lawn"
+        valve: switch.valve_prato
+        area_m2: 50
+        system_type: sprinkler                 # auto-sets efficiency=0.68
+        flow_rate_lpm: 15
+        threshold: 25.0
+
+      - name: "Balcony Pots"
+        valve: switch.valve_vasi
+        area_m2: 3
+        system_type: drip
+        flow_rate_lpm: 4
+        threshold: 10.0
+
+      # Override system_type efficiency with explicit value:
+      # - name: "Rose Garden"
+      #   valve: switch.valve_roses
+      #   area_m2: 15
+      #   system_type: micro_sprinkler
+      #   efficiency: 0.78                     # overrides micro_sprinkler default (0.80)
+      #   flow_rate_lpm: 6
+
+    # ── Optional: VWC-based mode ─────────────────────────
+    # vwc_sensor: sensor.soil_vwc
+    # field_capacity: 0.30
+    # root_depth_m: 0.30

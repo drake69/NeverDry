@@ -1,0 +1,30 @@
+reset:
+  name: Reset deficit
+  description: Reset the soil water deficit to zero (typically called after irrigation completes).
+
+irrigate_zone:
+  name: Irrigate zone
+  description: >
+    Start irrigation for a single zone. Opens the valve, waits for the
+    calculated duration based on current deficit, then closes the valve.
+  fields:
+    zone_name:
+      name: Zone name
+      description: The name of the zone to irrigate (as configured).
+      required: true
+      example: "Vegetable Garden"
+      selector:
+        text:
+
+irrigate_all:
+  name: Irrigate all zones
+  description: >
+    Irrigate all configured zones sequentially. Each zone's valve is opened
+    for its calculated duration, with a pause between zones. The deficit is
+    reset after all zones complete.
+
+stop:
+  name: Emergency stop
+  description: >
+    Immediately close all irrigation valves. Use this to abort an
+    irrigation cycle in progress.
