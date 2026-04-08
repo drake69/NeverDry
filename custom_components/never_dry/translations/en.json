@@ -26,7 +26,7 @@
         "description": "Configure zone #{zone_count}. You can add more zones after this.",
         "data": {
           "name": "Zone name",
-          "valve": "Valve switch",
+          "valve": "Valve switch (optional)",
           "area_m2": "Irrigated area",
           "system_type": "Irrigation system type",
           "efficiency": "Custom efficiency (overrides system type default)",
@@ -37,7 +37,7 @@
         },
         "data_description": {
           "name": "Display name for this zone (e.g., Vegetable Garden, Lawn)",
-          "valve": "The switch entity that controls this zone's irrigation valve",
+          "valve": "The switch entity that controls this zone's irrigation valve. Leave empty for monitoring mode (no valve)",
           "area_m2": "Surface area of this irrigation zone in square meters",
           "system_type": "Type of irrigation system — sets default efficiency",
           "efficiency": "Leave empty to use the system type default. Set to override",
@@ -82,7 +82,7 @@
         "title": "Add irrigation zone",
         "data": {
           "name": "Zone name",
-          "valve": "Valve switch",
+          "valve": "Valve switch (optional)",
           "area_m2": "Irrigated area",
           "system_type": "Irrigation system type",
           "efficiency": "Custom efficiency",

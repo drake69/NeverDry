@@ -229,7 +229,7 @@ Services are registered in `IrrigationController.register_services()`.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Zone display name |
-| `valve` | Yes | Switch entity controlling the valve |
+| `valve` | No | Switch entity controlling the valve (omit for monitoring mode) |
 | `area_m2` | Yes | Irrigated area [m²] |
 | `system_type` | Yes | Irrigation system → sets default efficiency |
 | `efficiency` | No | Override efficiency [0.1–1.0] |
