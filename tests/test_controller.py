@@ -28,12 +28,10 @@ class TestIrrigateSingleZone:
     """Test irrigating a single zone."""
 
     @pytest.mark.asyncio
-    async def test_opens_and_closes_valve(self, controller, hass_mock, di_sensor):
+    async def test_opens_and_closes_valve(self, controller, hass_mock, di_sensor, zone_orto):
         """Controller should open valve, wait, close valve."""
-        di_sensor._deficit = 5.0  # small deficit for short duration
+        zone_orto._zone_deficit = 5.0
 
-        # Use very short sleep by monkeypatching
-        original_wait = controller._wait_with_stop_check
         controller._wait_with_stop_check = AsyncMock()
 
         await controller._irrigate_zones(["Orto"])
@@ -46,14 +44,14 @@ class TestIrrigateSingleZone:
         assert len(close_calls) == 1
 
     @pytest.mark.asyncio
-    async def test_resets_deficit_after_irrigation(self, controller, di_sensor):
-        """Deficit should be reset to zero after successful irrigation."""
-        di_sensor._deficit = 10.0
+    async def test_resets_zone_deficit_after_irrigation(self, controller, di_sensor, zone_orto):
+        """Zone deficit should be reset to zero after successful irrigation."""
+        zone_orto._zone_deficit = 10.0
         controller._wait_with_stop_check = AsyncMock()
 
         await controller._irrigate_zones(["Orto"])
 
-        assert di_sensor._deficit == 0.0
+        assert zone_orto._zone_deficit == 0.0
 
     @pytest.mark.asyncio
     async def test_skips_zone_without_valve(self, hass_mock, di_sensor):
@@ -93,7 +91,7 @@ class TestIrrigateSingleZone:
     @pytest.mark.asyncio
     async def test_sets_irrigating_flag(self, controller, di_sensor, zone_orto):
         """Zone should be marked as irrigating during the cycle."""
-        di_sensor._deficit = 5.0
+        zone_orto._zone_deficit = 5.0
         irrigating_states = []
 
         original_wait = controller._wait_with_stop_check
@@ -115,9 +113,10 @@ class TestIrrigateAllZones:
     """Test sequential irrigation of all zones."""
 
     @pytest.mark.asyncio
-    async def test_irrigates_all_zones_sequentially(self, controller, hass_mock, di_sensor):
+    async def test_irrigates_all_zones_sequentially(self, controller, hass_mock, di_sensor, zone_orto, zone_prato):
         """All zones should be irrigated in order."""
-        di_sensor._deficit = 10.0
+        zone_orto._zone_deficit = 10.0
+        zone_prato._zone_deficit = 10.0
         controller._wait_with_stop_check = AsyncMock()
 
         await controller._irrigate_zones(["Orto", "Prato"])
@@ -131,13 +130,17 @@ class TestIrrigateAllZones:
         assert turn_on_entities == ["switch.valve_orto", "switch.valve_prato"]
 
     @pytest.mark.asyncio
-    async def test_deficit_reset_after_all_zones(self, controller, di_sensor):
-        """Deficit should be reset only after all zones complete."""
+    async def test_deficit_reset_after_all_zones(self, controller, di_sensor, zone_orto, zone_prato):
+        """All zone deficits and reference deficit should reset after full cycle."""
+        zone_orto._zone_deficit = 10.0
+        zone_prato._zone_deficit = 10.0
         di_sensor._deficit = 10.0
         controller._wait_with_stop_check = AsyncMock()
 
         await controller._irrigate_zones(["Orto", "Prato"])
 
+        assert zone_orto._zone_deficit == 0.0
+        assert zone_prato._zone_deficit == 0.0
         assert di_sensor._deficit == 0.0
 
 
@@ -169,9 +172,10 @@ class TestEmergencyStop:
         assert controller.is_running is False
 
     @pytest.mark.asyncio
-    async def test_stop_interrupts_cycle(self, controller, hass_mock, di_sensor):
+    async def test_stop_interrupts_cycle(self, controller, hass_mock, di_sensor, zone_orto, zone_prato):
         """Stop request during irrigation should interrupt the cycle."""
-        di_sensor._deficit = 10.0
+        zone_orto._zone_deficit = 10.0
+        zone_prato._zone_deficit = 10.0
 
         async def stop_during_wait(duration):
             controller._stop_requested = True
@@ -187,8 +191,9 @@ class TestEmergencyStop:
         ]
         assert len(turn_on_calls) == 1
 
-        # Deficit should NOT be reset (cycle was interrupted)
-        assert di_sensor._deficit == 10.0
+        # Zone deficits should NOT be reset (cycle was interrupted)
+        assert zone_orto._zone_deficit == 10.0
+        assert zone_prato._zone_deficit == 10.0
 
 
 class TestSystemType:
@@ -270,7 +275,7 @@ class TestZoneProperties:
 class TestMonitoringMode:
     """Test monitoring mode (no valves configured)."""
 
-    def _make_no_valve_controller(self, hass_mock, di_sensor):
+    def _make_no_valve_controller(self, hass_mock, di_sensor, zone_deficit=0.0):
         """Create controller with zones that have no valves."""
         from never_dry.sensor import IrrigationZoneSensor
 
@@ -280,13 +285,15 @@ class TestMonitoringMode:
             CONF_ZONE_EFFICIENCY: 0.85,
             CONF_ZONE_FLOW_RATE: 10.0,
         }, di_sensor)
-        return IrrigationController(
+        zone._zone_deficit = zone_deficit
+        ctrl = IrrigationController(
             hass_mock, di_sensor, [zone], inter_zone_delay=0
         )
+        return ctrl, zone
 
     def test_monitoring_mode_detected(self, hass_mock, di_sensor):
         """Controller should detect monitoring mode when no valves configured."""
-        ctrl = self._make_no_valve_controller(hass_mock, di_sensor)
+        ctrl, _ = self._make_no_valve_controller(hass_mock, di_sensor)
         assert ctrl.is_monitoring_mode is True
 
     def test_normal_mode_with_valves(self, controller):
@@ -297,7 +304,7 @@ class TestMonitoringMode:
         """In monitoring mode, register_services should start the periodic check."""
         from homeassistant.helpers.event import async_track_time_interval
 
-        ctrl = self._make_no_valve_controller(hass_mock, di_sensor)
+        ctrl, _ = self._make_no_valve_controller(hass_mock, di_sensor)
         ctrl.register_services()
         async_track_time_interval.assert_called_once()
 
@@ -311,9 +318,8 @@ class TestMonitoringMode:
 
     @pytest.mark.asyncio
     async def test_notify_when_deficit_above_threshold(self, hass_mock, di_sensor):
-        """Should send notification when deficit exceeds zone threshold."""
-        ctrl = self._make_no_valve_controller(hass_mock, di_sensor)
-        di_sensor._deficit = 25.0
+        """Should send notification when zone deficit exceeds threshold."""
+        ctrl, zone = self._make_no_valve_controller(hass_mock, di_sensor, zone_deficit=25.0)
 
         await ctrl._check_and_notify()
 
@@ -325,9 +331,8 @@ class TestMonitoringMode:
 
     @pytest.mark.asyncio
     async def test_no_notify_when_deficit_below_threshold(self, hass_mock, di_sensor):
-        """Should NOT send notification when deficit is below all thresholds."""
-        ctrl = self._make_no_valve_controller(hass_mock, di_sensor)
-        di_sensor._deficit = 5.0  # below default threshold of 20
+        """Should NOT send notification when zone deficit is below threshold."""
+        ctrl, _ = self._make_no_valve_controller(hass_mock, di_sensor, zone_deficit=5.0)
 
         await ctrl._check_and_notify()
 
@@ -335,9 +340,8 @@ class TestMonitoringMode:
 
     @pytest.mark.asyncio
     async def test_no_notify_when_deficit_zero(self, hass_mock, di_sensor):
-        """Should NOT send notification when deficit is zero."""
-        ctrl = self._make_no_valve_controller(hass_mock, di_sensor)
-        di_sensor._deficit = 0.0
+        """Should NOT send notification when zone deficit is zero."""
+        ctrl, _ = self._make_no_valve_controller(hass_mock, di_sensor, zone_deficit=0.0)
 
         await ctrl._check_and_notify()
 
