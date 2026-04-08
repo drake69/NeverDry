@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4FC3F7;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1976D2;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="cheekL" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF8A80;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#FF8A80;stop-opacity:0" />
+    </linearGradient>
+    <linearGradient id="cheekR" x1="100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF8A80;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#FF8A80;stop-opacity:0" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#1565C0" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Water drop body -->
+  <path d="M256 48 C256 48 100 230 100 330 C100 416 170 480 256 480 C342 480 412 416 412 330 C412 230 256 48 256 48 Z"
+        fill="url(#dropGrad)" filter="url(#shadow)" />
+
+  <!-- Highlight/shine -->
+  <ellipse cx="200" cy="260" rx="40" ry="55" fill="white" opacity="0.2" transform="rotate(-15, 200, 260)" />
+
+  <!-- Left eye -->
+  <ellipse cx="205" cy="320" rx="22" ry="26" fill="white" />
+  <ellipse cx="210" cy="318" rx="13" ry="16" fill="#1A237E" />
+  <ellipse cx="215" cy="312" rx="5" ry="6" fill="white" />
+
+  <!-- Right eye -->
+  <ellipse cx="307" cy="320" rx="22" ry="26" fill="white" />
+  <ellipse cx="312" cy="318" rx="13" ry="16" fill="#1A237E" />
+  <ellipse cx="317" cy="312" rx="5" ry="6" fill="white" />
+
+  <!-- Smile -->
+  <path d="M215 370 Q256 410 297 370" stroke="#1A237E" stroke-width="7" fill="none" stroke-linecap="round" />
+
+  <!-- Cheeks (blush) -->
+  <ellipse cx="175" cy="365" rx="22" ry="14" fill="url(#cheekL)" />
+  <ellipse cx="337" cy="365" rx="22" ry="14" fill="url(#cheekR)" />
+
+  <!-- Small leaf on top -->
+  <path d="M256 58 C256 58 275 30 300 25 C290 45 270 55 256 58 Z" fill="#66BB6A" />
+  <path d="M256 58 C256 58 237 30 212 25 C222 45 242 55 256 58 Z" fill="#43A047" />
+</svg>
