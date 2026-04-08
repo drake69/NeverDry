@@ -32,6 +32,7 @@ from .const import (
     CONF_D_MAX,
     CONF_FIELD_CAPACITY,
     CONF_RAIN_SENSOR,
+    CONF_RAIN_SENSOR_TYPE,
     CONF_ROOT_DEPTH,
     CONF_T_BASE,
     CONF_TEMP_SENSOR,
@@ -52,12 +53,15 @@ from .const import (
     DEFAULT_FIELD_CAPACITY,
     DEFAULT_INTER_ZONE_DELAY,
     DEFAULT_KC,
+    DEFAULT_RAIN_SENSOR_TYPE,
     DEFAULT_ROOT_DEPTH,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
     DOMAIN,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
+    RAIN_TYPE_DAILY_TOTAL,
+    RAIN_TYPE_EVENT,
     SYSTEM_TYPES,
 )
 
@@ -261,7 +265,11 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._vwc_sensor = config.get(CONF_VWC_SENSOR)
         self._field_cap = config.get(CONF_FIELD_CAPACITY, DEFAULT_FIELD_CAPACITY)
         self._root_depth = config.get(CONF_ROOT_DEPTH, DEFAULT_ROOT_DEPTH)
+        self._rain_type = config.get(
+            CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE
+        )
         self._deficit = 0.0
+        self._last_rain = 0.0  # tracks last rain reading for delta computation
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
 
@@ -303,16 +311,24 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             # In VWC mode, broadcast zeros — zones use VWC deficit * Kc
             self._broadcast_to_zones(0.0, 0.0, 0.0)
         else:
-            self._update_from_model(dt_h)
-            # Broadcast raw ET and rain to zone listeners
+            # Compute rain delta BEFORE _update_from_model (which also calls it)
+            # We need to capture it for broadcasting to zones.
+            rain_delta = self._compute_rain_delta()
             try:
                 t = float(self._hass.states.get(self._temp_sensor).state)
-                rain = float(self._hass.states.get(self._rain_sensor).state)
                 et_h = max(0.0, self._alpha * (t - self._t_base) / 24)
             except (TypeError, ValueError, AttributeError):
                 et_h = 0.0
-                rain = 0.0
-            self._broadcast_to_zones(dt_h, et_h, rain)
+                rain_delta = 0.0
+
+            # Update reference deficit
+            et_dt = et_h * dt_h
+            self._deficit = max(
+                0.0, min(self._deficit + et_dt - rain_delta, self._d_max)
+            )
+
+            # Broadcast delta to zone listeners
+            self._broadcast_to_zones(dt_h, et_h, rain_delta)
 
         self.async_write_ha_state()
 
@@ -336,17 +352,49 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         except (ValueError, TypeError):
             pass
 
+    def _compute_rain_delta(self) -> float:
+        """Compute rain increment since last reading.
+
+        For 'event' type: the sensor value IS the delta (mm per event).
+        For 'daily_total' type: compute delta from last reading, handling
+        midnight rollover (rain_now < last_rain → new accumulation).
+        """
+        try:
+            rain_now = float(self._hass.states.get(self._rain_sensor).state)
+        except (TypeError, ValueError, AttributeError):
+            return 0.0
+
+        if self._rain_type == RAIN_TYPE_EVENT:
+            # Value IS the delta — but only count it once per state change.
+            # We track last_rain to detect repeated reads of the same value.
+            if rain_now == self._last_rain:
+                return 0.0  # no new event
+            self._last_rain = rain_now
+            return max(0.0, rain_now)
+
+        # daily_total: compute delta
+        rain_delta = rain_now - self._last_rain
+        if rain_delta < 0:
+            # Sensor reset (midnight rollover) — treat new value as fresh
+            rain_delta = rain_now
+        self._last_rain = rain_now
+        return max(0.0, rain_delta)
+
     def _update_from_model(self, dt_h: float) -> None:
-        """Update deficit from ET model and precipitation."""
+        """Update deficit from ET model and precipitation (standalone).
+
+        Used by unit tests.  The event-driven path in _on_sensor_change
+        computes the same logic inline to capture rain_delta for broadcast.
+        """
         try:
             t = float(self._hass.states.get(self._temp_sensor).state)
-            rain = float(self._hass.states.get(self._rain_sensor).state)
         except (TypeError, ValueError, AttributeError):
             return
 
+        rain_delta = self._compute_rain_delta()
         et_dt = max(0.0, self._alpha * (t - self._t_base) / 24) * dt_h
         self._deficit = max(
-            0.0, min(self._deficit + et_dt - rain, self._d_max)
+            0.0, min(self._deficit + et_dt - rain_delta, self._d_max)
         )
 
     def reset(self) -> None:

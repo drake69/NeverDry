@@ -69,7 +69,7 @@ You can use one mode, the other, or both together.
 
 - **Home Assistant** 2024.1.0 or newer
 - **Temperature sensor** — any outdoor temperature sensor [°C]
-- **Rain sensor** — tipping bucket or similar, reporting mm per event
+- **Rain sensor** — tipping bucket (mm per event) or weather station (daily total mm)
 
 ### Recommended
 
@@ -115,7 +115,8 @@ When you add the integration, the first screen asks for:
 | Field | Required | Description |
 |-------|----------|-------------|
 | **Temperature sensor** | Yes | Outdoor temperature entity (°C). Only entities with `device_class: temperature` are shown. |
-| **Rain sensor** | Yes | Precipitation entity (mm per event) |
+| **Rain sensor** | Yes | Precipitation entity (mm) |
+| **Rain sensor type** | No | How the sensor reports rain: **Event-based** (mm per event, default — tipping bucket) or **Daily total** (cumulative mm since midnight — weather station) |
 | **Alpha (α)** | No | ET coefficient (default: 0.22 mm/°C/day). Higher = more evaporation estimated. |
 | **Base temperature (T_base)** | No | Temperature below which ET = 0 (default: 9.0°C) |
 | **Max deficit (D_max)** | No | Upper deficit clamp (default: 100.0 mm). Prevents runaway values during sensor outages. |
@@ -452,8 +453,10 @@ card:
 ### Deficit never decreases
 
 - Is your rain sensor reporting values? Check its entity in HA
-- The rain sensor should report mm per event (tipping bucket pulse), not cumulative daily total
-- If using a cumulative rain sensor, you'll need a template sensor to extract per-event increments
+- Make sure you selected the correct **rain sensor type** in the setup wizard:
+  - **Event-based**: for tipping buckets that report mm per event (e.g., 0.2mm per tip)
+  - **Daily total**: for weather stations that report cumulative mm since midnight
+- If using a cumulative sensor with "event" mode, the deficit will decrease too much on every temperature update
 
 ### Deficit grows unexpectedly large
 

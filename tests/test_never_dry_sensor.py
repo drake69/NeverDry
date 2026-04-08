@@ -211,7 +211,7 @@ class TestInvalidInputs:
         assert di_sensor._deficit == 5.0
 
     def test_invalid_rain(self, di_sensor, hass_mock, make_state):
-        """Invalid rain should not change deficit."""
+        """Invalid rain should still accumulate ET (rain delta = 0)."""
         di_sensor._deficit = 5.0
 
         hass_mock.states.get.side_effect = lambda eid: {
@@ -222,7 +222,8 @@ class TestInvalidInputs:
         di_sensor._last_update = datetime.now() - timedelta(hours=1)
         di_sensor._on_sensor_change(MagicMock())
 
-        assert di_sensor._deficit == 5.0
+        # ET still accumulates; rain delta is 0 (invalid → ignored)
+        assert di_sensor._deficit > 5.0
 
     def test_none_state(self, di_sensor, hass_mock):
         """None state object should not crash."""
@@ -253,3 +254,133 @@ class TestSensorAttributes:
 
     def test_initial_value(self, di_sensor):
         assert di_sensor.native_value == 0.0
+
+
+class TestRainDelta:
+    """Test rain delta computation for event and daily_total modes."""
+
+    def test_event_mode_first_rain(self, di_sensor, hass_mock, make_state):
+        """First rain event should reduce deficit by the event amount."""
+        di_sensor._deficit = 10.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),  # T=T_base → ET=0
+            "sensor.rain": make_state(2.0),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(hours=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(8.0, abs=0.01)
+
+    def test_event_mode_same_value_no_double_count(self, di_sensor, hass_mock, make_state):
+        """Same rain value on consecutive reads should not subtract twice."""
+        di_sensor._deficit = 10.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(2.0),
+        }[eid]
+
+        # First event
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        after_first = di_sensor._deficit
+
+        # Second call with same rain value (e.g., temp changed)
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+
+        # Deficit should NOT decrease again (rain_delta = 0 on repeat)
+        assert di_sensor._deficit == pytest.approx(after_first, abs=0.01)
+
+    def test_event_mode_new_event(self, di_sensor, hass_mock, make_state):
+        """New rain event with different value should subtract."""
+        di_sensor._deficit = 10.0
+
+        # First event: 2mm
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(2.0),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(8.0, abs=0.01)
+
+        # Second event: 3mm (different value)
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(3.0),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(5.0, abs=0.01)
+
+    def test_daily_total_mode_accumulation(self, hass_mock, make_state):
+        """Daily total mode should compute delta from previous reading."""
+        from never_dry.sensor import DrynessIndexSensor
+        from never_dry.const import (
+            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_RAIN_SENSOR_TYPE,
+            RAIN_TYPE_DAILY_TOTAL,
+        )
+
+        config = {
+            CONF_TEMP_SENSOR: "sensor.temperature",
+            CONF_RAIN_SENSOR: "sensor.rain",
+            CONF_RAIN_SENSOR_TYPE: RAIN_TYPE_DAILY_TOTAL,
+        }
+        sensor = DrynessIndexSensor(hass_mock, config)
+        sensor._deficit = 10.0
+
+        # Rain total goes from 0 to 3mm
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(3.0),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(7.0, abs=0.01)
+
+        # Rain total goes from 3 to 5mm (delta = 2mm)
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(5.0),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(5.0, abs=0.01)
+
+    def test_daily_total_mode_midnight_reset(self, hass_mock, make_state):
+        """Daily total sensor resets at midnight — handle gracefully."""
+        from never_dry.sensor import DrynessIndexSensor
+        from never_dry.const import (
+            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_RAIN_SENSOR_TYPE,
+            RAIN_TYPE_DAILY_TOTAL,
+        )
+
+        config = {
+            CONF_TEMP_SENSOR: "sensor.temperature",
+            CONF_RAIN_SENSOR: "sensor.rain",
+            CONF_RAIN_SENSOR_TYPE: RAIN_TYPE_DAILY_TOTAL,
+        }
+        sensor = DrynessIndexSensor(hass_mock, config)
+        sensor._deficit = 10.0
+        sensor._last_rain = 8.0  # accumulated 8mm yesterday
+
+        # Midnight reset: sensor drops to 1.0 (new day, 1mm rain)
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(1.0),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+
+        # Should treat 1.0 as new rain (not -7.0 delta)
+        assert sensor._deficit == pytest.approx(9.0, abs=0.01)
+
+    def test_rain_zeroes_deficit(self, di_sensor, hass_mock, make_state):
+        """Heavy rain should zero out the deficit (never goes negative)."""
+        di_sensor._deficit = 3.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(20.0),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == 0.0

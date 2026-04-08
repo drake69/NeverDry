@@ -101,7 +101,8 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | Temperature sensor | Yes | — | Outdoor temperature [°C] |
-| Rain sensor | Yes | — | Precipitation [mm/event] |
+| Rain sensor | Yes | — | Precipitation sensor [mm] |
+| Rain sensor type | No | event | `event` (mm per event, tipping bucket) or `daily_total` (cumulative mm since midnight) |
 | Alpha (α) | No | 0.22 | ET coefficient [mm/°C/day] |
 | Base temperature | No | 9.0 | Below this, ET = 0 [°C] |
 | Max deficit (D_max) | No | 100.0 | Upper clamp [mm] |

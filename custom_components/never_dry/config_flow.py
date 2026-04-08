@@ -22,6 +22,7 @@ from .const import (
     CONF_D_MAX,
     CONF_FIELD_CAPACITY,
     CONF_RAIN_SENSOR,
+    CONF_RAIN_SENSOR_TYPE,
     CONF_ROOT_DEPTH,
     CONF_T_BASE,
     CONF_TEMP_SENSOR,
@@ -43,8 +44,11 @@ from .const import (
     DEFAULT_ROOT_DEPTH,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
+    DEFAULT_RAIN_SENSOR_TYPE,
     DOMAIN,
     PLANT_FAMILIES,
+    RAIN_TYPE_DAILY_TOTAL,
+    RAIN_TYPE_EVENT,
     SYSTEM_TYPE_DRIP,
     SYSTEM_TYPE_MANUAL,
     SYSTEM_TYPE_MICRO_SPRINKLER,
@@ -60,6 +64,23 @@ STEP_SENSORS_SCHEMA = vol.Schema(
         ),
         vol.Required(CONF_RAIN_SENSOR): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(
+            CONF_RAIN_SENSOR_TYPE, default=DEFAULT_RAIN_SENSOR_TYPE
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value=RAIN_TYPE_EVENT,
+                        label="Event-based (mm per event — tipping bucket)",
+                    ),
+                    selector.SelectOptionDict(
+                        value=RAIN_TYPE_DAILY_TOTAL,
+                        label="Daily total (cumulative mm since midnight)",
+                    ),
+                ],
+                mode="dropdown",
+            )
         ),
         vol.Optional(CONF_ALPHA, default=DEFAULT_ALPHA): selector.NumberSelector(
             selector.NumberSelectorConfig(

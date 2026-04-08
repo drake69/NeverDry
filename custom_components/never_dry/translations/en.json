@@ -6,7 +6,8 @@
         "description": "Select your weather sensors and configure the ET model parameters.",
         "data": {
           "temperature_sensor": "Temperature sensor",
-          "rain_sensor": "Rain sensor (mm/event)",
+          "rain_sensor": "Rain sensor",
+          "rain_sensor_type": "Rain sensor type",
           "alpha": "ET coefficient (α)",
           "t_base": "Base temperature",
           "d_max": "Maximum deficit cap",
@@ -14,7 +15,8 @@
         },
         "data_description": {
           "temperature_sensor": "Outdoor temperature sensor in °C",
-          "rain_sensor": "Rain gauge reporting mm per event (tipping bucket)",
+          "rain_sensor": "Rain gauge or weather station precipitation sensor",
+          "rain_sensor_type": "How your rain sensor reports precipitation. Event-based: mm per event (tipping bucket, recommended). Daily total: cumulative mm since midnight (weather station)",
           "alpha": "Evapotranspiration coefficient. Start with 0.22, adjust after observing your garden for a week",
           "t_base": "Temperature below which evapotranspiration is zero (plants dormant)",
           "d_max": "Upper limit for the deficit index",

@@ -6,6 +6,11 @@ DOMAIN = "never_dry"
 CONF_TEMP_SENSOR = "temperature_sensor"
 CONF_RAIN_SENSOR = "rain_sensor"
 CONF_VWC_SENSOR = "vwc_sensor"
+CONF_RAIN_SENSOR_TYPE = "rain_sensor_type"
+
+# Rain sensor types
+RAIN_TYPE_EVENT = "event"          # mm per event (tipping bucket pulse)
+RAIN_TYPE_DAILY_TOTAL = "daily_total"  # cumulative mm since midnight
 
 # ── ET model parameters ──────────────────────────────────
 CONF_ALPHA = "alpha"
@@ -79,3 +84,4 @@ DEFAULT_FIELD_CAPACITY = 0.30
 DEFAULT_ROOT_DEPTH = 0.30
 DEFAULT_INTER_ZONE_DELAY = 30
 DEFAULT_KC = 1.0
+DEFAULT_RAIN_SENSOR_TYPE = RAIN_TYPE_EVENT
