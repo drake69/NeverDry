@@ -112,7 +112,7 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | Zone name | Yes | — | Display name |
-| Valve | Yes | — | Switch entity controlling the valve |
+| Valve | No | — | Switch entity controlling the valve (omit for monitoring mode) |
 | Area | Yes | — | Irrigated area [m²] |
 | System type | Yes | — | Drip / micro-sprinkler / sprinkler / manual |
 | Efficiency | No | (from type) | Override distribution efficiency [0.1–1.0] |

@@ -128,7 +128,7 @@ For each zone, the wizard asks:
 | Field | Required | Description |
 |-------|----------|-------------|
 | **Zone name** | Yes | Display name (e.g., "Vegetable Garden") |
-| **Valve** | Yes | The `switch` entity that controls this zone's valve |
+| **Valve** | No | The `switch` entity that controls this zone's valve. Leave empty for monitoring mode. |
 | **Area (m²)** | Yes | Irrigated area in square meters |
 | **System type** | Yes | Irrigation method — sets a default efficiency |
 | **Efficiency override** | No | Custom efficiency (0.1–1.0). Overrides the system type default. |
@@ -328,7 +328,6 @@ The notification looks like:
 >
 > No irrigation valves are configured — please water manually or configure valves in the integration settings.
 
-> **Note**: In the current config flow UI, the valve field is required when adding a zone. To use monitoring mode, you can configure dummy valves or use the YAML setup path. This will be improved in a future version to make the valve optional in the UI.
 
 ## 9. Editing settings after setup
 

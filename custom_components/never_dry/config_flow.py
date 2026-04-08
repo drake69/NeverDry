@@ -88,7 +88,7 @@ STEP_SENSORS_SCHEMA = vol.Schema(
 STEP_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ZONE_NAME): selector.TextSelector(),
-        vol.Required(CONF_ZONE_VALVE): selector.EntitySelector(
+        vol.Optional(CONF_ZONE_VALVE): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="switch")
         ),
         vol.Required(CONF_ZONE_AREA): selector.NumberSelector(
