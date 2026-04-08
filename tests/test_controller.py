@@ -1,5 +1,6 @@
 """Tests for IrrigationController — valve control and irrigation cycles."""
 
+import time
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -8,6 +9,7 @@ from never_dry.const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_RATE,
     CONF_ZONE_NAME,
+    MIN_SERVICE_INTERVAL_S,
 )
 from never_dry.controller import IrrigationController
 
@@ -354,3 +356,75 @@ class TestMonitoringMode:
         await ctrl._check_and_notify()
 
         hass_mock.services.async_call.assert_not_called()
+
+
+class TestRateLimiting:
+    """Test service call rate limiting."""
+
+    def test_first_call_not_throttled(self, controller):
+        """First service call should never be throttled."""
+        assert controller._is_throttled("test") is False
+
+    def test_rapid_second_call_is_throttled(self, controller):
+        """A call within MIN_SERVICE_INTERVAL_S should be throttled."""
+        controller._is_throttled("first")
+        assert controller._is_throttled("second") is True
+
+    def test_call_after_interval_not_throttled(self, controller):
+        """A call after the minimum interval should not be throttled."""
+        controller._is_throttled("first")
+        # Simulate time passing beyond the throttle window
+        controller._last_service_call = time.monotonic() - MIN_SERVICE_INTERVAL_S - 1
+        assert controller._is_throttled("second") is False
+
+    @pytest.mark.asyncio
+    async def test_reset_throttled_does_nothing(self, controller, di_sensor):
+        """Throttled reset should not modify deficit."""
+        di_sensor._deficit = 15.0
+        controller._is_throttled("warmup")  # set the timestamp
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_reset(call_mock)
+
+        assert di_sensor._deficit == 15.0  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_irrigate_zone_throttled_does_nothing(self, controller, zone_orto):
+        """Throttled irrigate_zone should not start irrigation."""
+        zone_orto._zone_deficit = 10.0
+        controller._is_throttled("warmup")
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_irrigate_zone(call_mock)
+
+        assert controller.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_irrigate_all_throttled_does_nothing(self, controller):
+        """Throttled irrigate_all should not start irrigation."""
+        controller._is_throttled("warmup")
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_irrigate_all(call_mock)
+
+        assert controller.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_stop_is_never_throttled(self, controller, hass_mock):
+        """Emergency stop should never be throttled."""
+        controller._is_throttled("warmup")  # set timestamp
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_stop(call_mock)
+
+        # Stop should still close valves even when called rapidly
+        close_calls = [
+            c
+            for c in hass_mock.services.async_call.call_args_list
+            if c.args[1] == "turn_off"
+        ]
+        assert len(close_calls) >= 1
