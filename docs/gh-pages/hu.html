@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeverDry — Intelligens Öntözés a Home Assistant-hez</title>
+    <style>
+        :root { --accent: #1f6aa5; --accent-light: #d6e8f5; --bg: #f8fafb; --text: #2c3e50; --card-bg: #ffffff; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+        .lang-bar { background: rgba(0,0,0,0.15); padding: 8px 20px; text-align: right; }
+        .lang-bar a { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.85em; margin-left: 12px; padding: 2px 8px; border-radius: 4px; transition: background 0.2s; }
+        .lang-bar a:hover { background: rgba(255,255,255,0.15); }
+        .lang-bar a.active { background: rgba(255,255,255,0.25); color: white; font-weight: 600; }
+        .hero { background: linear-gradient(135deg, var(--accent), #2980b9); color: white; padding: 80px 20px 60px; text-align: center; }
+        .hero h1 { font-size: 3em; font-weight: 700; margin-bottom: 0.3em; }
+        .hero .tagline { font-size: 1.3em; opacity: 0.9; max-width: 600px; margin: 0 auto 1.5em; }
+        .hero .badges { margin: 1.5em 0; }
+        .hero .badges img { margin: 0 4px; vertical-align: middle; }
+        .hero .cta { display: inline-block; background: white; color: var(--accent); padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; margin: 0.5em; transition: transform 0.2s; }
+        .hero .cta:hover { transform: translateY(-2px); }
+        .hero .cta.secondary { background: rgba(255,255,255,0.15); color: white; border: 2px solid rgba(255,255,255,0.5); }
+        .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+        .features { padding: 60px 0; }
+        .features h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+        .feature-card { background: var(--card-bg); border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .feature-card h3 { font-size: 1.2em; margin-bottom: 0.5em; color: var(--accent); }
+        .feature-card .icon { font-size: 2em; margin-bottom: 0.3em; }
+        .how-it-works { padding: 60px 0; background: white; }
+        .how-it-works h2 { text-align: center; font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .how-it-works .formula { text-align: center; font-size: 1.2em; background: var(--accent-light); padding: 20px; border-radius: 8px; margin: 1.5em auto; max-width: 700px; font-family: "Georgia", serif; }
+        .how-it-works p { max-width: 700px; margin: 1em auto; text-align: center; }
+        .families { padding: 60px 0; }
+        .families h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .families table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .families th { background: var(--accent); color: white; padding: 12px 16px; text-align: left; }
+        .families td { padding: 10px 16px; border-bottom: 1px solid #eee; }
+        .families tr:nth-child(even) { background: #f9f9f9; }
+        .install { padding: 60px 0; background: white; }
+        .install h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .install-steps { max-width: 600px; margin: 0 auto; }
+        .install-steps ol { padding-left: 1.5em; }
+        .install-steps li { margin-bottom: 0.8em; font-size: 1.05em; }
+        .install-steps code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .support { padding: 60px 0; text-align: center; }
+        .support h2 { font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .support p { max-width: 500px; margin: 0.5em auto 1.5em; }
+        .support .patreon-btn { display: inline-block; background: #FF424D; color: white; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; transition: transform 0.2s; }
+        .support .patreon-btn:hover { transform: translateY(-2px); }
+        footer { background: var(--text); color: rgba(255,255,255,0.7); padding: 30px 20px; text-align: center; font-size: 0.9em; }
+        footer a { color: rgba(255,255,255,0.9); }
+    </style>
+</head>
+<body>
+
+<nav class="lang-bar" style="background: var(--accent);">
+    <a href="index.html">EN</a>
+    <a href="it.html">IT</a>
+    <a href="de.html">DE</a>
+    <a href="at.html">AT</a>
+    <a href="fr.html">FR</a>
+    <a href="es.html">ES</a>
+    <a href="pt.html">PT</a>
+    <a href="hu.html" class="active">HU</a>
+    <a href="hr.html">HR</a>
+</nav>
+
+<section class="hero">
+    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
+    <h1>NeverDry</h1>
+    <p class="tagline">Intelligens &ouml;nt&ouml;z&eacute;s a Home Assistant-hez. Tudom&aacute;nyos v&iacute;zm&eacute;rleg modell, amely tudja, mikor &eacute;s mennyi ideig kell &ouml;nt&ouml;zni a kertj&eacute;t.</p>
+    <div class="badges">
+        <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
+        <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
+        <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS">
+    </div>
+    <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repository</a>
+    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Dokument&aacute;ci&oacute;</a>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Funkci&oacute;k</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🌡️</div>
+                <h3>Tudom&aacute;nyos ET Modell</h3>
+                <p>Egyszer&uuml;s&iacute;tett FAO-56 v&iacute;zm&eacute;rleg. A h&odblac;m&eacute;rs&eacute;kletb&odblac;l becs&uuml;li az evapotranszpir&aacute;ci&oacute;t k&eacute;t kalibr&aacute;lhat&oacute; param&eacute;terrel.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌱</div>
+                <h3>10 N&ouml;v&eacute;nycsal&aacute;d</h3>
+                <p>Z&oacute;n&aacute;nk&eacute;nti n&ouml;v&eacute;ny-egy&uuml;tthat&oacute; (Kc) szezon&aacute;lis v&aacute;ltoz&aacute;ssal. Gyep, z&ouml;lds&eacute;gek, pozsg&aacute;sok, gy&uuml;m&ouml;lcsf&aacute;k &eacute;s m&eacute;g t&ouml;bb. Automatikus f&eacute;ltek&eacute;-adapt&aacute;ci&oacute;.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚿</div>
+                <h3>K&ouml;zvetlen Szelepvez&eacute;rl&eacute;s</h3>
+                <p>Automatikusan nyitja &eacute;s z&aacute;rja a szelepeket. Szekvenci&aacute;lis t&ouml;bbz&oacute;n&aacute;s &ouml;nt&ouml;z&eacute;s v&eacute;szle&aacute;ll&iacute;t&aacute;ssal.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>Z&oacute;n&aacute;nk&eacute;nti Deficit</h3>
+                <p>Minden z&oacute;na k&ouml;veti a saj&aacute;t talajv&iacute;z-deficitj&eacute;t. K&uuml;l&ouml;nb&ouml;z&odblac; n&ouml;v&eacute;nyek k&uuml;l&ouml;nb&ouml;z&odblac; &uuml;temben sz&aacute;radnak — ahogy kell.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌧️</div>
+                <h3>Es&odblac;&eacute;rz&eacute;keny</h3>
+                <p>Es&odblac;s napokon automatikusan kihagyja az &ouml;nt&ouml;z&eacute;st. A deficit minden es&odblac;esem&eacute;nnyel cs&ouml;kken.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>Felhaszn&aacute;l&oacute;i Fel&uuml;leten Konfigur&aacute;lhat&oacute;</h3>
+                <p>Teljes be&aacute;ll&iacute;t&aacute;s a Home Assistant fel&uuml;let&eacute;r&odblac;l. YAML szerkeszt&eacute;s nem sz&uuml;ks&eacute;ges.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Z&ouml;kken&odblac;mentes Friss&iacute;t&eacute;sek</h3>
+                <p>Automatiz&aacute;lt kiad&aacute;sok GitHub Actions-&ouml;n kereszt&uuml;l. A konfigur&aacute;ci&oacute;-migr&aacute;ci&oacute; meg&odblac;rzi a be&aacute;ll&iacute;t&aacute;sait verzi&oacute;k k&ouml;z&ouml;tt. Egyetlen kattint&aacute;ssal friss&iacute;thet&odblac; HACS-ban.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="how-it-works">
+    <div class="container">
+        <h2>Hogyan M&uuml;k&ouml;dik</h2>
+        <p>A NeverDry egyszer&uuml; v&iacute;zm&eacute;rleget k&ouml;vet minden &ouml;nt&ouml;z&eacute;si z&oacute;n&aacute;hoz:</p>
+        <div class="formula">
+            D<sub>z&oacute;na</sub>(t) = D<sub>z&oacute;na</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; es&odblac;
+        </div>
+        <p>Ha a deficit magas, a talaj sz&aacute;raz &eacute;s v&iacute;zre van sz&uuml;ks&eacute;ge. Amikor esik, a deficit cs&ouml;kken. &Ouml;nt&ouml;z&eacute;s ut&aacute;n null&aacute;ra &aacute;ll vissza. <strong>1 mm deficit = 1 liter n&eacute;gyzetm&eacute;terenk&eacute;nt sz&uuml;ks&eacute;ges.</strong></p>
+    </div>
+</section>
+
+<section class="families">
+    <div class="container">
+        <h2>N&ouml;v&eacute;nycsal&aacute;dok</h2>
+        <table>
+            <thead>
+                <tr><th>Csal&aacute;d</th><th>T&eacute;l</th><th>Tavasz</th><th>Ny&aacute;r</th><th>&Odblac;sz</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Gyep / P&aacute;zsit</td><td>0.45</td><td>0.85</td><td>1.00</td><td>0.70</td></tr>
+                <tr><td>Z&ouml;lds&eacute;gek (szezon&aacute;lis)</td><td>0.30</td><td>0.70</td><td>1.10</td><td>0.50</td></tr>
+                <tr><td>Gy&uuml;m&ouml;lcsf&aacute;k (lombhullat&oacute;)</td><td>0.35</td><td>0.70</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>D&iacute;szcserjek</td><td>0.40</td><td>0.65</td><td>0.80</td><td>0.55</td></tr>
+                <tr><td>F&uuml;szern&ouml;v&eacute;nyek (mediterr&aacute;n)</td><td>0.30</td><td>0.55</td><td>0.70</td><td>0.40</td></tr>
+                <tr><td>Citrusfrukt&uuml;ek / &Ouml;r&ouml;kz&ouml;ldek</td><td>0.60</td><td>0.65</td><td>0.70</td><td>0.65</td></tr>
+                <tr><td>R&oacute;zs&aacute;k</td><td>0.35</td><td>0.75</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Pozsg&aacute;sok / Kaktuszok</td><td>0.15</td><td>0.25</td><td>0.35</td><td>0.20</td></tr>
+                <tr><td>&Odblac;shonos talajfed&odblac;k</td><td>0.25</td><td>0.45</td><td>0.55</td><td>0.35</td></tr>
+                <tr><td>Vegyes kert</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="install">
+    <div class="container">
+        <h2>Telep&iacute;t&eacute;s</h2>
+        <div class="install-steps">
+            <h3>HACS-on kereszt&uuml;l (aj&aacute;nlott)</h3>
+            <ol>
+                <li>HACS megnyit&aacute;sa &rarr; Integr&aacute;ci&oacute;k &rarr; <strong>Egyedi repositoryk</strong></li>
+                <li><code>https://github.com/drake69/NeverDry</code> hozz&aacute;ad&aacute;sa <strong>Integr&aacute;ci&oacute;</strong>k&eacute;nt</li>
+                <li><strong>NeverDry</strong> keres&eacute;se &eacute;s telep&iacute;t&eacute;s</li>
+                <li>Home Assistant &uacute;jraind&iacute;t&aacute;sa</li>
+                <li>Be&aacute;ll&iacute;t&aacute;sok &rarr; Eszk&ouml;z&ouml;k &eacute;s Szolg&aacute;ltat&aacute;sok &rarr; <strong>Integr&aacute;ci&oacute; hozz&aacute;ad&aacute;sa</strong> &rarr; NeverDry</li>
+            </ol>
+            <h3 style="margin-top: 1.5em;">Manu&aacute;lis</h3>
+            <ol>
+                <li><code>custom_components/never_dry/</code> m&aacute;sol&aacute;sa a HA config k&ouml;nyvt&aacute;rba</li>
+                <li>Home Assistant &uacute;jraind&iacute;t&aacute;sa</li>
+                <li>Integr&aacute;ci&oacute; hozz&aacute;ad&aacute;sa a fel&uuml;letr&odblac;l</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<section class="support">
+    <div class="container">
+        <h2>T&aacute;mogasd a Projektet</h2>
+        <p>A NeverDry ingyenes &eacute;s ny&iacute;lt forr&aacute;sk&oacute;d&uacute;. Ha megmenti a kertj&eacute;t (&eacute;s a v&iacute;zsz&aacute;ml&aacute;j&aacute;t), fizess nekem egy k&aacute;v&eacute;t.</p>
+        <a class="patreon-btn" href="https://www.patreon.com/c/69Drake">☕ T&aacute;mogat&aacute;s Patreon-on — $5</a>
+    </div>
+</section>
+
+<section class="support" style="background: #f0f0f0; padding: 40px 0;">
+    <div class="container" style="text-align: left; max-width: 700px;">
+        <h2 style="text-align: center;">Jogi nyilatkozat</h2>
+        <p style="font-size: 0.9em; color: #555;">A NeverDry hobbiprojekt lak&oacute;haszn&aacute;latra. Nem min&odblac;s&iacute;tett mez&odblac;gazdas&aacute;gi, kereskedelmi vagy biztons&aacute;gkritikus alkalmaz&aacute;sokra. Az ET modell az FAO-56 szabv&aacute;ny egyszer&uuml;s&iacute;t&eacute;se, &eacute;s nem helyettes&iacute;ti a szakmai agron&oacute;miai tan&aacute;csad&aacute;st. Mindig figyelje az &ouml;nt&ouml;z&odblac;rendszer&eacute;t. A szerz&odblac;k semmilyen felel&odblac;ss&eacute;get nem v&aacute;llalnak k&aacute;rok&eacute;rt vagy vesztes&eacute;gek&eacute;rt.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">K&ouml;sz&ouml;netnyilv&aacute;n&iacute;t&aacute;s</h2>
+        <p style="font-size: 0.9em; color: #555;">A <a href="https://claude.ai">Claude</a> (<a href="https://anthropic.com">Anthropic</a>) seg&iacute;ts&eacute;g&eacute;vel fejlesztve.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">Tudom&aacute;nyos Hivatkoz&aacute;sok</h2>
+        <ul style="font-size: 0.85em; color: #555; line-height: 1.8;">
+            <li>Allen, R.G. et al. (1998). <em>Crop evapotranspiration.</em> <a href="https://www.fao.org/4/x0490e/x0490e00.htm">FAO Irrigation and Drainage Paper 56</a>.</li>
+            <li>Hargreaves, G.H. &amp; Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. <em>Applied Eng. in Agriculture.</em> <a href="https://doi.org/10.13031/2013.26773">DOI: 10.13031/2013.26773</a></li>
+            <li>Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. <em>Proc. R. Soc. London A.</em> <a href="https://doi.org/10.1098/rspa.1948.0037">DOI: 10.1098/rspa.1948.0037</a></li>
+            <li>Monteith, J.L. (1965). Evaporation and environment. <em>Symp. Soc. Exp. Biol.</em> <a href="https://repository.rothamsted.ac.uk/item/8v5v7/evaporation-and-environment">Rothamsted Repository</a></li>
+            <li>Fereres, E. &amp; Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. <em>J. Exp. Bot.</em> <a href="https://doi.org/10.1093/jxb/erl165">DOI: 10.1093/jxb/erl165</a></li>
+        </ul>
+    </div>
+</section>
+
+<section style="background: var(--accent-light); padding: 16px 20px; text-align: center; font-size: 0.85em; color: #555;">
+    <div class="container">
+        Ez a ford&iacute;t&aacute;s automatikusan k&eacute;sz&uuml;lt. Sz&iacute;vesen fogadunk minden hozz&aacute;j&aacute;rul&aacute;st a jav&iacute;t&aacute;s&aacute;hoz —
+        <a href="https://github.com/drake69/NeverDry/issues" style="color: var(--accent);">nyiss egy issue-t</a> vagy k&uuml;ldj egy pull requestet.
+    </div>
+</section>
+
+<footer>
+    <p>NeverDry &mdash; MIT Licenc &mdash; K&eacute;sz&iacute;tette 🌱 <a href="https://github.com/drake69">drake69</a></p>
+</footer>
+
+</body>
+</html>
