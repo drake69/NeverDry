@@ -196,6 +196,49 @@ If NeverDry saves your garden (and your water bill), consider supporting the pro
 
 ---
 
+## Disclaimer
+
+NeverDry is a **hobby project for residential use**. It is not certified for agricultural, commercial, or safety-critical applications. The authors accept no liability for crop damage, water waste, property damage, or any other loss resulting from the use of this software.
+
+The ET model is a simplification of the FAO-56 standard and is **not a substitute for professional agronomic advice**. Crop coefficients (Kc) are approximate seasonal averages for typical residential plants — actual water needs depend on soil type, microclimate, plant health, and many other factors.
+
+**Always monitor your irrigation system** and verify that valves open and close correctly. Use the emergency stop service (`never_dry.stop`) if anything goes wrong.
+
+---
+
+## Acknowledgments
+
+This project was developed with the assistance of [Claude](https://claude.ai) by [Anthropic](https://anthropic.com) — an AI assistant that contributed to architecture design, code implementation, scientific modeling, documentation, and testing.
+
+---
+
+## Scientific References
+
+NeverDry is based on established agronomic science. The key references are:
+
+### Core Model
+
+- **Allen, R.G., Pereira, L.S., Raes, D., Smith, M.** (1998). *Crop evapotranspiration: guidelines for computing crop water requirements.* FAO Irrigation and Drainage Paper 56. Rome: FAO. — [Full text (FAO)](https://www.fao.org/4/x0490e/x0490e00.htm)
+
+### Evapotranspiration Methods
+
+- **Hargreaves, G.H., Samani, Z.A.** (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99.
+- **Hargreaves, G.H., Allen, R.G.** (2003). History and evaluation of Hargreaves evapotranspiration equation. *J. Irrig. Drain. Eng.*, 129(1), 53–63.
+- **Penman, H.L.** (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193(1032), 120–145.
+- **Monteith, J.L.** (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234.
+
+### Crop Water Requirements
+
+- **Doorenbos, J., Pruitt, W.O.** (1977). *Guidelines for predicting crop water requirements.* FAO Irrigation and Drainage Paper 24. Rome: FAO.
+- **Steduto, P., Hsiao, T.C., Fereres, E., Raes, D.** (2012). *Crop yield response to water.* FAO Irrigation and Drainage Paper 66. Rome: FAO.
+
+### Deficit Irrigation
+
+- **Fereres, E., Soriano, M.A.** (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159.
+- **Pereira, L.S., Oweis, T., Zairi, A.** (2002). Irrigation management under water scarcity. *Agricultural Water Management*, 57(3), 175–206.
+
+---
+
 ## License
 
 [MIT](LICENSE) — Luigi Corsaro

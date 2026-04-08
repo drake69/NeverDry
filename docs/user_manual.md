@@ -506,3 +506,25 @@ A: If you have a soil moisture sensor that reports volumetric water content (as 
 
 **Q: How accurate is the ET estimate?**
 A: With temperature only, the model explains 40–60% of the real ET variance in temperate climates. It's sufficient for residential use but not for professional agriculture. Adding T_max/T_min sensors (Hargreaves-Samani) improves accuracy to ~1 mm/day.
+
+---
+
+## Disclaimer
+
+NeverDry is a **hobby project for residential use**. It is not certified for agricultural, commercial, or safety-critical applications. The authors accept no liability for crop damage, water waste, property damage, or any other loss resulting from the use of this software.
+
+The ET model is a simplification of the FAO-56 standard and is **not a substitute for professional agronomic advice**. Crop coefficients (Kc) are approximate seasonal averages — actual water needs depend on soil type, microclimate, plant health, and many other factors.
+
+**Always monitor your irrigation system** and verify that valves open and close correctly.
+
+## Acknowledgments
+
+This project was developed with the assistance of [Claude](https://claude.ai) by [Anthropic](https://anthropic.com).
+
+## Scientific References
+
+- Allen, R.G., Pereira, L.S., Raes, D., Smith, M. (1998). *Crop evapotranspiration.* [FAO Irrigation and Drainage Paper 56](https://www.fao.org/4/x0490e/x0490e00.htm).
+- Hargreaves, G.H., Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99.
+- Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193, 120–145.
+- Monteith, J.L. (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234.
+- Fereres, E., Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159.
