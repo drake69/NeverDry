@@ -107,14 +107,39 @@ Update version in two places when releasing:
 
 These must match for HACS to correctly track updates.
 
-## GitHub Actions (optional)
+### Automated version bump
 
-Add CI to validate on every push:
+Use the provided script to bump the version, commit, and tag in one step:
+
+```bash
+./scripts/bump_version.sh 0.2.0
+```
+
+This script:
+1. Validates semver format (`X.Y.Z`)
+2. Verifies the working tree is clean
+3. Updates `manifest.json` with the new version
+4. Creates a commit: `release: bump version to 0.2.0`
+5. Creates an annotated tag: `v0.2.0`
+
+Then push to trigger the release:
+```bash
+git push origin main && git push origin v0.2.0
+```
+
+## GitHub Actions
+
+### HACS Validation (`.github/workflows/hacs.yml`)
+
+Validates the repository structure on every push and PR:
 
 ```yaml
-# .github/workflows/validate.yml
-name: Validate
-on: [push, pull_request]
+name: HACS Validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -126,3 +151,18 @@ jobs:
 ```
 
 This runs the same checks HACS uses during the default repo submission.
+
+### Release Workflow (`.github/workflows/release.yml`)
+
+Automatically creates a GitHub Release when a version tag is pushed:
+
+1. Runs the full test suite
+2. Verifies `manifest.json` version matches the tag (prevents mismatched releases)
+3. Packages `custom_components/never_dry/` into `never_dry.zip`
+4. Creates a GitHub Release with auto-generated release notes and the zip as an asset
+
+HACS detects the new release and notifies users of the available update.
+
+### Config entry migration
+
+When you change the config schema between versions, existing installations are migrated automatically via `async_migrate_entry()` in `__init__.py`. See the [Developer Manual](developer_manual.md#10-config-entry-migration) for details on how to add migration steps.
