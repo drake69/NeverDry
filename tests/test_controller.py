@@ -422,9 +422,5 @@ class TestRateLimiting:
         await controller._handle_stop(call_mock)
 
         # Stop should still close valves even when called rapidly
-        close_calls = [
-            c
-            for c in hass_mock.services.async_call.call_args_list
-            if c.args[1] == "turn_off"
-        ]
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[1] == "turn_off"]
         assert len(close_calls) >= 1
