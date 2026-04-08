@@ -65,23 +65,46 @@ ET_h = max(0, α · (T - T_base) / 24)   [mm/h]
 | **Parameters** | `alpha` (default 0.22 mm/°C/day), `t_base` (default 9.0°C) |
 | **Trigger** | `async_track_state_change_event` on temperature sensor |
 
-### 2.2 Reference deficit accumulation (ET model, Kc=1.0)
+### 2.2 Precipitation delta computation
 
 ```
-D_ref(t) = clamp( D_ref(t-1) + ET_h · Δt - rain,  0,  D_max )
+ΔP = f(rain_sensor_type, rain_now, rain_last)
+```
+
+The raw rain sensor value is **never** subtracted directly from the deficit. Instead, a **delta** (increment since last reading) is computed to avoid double-counting.
+
+| Rain sensor type | Delta logic |
+|-----------------|-------------|
+| **`event`** (default) | Value IS the delta (mm per event, e.g., tipping bucket). A new value different from the previous one is treated as a new rain event. Same value = no new rain (delta = 0). |
+| **`daily_total`** | Cumulative mm since midnight. Delta = `rain_now - rain_last`. If `rain_now < rain_last` (midnight rollover), delta = `rain_now` (new accumulation from zero). |
+
+| Item | Value |
+|------|-------|
+| **Class** | `DrynessIndexSensor` |
+| **Method** | `_compute_rain_delta()` |
+| **State** | `_last_rain` (float, tracks previous reading) |
+| **Config** | `rain_sensor_type` (default: `"event"`) |
+
+**Why this matters**: Without delta computation, a cumulative rain sensor reporting "5.0 mm today" would subtract 5.0 mm on every temperature change event — draining the deficit to zero in minutes. With delta logic, only the actual new rain since the last reading is subtracted.
+
+### 2.3 Reference deficit accumulation (ET model, Kc=1.0)
+
+```
+D_ref(t) = clamp( D_ref(t-1) + ET_h · Δt - ΔP,  0,  D_max )
 ```
 
 | Item | Value |
 |------|-------|
 | **Class** | `DrynessIndexSensor` |
-| **Method** | `_update_from_model()` |
+| **Method** | `_on_sensor_change()` (inline) / `_update_from_model()` (standalone) |
 | **Integration** | Forward Euler, variable Δt (event-driven) |
 | **Parameters** | `alpha`, `t_base`, `d_max` (default 100.0 mm) |
+| **Rain** | Uses `ΔP` from `_compute_rain_delta()`, not raw sensor value |
 
-### 2.3 Per-zone deficit accumulation (with Kc)
+### 2.4 Per-zone deficit accumulation (with Kc)
 
 ```
-D_zone(t) = clamp( D_zone(t-1) + ET_h · Kc(doy, family) · Δt - rain,  0,  D_max )
+D_zone(t) = clamp( D_zone(t-1) + ET_h · Kc(doy, family) · Δt - ΔP,  0,  D_max )
 ```
 
 | Item | Value |
@@ -90,10 +113,11 @@ D_zone(t) = clamp( D_zone(t-1) + ET_h · Kc(doy, family) · Δt - rain,  0,  D_m
 | **Method** | `_on_et_update()` |
 | **Kc source** | `compute_kc()` module-level function |
 | **Parameters** | `plant_family`, `kc` (manual override), `hass.config.latitude` |
+| **Rain** | Receives `ΔP` (rain delta) from `DrynessIndexSensor` broadcast |
 
-Each zone accumulates independently. Rain reduces all zone deficits equally. Only the irrigated zone's deficit resets after irrigation.
+Each zone accumulates independently. Rain delta reduces all zone deficits equally. Only the irrigated zone's deficit resets after irrigation.
 
-### 2.4 Crop coefficient computation
+### 2.5 Crop coefficient computation
 
 ```
 Kc = compute_kc(day_of_year, plant_family, manual_kc, latitude)
@@ -107,7 +131,7 @@ Kc = compute_kc(day_of_year, plant_family, manual_kc, latitude)
 | **Hemisphere** | Southern (latitude < 0): day shifted by 182 days |
 | **Plant families** | Defined in `const.py` `PLANT_FAMILIES` dict (10 families) |
 
-### 2.5 Deficit from VWC (direct measurement)
+### 2.6 Deficit from VWC (direct measurement)
 
 ```
 D = max(0, (FC - VWC) · root_depth · 1000)   [mm]
@@ -119,7 +143,7 @@ D = max(0, (FC - VWC) · root_depth · 1000)   [mm]
 | **Method** | `_update_from_vwc()` |
 | **Zone behavior** | In VWC mode, zones compute `D_zone = D_ref × Kc` |
 
-### 2.6 Irrigation volume per zone
+### 2.7 Irrigation volume per zone
 
 ```
 V = D_zone · A / η   [L]
@@ -131,7 +155,7 @@ V = D_zone · A / η   [L]
 | **Property** | `volume_liters` |
 | **Uses** | `_zone_deficit` (per-zone, not shared) |
 
-### 2.7 Irrigation duration per zone
+### 2.8 Irrigation duration per zone
 
 ```
 t = V / Q · 60   [s]
@@ -143,7 +167,7 @@ t = V / Q · 60   [s]
 | **Property** | `duration_s` |
 | **Parameters** | `flow_rate_lpm` (Q) |
 
-### 2.8 Resolution orders
+### 2.9 Resolution orders
 
 **Efficiency**: `explicit value > system_type default > global default (0.85)`
 

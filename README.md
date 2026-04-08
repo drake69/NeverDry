@@ -168,15 +168,19 @@ automation:
 Based on the FAO-56 water balance (Allen et al., 1998):
 
 ```
-D_zone(t) = clamp(D_zone(t-1) + ET_h × Kc × Δt − rain,  0,  D_max)
+D_zone(t) = clamp(D_zone(t-1) + ET_h × Kc × Δt − ΔP,  0,  D_max)
 
-ET_h = max(0, α × (T − T_base) / 24)     [mm/h]
-Kc   = f(day_of_year, plant_family)        [—]
-V    = D_zone × Area / Efficiency          [L]
-t    = V / FlowRate × 60                   [s]
+ET_h = max(0, α × (T − T_base) / 24)     [mm/h]  evapotranspiration
+Kc   = f(day_of_year, plant_family)        [—]     crop coefficient
+ΔP   = rain_delta(sensor_type)             [mm]    precipitation increment
+V    = D_zone × Area / Efficiency          [L]     volume needed
+t    = V / FlowRate × 60                   [s]     irrigation duration
 ```
 
-Integration is event-driven (forward Euler, variable Δt).
+**Key design choices:**
+- Integration is event-driven (forward Euler, variable Δt) — no fixed polling interval
+- Each zone tracks its own deficit scaled by Kc, not a shared global value
+- Rain is always processed as a **delta** (increment since last reading), not a raw value — this correctly handles both tipping-bucket sensors (mm per event) and cumulative daily-total sensors (mm since midnight)
 
 ---
 

@@ -54,6 +54,29 @@ The integration estimates how much water your soil loses each hour based on temp
 - **Hot summer day (35°C)**: approximately 0.24 mm/h → 5.7 mm/day
 - **Cool spring day (15°C)**: approximately 0.06 mm/h → 1.3 mm/day
 
+### Precipitation handling
+
+NeverDry tracks rain as a **delta** (increment since the last reading), not as a raw sensor value. This prevents double-counting and works correctly regardless of how often other sensors update.
+
+Two rain sensor types are supported:
+
+| Type | How it works | Examples |
+|------|-------------|----------|
+| **Event-based** (default) | Each sensor state change represents a single rain event. The value is the amount of rain in that event (e.g., 0.2 mm per tip). If the value doesn't change, no new rain is counted. | Tipping bucket (Ecowitt, Netatmo), DIY pulse counter, ESPHome rain gauge |
+| **Daily total** | The sensor reports cumulative mm since midnight. NeverDry computes the difference from the last reading. At midnight rollover (value drops), the new value is treated as fresh accumulation. | Weather station daily rain, OpenWeatherMap precipitation, Met.no |
+
+**Choosing the right type matters**: If you select "event-based" but your sensor actually reports a daily total, the deficit will decrease too aggressively (the full total is subtracted on every change). If you select "daily total" but your sensor reports per-event, only the first event will register correctly.
+
+### Per-zone water demand
+
+Different plants need different amounts of water. NeverDry assigns a **crop coefficient (Kc)** to each zone based on the plant family. The Kc scales the evapotranspiration for that zone:
+
+- **Lawn (Kc ≈ 1.0 in summer)**: loses water at the reference rate
+- **Succulents (Kc ≈ 0.35 in summer)**: lose water 3× slower than lawn
+- **Vegetables (Kc ≈ 1.10 in summer)**: lose water slightly faster (high transpiration)
+
+The Kc varies seasonally — plants need less water in winter than in summer. NeverDry interpolates between 4 seasonal values automatically and adjusts for your hemisphere based on your Home Assistant location.
+
 ### Two scheduling modes
 
 | Mode | When it triggers | Best for |
