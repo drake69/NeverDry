@@ -15,18 +15,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+import time
 
 from homeassistant.core import HomeAssistant, ServiceCall
-
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import (
     ATTR_ZONE_NAME,
-    CONF_INTER_ZONE_DELAY,
     DEFAULT_INTER_ZONE_DELAY,
     DEFAULT_THRESHOLD,
     DOMAIN,
+    MIN_SERVICE_INTERVAL_S,
     SERVICE_IRRIGATE_ALL,
     SERVICE_IRRIGATE_ZONE,
     SERVICE_RESET,
@@ -62,6 +61,7 @@ class IrrigationController:
         self._irrigation_task: asyncio.Task | None = None
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
         self._unsub_monitor = None
+        self._last_service_call: float = 0.0
 
     @property
     def is_monitoring_mode(self) -> bool:
@@ -80,18 +80,10 @@ class IrrigationController:
 
     def register_services(self) -> None:
         """Register all irrigation services with Home Assistant."""
-        self._hass.services.async_register(
-            DOMAIN, SERVICE_RESET, self._handle_reset
-        )
-        self._hass.services.async_register(
-            DOMAIN, SERVICE_IRRIGATE_ZONE, self._handle_irrigate_zone
-        )
-        self._hass.services.async_register(
-            DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all
-        )
-        self._hass.services.async_register(
-            DOMAIN, SERVICE_STOP, self._handle_stop
-        )
+        self._hass.services.async_register(DOMAIN, SERVICE_RESET, self._handle_reset)
+        self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ZONE, self._handle_irrigate_zone)
+        self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
+        self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
 
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
@@ -107,10 +99,29 @@ class IrrigationController:
                 timedelta(hours=6),
             )
 
+    # ── Rate limiting ──────────────────────────────────────
+
+    def _is_throttled(self, service_name: str) -> bool:
+        """Return True if a service call should be rejected (rate limit)."""
+        now = time.monotonic()
+        elapsed = now - self._last_service_call
+        if elapsed < MIN_SERVICE_INTERVAL_S:
+            _LOGGER.warning(
+                "Service %s throttled — %0.1fs since last call (min %ds)",
+                service_name,
+                elapsed,
+                MIN_SERVICE_INTERVAL_S,
+            )
+            return True
+        self._last_service_call = now
+        return False
+
     # ── Service handlers ─────────────────────────────────
 
     async def _handle_reset(self, call: ServiceCall) -> None:
         """Reset reference deficit and all zone deficits to zero."""
+        if self._is_throttled("reset"):
+            return
         self._dryness.reset()
         self._dryness.async_write_ha_state()
         for zs in self._zones.values():
@@ -119,6 +130,8 @@ class IrrigationController:
 
     async def _handle_irrigate_zone(self, call: ServiceCall) -> None:
         """Irrigate a single zone by name."""
+        if self._is_throttled("irrigate_zone"):
+            return
         zone_name = call.data.get(ATTR_ZONE_NAME)
         if zone_name not in self._zones:
             _LOGGER.error(
@@ -132,19 +145,17 @@ class IrrigationController:
             _LOGGER.warning("Irrigation already in progress, ignoring request")
             return
 
-        self._irrigation_task = self._hass.async_create_task(
-            self._irrigate_zones([zone_name])
-        )
+        self._irrigation_task = self._hass.async_create_task(self._irrigate_zones([zone_name]))
 
     async def _handle_irrigate_all(self, call: ServiceCall) -> None:
         """Irrigate all zones sequentially."""
+        if self._is_throttled("irrigate_all"):
+            return
         if self._running:
             _LOGGER.warning("Irrigation already in progress, ignoring request")
             return
 
-        self._irrigation_task = self._hass.async_create_task(
-            self._irrigate_zones(list(self._zones.keys()))
-        )
+        self._irrigation_task = self._hass.async_create_task(self._irrigate_zones(list(self._zones.keys())))
 
     async def _handle_stop(self, call: ServiceCall) -> None:
         """Emergency stop: close all valves immediately."""
@@ -182,9 +193,7 @@ class IrrigationController:
                 valve = zone.valve
 
                 if not valve:
-                    _LOGGER.warning(
-                        "Zone '%s' has no valve configured, skipping", zone_name
-                    )
+                    _LOGGER.warning("Zone '%s' has no valve configured, skipping", zone_name)
                     continue
 
                 if duration <= 0:
@@ -196,8 +205,7 @@ class IrrigationController:
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', valve='%s', "
-                    "duration=%ds, volume=%.1fL, deficit=%.1fmm",
+                    "Starting irrigation: zone='%s', valve='%s', duration=%ds, volume=%.1fL, deficit=%.1fmm",
                     zone_name,
                     valve,
                     duration,
@@ -227,9 +235,7 @@ class IrrigationController:
 
                 # Inter-zone delay (pressure stabilization)
                 if i < len(zone_names) - 1 and not self._stop_requested:
-                    _LOGGER.debug(
-                        "Inter-zone delay: %ds", self._inter_zone_delay
-                    )
+                    _LOGGER.debug("Inter-zone delay: %ds", self._inter_zone_delay)
                     await asyncio.sleep(self._inter_zone_delay)
 
             # Reset deficits for irrigated zones
@@ -242,8 +248,7 @@ class IrrigationController:
                     self._dryness.reset()
                 self._dryness.async_write_ha_state()
                 _LOGGER.info(
-                    "Irrigation cycle complete. %d zone(s) irrigated, "
-                    "zone deficits reset",
+                    "Irrigation cycle complete. %d zone(s) irrigated, zone deficits reset",
                     len(irrigated_zones),
                 )
 
@@ -268,15 +273,11 @@ class IrrigationController:
     async def _open_valve(self, entity_id: str) -> None:
         """Turn on a valve switch."""
         self._active_valve = entity_id
-        await self._hass.services.async_call(
-            "switch", "turn_on", {"entity_id": entity_id}
-        )
+        await self._hass.services.async_call("switch", "turn_on", {"entity_id": entity_id})
 
     async def _close_valve(self, entity_id: str) -> None:
         """Turn off a valve switch."""
-        await self._hass.services.async_call(
-            "switch", "turn_off", {"entity_id": entity_id}
-        )
+        await self._hass.services.async_call("switch", "turn_off", {"entity_id": entity_id})
         if self._active_valve == entity_id:
             self._active_valve = None
 
@@ -303,9 +304,7 @@ class IrrigationController:
             return
 
         message = (
-            "Your garden needs watering:\n\n"
-            + "\n".join(zone_lines)
-            + "\n\nNo irrigation valves are configured — "
+            "Your garden needs watering:\n\n" + "\n".join(zone_lines) + "\n\nNo irrigation valves are configured — "
             "please water manually or configure valves in the integration settings."
         )
 

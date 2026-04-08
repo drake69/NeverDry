@@ -1,7 +1,5 @@
 """Tests for ETSensor — evapotranspiration estimate."""
 
-import pytest
-
 
 class TestETFormula:
     """Test the linear ET model: ET_h = max(0, alpha * (T - T_base) / 24)."""
@@ -45,8 +43,8 @@ class TestETCustomParameters:
     """Test ET with non-default alpha and T_base."""
 
     def test_custom_alpha(self, hass_mock, make_event):
+        from never_dry.const import CONF_ALPHA, CONF_TEMP_SENSOR
         from never_dry.sensor import ETSensor
-        from never_dry.const import CONF_TEMP_SENSOR, CONF_ALPHA
 
         config = {CONF_TEMP_SENSOR: "sensor.t", CONF_ALPHA: 0.30}
         sensor = ETSensor(hass_mock, config)
@@ -56,8 +54,8 @@ class TestETCustomParameters:
         assert sensor.native_value == expected
 
     def test_custom_t_base(self, hass_mock, make_event):
+        from never_dry.const import CONF_T_BASE, CONF_TEMP_SENSOR
         from never_dry.sensor import ETSensor
-        from never_dry.const import CONF_TEMP_SENSOR, CONF_T_BASE
 
         config = {CONF_TEMP_SENSOR: "sensor.t", CONF_T_BASE: 5.0}
         sensor = ETSensor(hass_mock, config)
@@ -86,6 +84,7 @@ class TestETEdgeCases:
     def test_none_new_state(self, et_sensor):
         """Event with None new_state should be safely ignored."""
         from unittest.mock import MagicMock
+
         event = MagicMock()
         event.data = {"new_state": None}
         et_sensor._on_temp_change(event)

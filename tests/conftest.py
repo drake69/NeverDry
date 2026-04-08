@@ -18,9 +18,13 @@ def _create_ha_stubs():
 
     # homeassistant.components.sensor
     sensor_mod = ModuleType("homeassistant.components.sensor")
-    sensor_mod.SensorEntity = type("SensorEntity", (), {
-        "async_write_ha_state": lambda self: None,
-    })
+    sensor_mod.SensorEntity = type(
+        "SensorEntity",
+        (),
+        {
+            "async_write_ha_state": lambda self: None,
+        },
+    )
 
     class SensorStateClass:
         MEASUREMENT = "measurement"
@@ -40,9 +44,13 @@ def _create_ha_stubs():
 
     # homeassistant.helpers.restore_state
     restore_mod = ModuleType("homeassistant.helpers.restore_state")
-    restore_mod.RestoreEntity = type("RestoreEntity", (), {
-        "async_get_last_state": lambda self: None,
-    })
+    restore_mod.RestoreEntity = type(
+        "RestoreEntity",
+        (),
+        {
+            "async_get_last_state": lambda self: None,
+        },
+    )
 
     # homeassistant.helpers.typing
     typing_mod = ModuleType("homeassistant.helpers.typing")
@@ -76,13 +84,23 @@ _create_ha_stubs()
 
 # Now we can safely import our code
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent / "custom_components"))
-from never_dry.const import *  # noqa: E402, F403
+from never_dry.const import (  # noqa: E402
+    CONF_ALPHA,
+    CONF_RAIN_SENSOR,
+    CONF_T_BASE,
+    CONF_TEMP_SENSOR,
+    CONF_ZONE_AREA,
+    CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_NAME,
+    CONF_ZONE_THRESHOLD,
+    CONF_ZONE_VALVE,
+)
 from never_dry.controller import IrrigationController  # noqa: E402
 from never_dry.sensor import (  # noqa: E402
     DrynessIndexSensor,
     ETSensor,
     IrrigationZoneSensor,
-    compute_kc,
 )
 
 
@@ -162,9 +180,7 @@ def zone_prato(hass_mock, di_sensor):
 @pytest.fixture
 def controller(hass_mock, di_sensor, zone_orto, zone_prato):
     """Create an IrrigationController with two zones."""
-    return IrrigationController(
-        hass_mock, di_sensor, [zone_orto, zone_prato], inter_zone_delay=0
-    )
+    return IrrigationController(hass_mock, di_sensor, [zone_orto, zone_prato], inter_zone_delay=0)
 
 
 @pytest.fixture
@@ -176,8 +192,10 @@ def make_state():
 @pytest.fixture
 def make_event():
     """Factory for mock state change events."""
+
     def _make(new_value):
         event = MagicMock()
         event.data = {"new_state": _make_state(new_value)}
         return event
+
     return _make

@@ -7,11 +7,15 @@ water balance model.  Directly controls irrigation valves.
 Supports both YAML configuration and UI-based config flow.
 """
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN
+from .const import CONFIG_VERSION, DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 
@@ -19,6 +23,39 @@ PLATFORMS = ["sensor"]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the NeverDry integration from YAML."""
     hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate config entry to the current schema version.
+
+    Called automatically by HA when entry.version < ConfigFlow.VERSION.
+    Add migration steps here when CONFIG_VERSION is bumped.
+    """
+    _LOGGER.debug(
+        "Migrating NeverDry config entry from version %s to %s",
+        entry.version,
+        CONFIG_VERSION,
+    )
+
+    if entry.version > CONFIG_VERSION:
+        _LOGGER.error(
+            "Config entry version %s is newer than supported (%s)",
+            entry.version,
+            CONFIG_VERSION,
+        )
+        return False
+
+    # --- Future migrations go here ---
+    # if entry.version == 1:
+    #     new_data = {**entry.data}
+    #     # ... transform data ...
+    #     hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+
+    _LOGGER.info(
+        "Migration of NeverDry config entry to version %s successful",
+        CONFIG_VERSION,
+    )
     return True
 
 

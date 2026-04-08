@@ -208,6 +208,28 @@
         }
         .support .patreon-btn:hover { transform: translateY(-2px); }
 
+        /* Language selector */
+        .lang-bar {
+            background: rgba(0,0,0,0.15);
+            padding: 8px 20px;
+            text-align: right;
+        }
+        .lang-bar a {
+            color: rgba(255,255,255,0.8);
+            text-decoration: none;
+            font-size: 0.85em;
+            margin-left: 12px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+        .lang-bar a:hover { background: rgba(255,255,255,0.15); }
+        .lang-bar a.active {
+            background: rgba(255,255,255,0.25);
+            color: white;
+            font-weight: 600;
+        }
+
         /* Footer */
         footer {
             background: var(--text);
@@ -220,6 +242,19 @@
     </style>
 </head>
 <body>
+
+<!-- Language selector -->
+<nav class="lang-bar" style="background: var(--accent);">
+    <a href="index.html" class="active">EN</a>
+    <a href="it.html">IT</a>
+    <a href="de.html">DE</a>
+    <a href="at.html">AT</a>
+    <a href="fr.html">FR</a>
+    <a href="es.html">ES</a>
+    <a href="pt.html">PT</a>
+    <a href="hu.html">HU</a>
+    <a href="hr.html">HR</a>
+</nav>
 
 <!-- Hero -->
 <section class="hero">
@@ -270,6 +305,11 @@
                 <div class="icon">⚙️</div>
                 <h3>UI Config Flow</h3>
                 <p>Set up entirely from the Home Assistant interface. No YAML editing required.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Seamless Updates</h3>
+                <p>Automated releases via GitHub Actions. Config migration preserves your settings across versions. Update with one click in HACS.</p>
             </div>
         </div>
     </div>
