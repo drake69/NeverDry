@@ -5,6 +5,9 @@
 [![Tests](https://github.com/drake69/NeverDry/actions/workflows/tests.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/drake69/NeverDry/graph/badge.svg)](https://codecov.io/gh/drake69/NeverDry)
 [![HACS Validation](https://github.com/drake69/NeverDry/actions/workflows/hacs.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/hacs.yml)
+[![Release](https://github.com/drake69/NeverDry/actions/workflows/release.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/release.yml)
+[![Security](https://github.com/drake69/NeverDry/actions/workflows/security.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/security.yml)
+[![Lint](https://github.com/drake69/NeverDry/actions/workflows/lint.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/lint.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
@@ -30,6 +33,7 @@ NeverDry tracks a real-time **soil water deficit** for each irrigation zone. Ins
 - **Monitoring mode** — no valves? Get a notification every 6h when irrigation is needed
 - **Emergency stop** — instantly closes all valves
 - **State persistence** — survives HA restarts via RestoreEntity
+- **Seamless updates** — automated releases via GitHub Actions, config entry migration preserves settings across versions
 - **UI config flow** — set up entirely from the HA interface
 - **Zero dependencies** — pure Python, no external libraries
 
@@ -89,6 +93,16 @@ You can also set a **manual Kc override** per zone (0.1–2.0) if you know the e
 1. Copy `custom_components/never_dry/` into your HA `config/custom_components/` directory
 2. Restart Home Assistant
 3. Add the integration from the UI
+
+---
+
+## Updating
+
+**Via HACS**: HACS notifies you when a new version is available. Click **Update** and restart HA.
+
+**Manual**: Download the latest `never_dry.zip` from [Releases](https://github.com/drake69/NeverDry/releases), replace the `custom_components/never_dry/` folder, and restart HA.
+
+Your configuration and sensor history are preserved automatically. If the new version changes the config schema, settings are migrated seamlessly — no need to remove and re-add the integration.
 
 ---
 

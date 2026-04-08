@@ -31,7 +31,7 @@ class TestDeficitAccumulation:
         di_sensor._deficit = 5.0
 
         hass_mock.states.get.side_effect = lambda eid: {
-            "sensor.temperature": make_state(9.0),   # T=T_base → ET=0
+            "sensor.temperature": make_state(9.0),  # T=T_base → ET=0
             "sensor.rain": make_state(3.0),
         }[eid]
 
@@ -70,10 +70,12 @@ class TestDeficitAccumulation:
 
     def test_custom_d_max(self, hass_mock, make_state):
         """Custom D_max should be respected."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_D_MAX,
+            CONF_D_MAX,
+            CONF_RAIN_SENSOR,
+            CONF_TEMP_SENSOR,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",
@@ -132,11 +134,14 @@ class TestVWCMode:
 
     def test_vwc_below_field_capacity(self, hass_mock, make_state):
         """Deficit = (FC - VWC) * root_depth * 1000."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_VWC_SENSOR,
-            CONF_FIELD_CAPACITY, CONF_ROOT_DEPTH,
+            CONF_FIELD_CAPACITY,
+            CONF_RAIN_SENSOR,
+            CONF_ROOT_DEPTH,
+            CONF_TEMP_SENSOR,
+            CONF_VWC_SENSOR,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",
@@ -156,10 +161,12 @@ class TestVWCMode:
 
     def test_vwc_at_field_capacity(self, hass_mock, make_state):
         """Deficit = 0 when VWC == field capacity."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_VWC_SENSOR,
+            CONF_RAIN_SENSOR,
+            CONF_TEMP_SENSOR,
+            CONF_VWC_SENSOR,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",
@@ -175,10 +182,12 @@ class TestVWCMode:
 
     def test_vwc_above_field_capacity(self, hass_mock, make_state):
         """Deficit = 0 when VWC > field capacity (saturated soil)."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_VWC_SENSOR,
+            CONF_RAIN_SENSOR,
+            CONF_TEMP_SENSOR,
+            CONF_VWC_SENSOR,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",
@@ -314,11 +323,13 @@ class TestRainDelta:
 
     def test_daily_total_mode_accumulation(self, hass_mock, make_state):
         """Daily total mode should compute delta from previous reading."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_RAIN_SENSOR_TYPE,
+            CONF_RAIN_SENSOR,
+            CONF_RAIN_SENSOR_TYPE,
+            CONF_TEMP_SENSOR,
             RAIN_TYPE_DAILY_TOTAL,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",
@@ -348,11 +359,13 @@ class TestRainDelta:
 
     def test_daily_total_mode_midnight_reset(self, hass_mock, make_state):
         """Daily total sensor resets at midnight — handle gracefully."""
-        from never_dry.sensor import DrynessIndexSensor
         from never_dry.const import (
-            CONF_TEMP_SENSOR, CONF_RAIN_SENSOR, CONF_RAIN_SENSOR_TYPE,
+            CONF_RAIN_SENSOR,
+            CONF_RAIN_SENSOR_TYPE,
+            CONF_TEMP_SENSOR,
             RAIN_TYPE_DAILY_TOTAL,
         )
+        from never_dry.sensor import DrynessIndexSensor
 
         config = {
             CONF_TEMP_SENSOR: "sensor.temperature",

@@ -1,6 +1,7 @@
 """Constants for the NeverDry integration."""
 
 DOMAIN = "never_dry"
+CONFIG_VERSION = 1
 
 # ── Sensor inputs ─────────────────────────────────────────
 CONF_TEMP_SENSOR = "temperature_sensor"
@@ -9,7 +10,7 @@ CONF_VWC_SENSOR = "vwc_sensor"
 CONF_RAIN_SENSOR_TYPE = "rain_sensor_type"
 
 # Rain sensor types
-RAIN_TYPE_EVENT = "event"          # mm per event (tipping bucket pulse)
+RAIN_TYPE_EVENT = "event"  # mm per event (tipping bucket pulse)
 RAIN_TYPE_DAILY_TOTAL = "daily_total"  # cumulative mm since midnight
 
 # ── ET model parameters ──────────────────────────────────
@@ -52,16 +53,16 @@ SYSTEM_TYPES = {
 # Anchor days: 15 (mid-Jan), 105 (mid-Apr), 196 (mid-Jul), 288 (mid-Oct)
 # Southern hemisphere: day_of_year shifted by 182 days automatically.
 PLANT_FAMILIES = {
-    "lawn":              {"label": "Lawn / Turf grass",       "kc_seasonal": (0.45, 0.85, 1.00, 0.70)},
-    "vegetables":        {"label": "Vegetables (seasonal)",   "kc_seasonal": (0.30, 0.70, 1.10, 0.50)},
-    "fruit_trees":       {"label": "Fruit trees (deciduous)", "kc_seasonal": (0.35, 0.70, 0.95, 0.55)},
-    "ornamental_shrubs": {"label": "Ornamental shrubs",       "kc_seasonal": (0.40, 0.65, 0.80, 0.55)},
-    "herbs":             {"label": "Herbs (Mediterranean)",   "kc_seasonal": (0.30, 0.55, 0.70, 0.40)},
-    "citrus":            {"label": "Citrus / Evergreen fruit","kc_seasonal": (0.60, 0.65, 0.70, 0.65)},
-    "roses":             {"label": "Roses",                   "kc_seasonal": (0.35, 0.75, 0.95, 0.55)},
-    "succulents":        {"label": "Succulents / Cacti",      "kc_seasonal": (0.15, 0.25, 0.35, 0.20)},
-    "native_ground_cover": {"label": "Native ground cover",   "kc_seasonal": (0.25, 0.45, 0.55, 0.35)},
-    "mixed_garden":      {"label": "Mixed garden (default)",  "kc_seasonal": (0.40, 0.70, 0.90, 0.55)},
+    "lawn": {"label": "Lawn / Turf grass", "kc_seasonal": (0.45, 0.85, 1.00, 0.70)},
+    "vegetables": {"label": "Vegetables (seasonal)", "kc_seasonal": (0.30, 0.70, 1.10, 0.50)},
+    "fruit_trees": {"label": "Fruit trees (deciduous)", "kc_seasonal": (0.35, 0.70, 0.95, 0.55)},
+    "ornamental_shrubs": {"label": "Ornamental shrubs", "kc_seasonal": (0.40, 0.65, 0.80, 0.55)},
+    "herbs": {"label": "Herbs (Mediterranean)", "kc_seasonal": (0.30, 0.55, 0.70, 0.40)},
+    "citrus": {"label": "Citrus / Evergreen fruit", "kc_seasonal": (0.60, 0.65, 0.70, 0.65)},
+    "roses": {"label": "Roses", "kc_seasonal": (0.35, 0.75, 0.95, 0.55)},
+    "succulents": {"label": "Succulents / Cacti", "kc_seasonal": (0.15, 0.25, 0.35, 0.20)},
+    "native_ground_cover": {"label": "Native ground cover", "kc_seasonal": (0.25, 0.45, 0.55, 0.35)},
+    "mixed_garden": {"label": "Mixed garden (default)", "kc_seasonal": (0.40, 0.70, 0.90, 0.55)},
 }
 
 KC_ANCHOR_DAYS = (15, 105, 196, 288)
@@ -85,3 +86,8 @@ DEFAULT_ROOT_DEPTH = 0.30
 DEFAULT_INTER_ZONE_DELAY = 30
 DEFAULT_KC = 1.0
 DEFAULT_RAIN_SENSOR_TYPE = RAIN_TYPE_EVENT
+
+# ── Runtime safety limits ────────────────────────────────
+MAX_ZONES = 50
+MAX_ZONE_NAME_LENGTH = 64
+MIN_SERVICE_INTERVAL_S = 10  # minimum seconds between service calls

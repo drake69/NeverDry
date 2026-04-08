@@ -11,10 +11,11 @@
 7. [Setting up automations](#7-setting-up-automations)
 8. [Monitoring mode (no valves)](#8-monitoring-mode-no-valves)
 9. [Editing settings after setup](#9-editing-settings-after-setup)
-10. [Calibration guide](#10-calibration-guide)
-11. [Dashboard examples](#11-dashboard-examples)
-12. [Troubleshooting](#12-troubleshooting)
-13. [FAQ](#13-faq)
+10. [Updating the integration](#10-updating-the-integration)
+11. [Calibration guide](#11-calibration-guide)
+12. [Dashboard examples](#12-dashboard-examples)
+13. [Troubleshooting](#13-troubleshooting)
+14. [FAQ](#14-faq)
 
 ---
 
@@ -368,7 +369,37 @@ The options flow provides two actions:
 
 Changes take effect immediately — no restart required.
 
-## 10. Calibration guide
+## 10. Updating the integration
+
+NeverDry follows semantic versioning (e.g., `0.1.0` → `0.2.0`). Updates are safe — your configuration and sensor history are preserved automatically.
+
+### Via HACS (recommended)
+
+1. Open **HACS** → **Integrations**
+2. If an update is available, NeverDry will show an **"Update available"** badge
+3. Click on NeverDry → **Update**
+4. Restart Home Assistant when prompted
+
+HACS checks for new releases automatically. You will see a notification in the Home Assistant sidebar when an update is available.
+
+### Manual update
+
+1. Download the latest release from [GitHub Releases](https://github.com/drake69/NeverDry/releases)
+2. Extract `never_dry.zip`
+3. Replace the contents of `config/custom_components/never_dry/` with the new files
+4. Restart Home Assistant
+
+### What happens during an update
+
+- **Sensor state is preserved** — deficit values, zone data, and history survive the update thanks to `RestoreEntity`
+- **Configuration is migrated automatically** — if the new version changes the config schema, your settings are upgraded seamlessly (no need to remove and re-add the integration)
+- **Automations continue to work** — service names and entity IDs remain stable across updates
+
+### Version history
+
+Check the [GitHub Releases](https://github.com/drake69/NeverDry/releases) page for detailed release notes, including new features, bug fixes, and any breaking changes.
+
+## 11. Calibration guide
 
 ### Week 1: Start with defaults
 
@@ -412,7 +443,7 @@ The model automatically adapts to seasons through temperature:
 
 No manual seasonal adjustment is needed. If you find the model significantly over- or under-estimates in a specific season, adjust `alpha` by ±0.05 via the options flow.
 
-## 11. Dashboard examples
+## 12. Dashboard examples
 
 ### Simple status card
 
@@ -459,7 +490,7 @@ card:
     Vegetables need {{ state_attr('sensor.irrigation_vegetable_garden', 'volume_liters') }} L.
 ```
 
-## 12. Troubleshooting
+## 13. Troubleshooting
 
 ### Sensors show "unavailable"
 
@@ -503,7 +534,7 @@ card:
 - If state is lost, check that the entity's `unique_id` hasn't changed
 - Check HA logs for restore errors
 
-## 13. FAQ
+## 14. FAQ
 
 **Q: Does it work without a rain sensor?**
 A: Technically yes, but the deficit will only increase (never decrease from rain). You would need to manually call `never_dry.reset` after significant rain. A rain sensor is strongly recommended.

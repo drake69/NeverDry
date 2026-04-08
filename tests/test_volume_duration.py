@@ -1,15 +1,19 @@
 """Tests for IrrigationZoneSensor — per-zone volume and duration calculations."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from never_dry.sensor import IrrigationZoneSensor, DrynessIndexSensor
+import pytest
 from never_dry.const import (
-    CONF_TEMP_SENSOR, CONF_RAIN_SENSOR,
-    CONF_ZONE_NAME, CONF_ZONE_VALVE, CONF_ZONE_AREA,
-    CONF_ZONE_EFFICIENCY, CONF_ZONE_FLOW_RATE, CONF_ZONE_THRESHOLD,
-    CONF_ZONE_PLANT_FAMILY, CONF_ZONE_KC,
+    CONF_ZONE_AREA,
+    CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_KC,
+    CONF_ZONE_NAME,
+    CONF_ZONE_PLANT_FAMILY,
+    CONF_ZONE_THRESHOLD,
+    CONF_ZONE_VALVE,
 )
+from never_dry.sensor import IrrigationZoneSensor
 
 
 def _make_hass_mock():
@@ -20,9 +24,17 @@ def _make_hass_mock():
     return hass
 
 
-def _make_zone(di_sensor, name="Test", area=45.0, efficiency=0.85,
-               flow_rate=10.0, valve="switch.valve", threshold=20.0,
-               plant_family=None, kc=None):
+def _make_zone(
+    di_sensor,
+    name="Test",
+    area=45.0,
+    efficiency=0.85,
+    flow_rate=10.0,
+    valve="switch.valve",
+    threshold=20.0,
+    plant_family=None,
+    kc=None,
+):
     """Helper to create a zone sensor with specific params."""
     zone_config = {
         CONF_ZONE_NAME: name,
@@ -125,8 +137,7 @@ class TestZoneAttributes:
     """Test extra_state_attributes contain all zone info."""
 
     def test_all_keys_present(self, di_sensor):
-        zone = _make_zone(di_sensor, name="Orto", valve="switch.v1",
-                          plant_family="vegetables")
+        zone = _make_zone(di_sensor, name="Orto", valve="switch.v1", plant_family="vegetables")
         zone._zone_deficit = 5.0
         attrs = zone.extra_state_attributes
         assert attrs["zone_name"] == "Orto"

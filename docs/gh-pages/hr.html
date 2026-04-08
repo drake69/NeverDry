@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeverDry — Pametno Navodnjavanje za Home Assistant</title>
+    <style>
+        :root { --accent: #1f6aa5; --accent-light: #d6e8f5; --bg: #f8fafb; --text: #2c3e50; --card-bg: #ffffff; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); background: var(--bg); line-height: 1.6; }
+        .lang-bar { background: rgba(0,0,0,0.15); padding: 8px 20px; text-align: right; }
+        .lang-bar a { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.85em; margin-left: 12px; padding: 2px 8px; border-radius: 4px; transition: background 0.2s; }
+        .lang-bar a:hover { background: rgba(255,255,255,0.15); }
+        .lang-bar a.active { background: rgba(255,255,255,0.25); color: white; font-weight: 600; }
+        .hero { background: linear-gradient(135deg, var(--accent), #2980b9); color: white; padding: 80px 20px 60px; text-align: center; }
+        .hero h1 { font-size: 3em; font-weight: 700; margin-bottom: 0.3em; }
+        .hero .tagline { font-size: 1.3em; opacity: 0.9; max-width: 600px; margin: 0 auto 1.5em; }
+        .hero .badges { margin: 1.5em 0; }
+        .hero .badges img { margin: 0 4px; vertical-align: middle; }
+        .hero .cta { display: inline-block; background: white; color: var(--accent); padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; margin: 0.5em; transition: transform 0.2s; }
+        .hero .cta:hover { transform: translateY(-2px); }
+        .hero .cta.secondary { background: rgba(255,255,255,0.15); color: white; border: 2px solid rgba(255,255,255,0.5); }
+        .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+        .features { padding: 60px 0; }
+        .features h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+        .feature-card { background: var(--card-bg); border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .feature-card h3 { font-size: 1.2em; margin-bottom: 0.5em; color: var(--accent); }
+        .feature-card .icon { font-size: 2em; margin-bottom: 0.3em; }
+        .how-it-works { padding: 60px 0; background: white; }
+        .how-it-works h2 { text-align: center; font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .how-it-works .formula { text-align: center; font-size: 1.2em; background: var(--accent-light); padding: 20px; border-radius: 8px; margin: 1.5em auto; max-width: 700px; font-family: "Georgia", serif; }
+        .how-it-works p { max-width: 700px; margin: 1em auto; text-align: center; }
+        .families { padding: 60px 0; }
+        .families h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .families table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .families th { background: var(--accent); color: white; padding: 12px 16px; text-align: left; }
+        .families td { padding: 10px 16px; border-bottom: 1px solid #eee; }
+        .families tr:nth-child(even) { background: #f9f9f9; }
+        .install { padding: 60px 0; background: white; }
+        .install h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .install-steps { max-width: 600px; margin: 0 auto; }
+        .install-steps ol { padding-left: 1.5em; }
+        .install-steps li { margin-bottom: 0.8em; font-size: 1.05em; }
+        .install-steps code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .support { padding: 60px 0; text-align: center; }
+        .support h2 { font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .support p { max-width: 500px; margin: 0.5em auto 1.5em; }
+        .support .patreon-btn { display: inline-block; background: #FF424D; color: white; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; transition: transform 0.2s; }
+        .support .patreon-btn:hover { transform: translateY(-2px); }
+        footer { background: var(--text); color: rgba(255,255,255,0.7); padding: 30px 20px; text-align: center; font-size: 0.9em; }
+        footer a { color: rgba(255,255,255,0.9); }
+    </style>
+</head>
+<body>
+
+<nav class="lang-bar" style="background: var(--accent);">
+    <a href="index.html">EN</a>
+    <a href="it.html">IT</a>
+    <a href="de.html">DE</a>
+    <a href="at.html">AT</a>
+    <a href="fr.html">FR</a>
+    <a href="es.html">ES</a>
+    <a href="pt.html">PT</a>
+    <a href="hu.html">HU</a>
+    <a href="hr.html" class="active">HR</a>
+</nav>
+
+<section class="hero">
+    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
+    <h1>NeverDry</h1>
+    <p class="tagline">Pametno navodnjavanje za Home Assistant. Znanstveni model vodne bilance koji zna kada i koliko dugo zalijevati va&scaron; vrt.</p>
+    <div class="badges">
+        <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
+        <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
+        <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS">
+    </div>
+    <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repozitorij</a>
+    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Dokumentacija</a>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Mogu&cacute;nosti</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🌡️</div>
+                <h3>Znanstveni ET Model</h3>
+                <p>Pojednostavljena FAO-56 vodna bilanca. Procjenjuje evapotranspiraciju iz temperature s dva podesiva parametra.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌱</div>
+                <h3>10 Biljnih Obitelji</h3>
+                <p>Koeficijent usjeva (Kc) po zoni sa sezonskom varijacijom. Travnjak, povr&cacute;e, sukulenti, vo&cacute;ke i vi&scaron;e. Automatska prilagodba hemisferi.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚿</div>
+                <h3>Izravno Upravljanje Ventilima</h3>
+                <p>Automatski otvara i zatvara ventile. Sekvencijalno navodnjavanje vi&scaron;e zona s hitnim zaustavljanjem.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>Deficit po Zoni</h3>
+                <p>Svaka zona prati vlastiti deficit vode u tlu. Razli&ccaron;ite biljke se su&scaron;e razli&ccaron;itom brzinom — kako i treba.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌧️</div>
+                <h3>Osjetljiv na Ki&scaron;u</h3>
+                <p>Automatski preska&ccaron;e navodnjavanje na ki&scaron;ne dane. Deficit se smanjuje sa svakim ki&scaron;nim događajem.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>Konfiguracija putem Su&ccaron;elja</h3>
+                <p>Potpuna konfiguracija iz Home Assistant su&ccaron;elja. Nije potrebno uređivanje YAML datoteka.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Be&scaron;avna A&zcaron;uriranja</h3>
+                <p>Automatizirana izdanja putem GitHub Actions. Migracija konfiguracije &ccaron;uva va&scaron;e postavke između verzija. A&zcaron;uriranje jednim klikom u HACS-u.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="how-it-works">
+    <div class="container">
+        <h2>Kako Radi</h2>
+        <p>NeverDry prati jednostavnu vodnu bilancu za svaku zonu navodnjavanja:</p>
+        <div class="formula">
+            D<sub>zona</sub>(t) = D<sub>zona</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; ki&scaron;a
+        </div>
+        <p>Kada je deficit visok, tlo je suho i treba vodu. Kada pada ki&scaron;a, deficit se smanjuje. Nakon navodnjavanja, vra&cacute;a se na nulu. <strong>1 mm deficita = 1 litra po kvadratnom metru potrebno.</strong></p>
+    </div>
+</section>
+
+<section class="families">
+    <div class="container">
+        <h2>Biljne Obitelji</h2>
+        <table>
+            <thead>
+                <tr><th>Obitelj</th><th>Zima</th><th>Prolje&cacute;e</th><th>Ljeto</th><th>Jesen</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Travnjak</td><td>0.45</td><td>0.85</td><td>1.00</td><td>0.70</td></tr>
+                <tr><td>Povr&cacute;e (sezonsko)</td><td>0.30</td><td>0.70</td><td>1.10</td><td>0.50</td></tr>
+                <tr><td>Vo&cacute;ke (listopadne)</td><td>0.35</td><td>0.70</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Ukrasno grmlje</td><td>0.40</td><td>0.65</td><td>0.80</td><td>0.55</td></tr>
+                <tr><td>Za&ccaron;insko bilje (mediteransko)</td><td>0.30</td><td>0.55</td><td>0.70</td><td>0.40</td></tr>
+                <tr><td>Agrumi / Zimzelene vo&cacute;ke</td><td>0.60</td><td>0.65</td><td>0.70</td><td>0.65</td></tr>
+                <tr><td>Ru&zcaron;e</td><td>0.35</td><td>0.75</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Sukulenti / Kaktusi</td><td>0.15</td><td>0.25</td><td>0.35</td><td>0.20</td></tr>
+                <tr><td>Autohtoni pokriva&ccaron;i tla</td><td>0.25</td><td>0.45</td><td>0.55</td><td>0.35</td></tr>
+                <tr><td>Mje&scaron;oviti vrt</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="install">
+    <div class="container">
+        <h2>Instalacija</h2>
+        <div class="install-steps">
+            <h3>Putem HACS-a (preporu&ccaron;eno)</h3>
+            <ol>
+                <li>Otvorite HACS &rarr; Integracije &rarr; <strong>Prilagođeni repozitoriji</strong></li>
+                <li>Dodajte <code>https://github.com/drake69/NeverDry</code> kao <strong>Integraciju</strong></li>
+                <li>Potražite <strong>NeverDry</strong> i instalirajte</li>
+                <li>Ponovo pokrenite Home Assistant</li>
+                <li>Postavke &rarr; Uređaji i Usluge &rarr; <strong>Dodaj Integraciju</strong> &rarr; NeverDry</li>
+            </ol>
+            <h3 style="margin-top: 1.5em;">Ru&ccaron;no</h3>
+            <ol>
+                <li>Kopirajte <code>custom_components/never_dry/</code> u HA config direktorij</li>
+                <li>Ponovo pokrenite Home Assistant</li>
+                <li>Dodajte integraciju iz su&ccaron;elja</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<section class="support">
+    <div class="container">
+        <h2>Podr&zcaron;ite Projekt</h2>
+        <p>NeverDry je besplatan i otvorenog koda. Ako spasi va&scaron; vrt (i ra&ccaron;un za vodu), &ccaron;astite me kavom.</p>
+        <a class="patreon-btn" href="https://www.patreon.com/c/69Drake">☕ Podr&scaron;ka na Patreonu — $5</a>
+    </div>
+</section>
+
+<section class="support" style="background: #f0f0f0; padding: 40px 0;">
+    <div class="container" style="text-align: left; max-width: 700px;">
+        <h2 style="text-align: center;">Odricanje od Odgovornosti</h2>
+        <p style="font-size: 0.9em; color: #555;">NeverDry je hobi projekt za ku&cacute;nu uporabu. Nije certificiran za poljoprivredne, komercijalne ili sigurnosno kriti&ccaron;ne primjene. ET model je pojednostavljenje FAO-56 standarda i ne zamjenjuje profesionalni agronomski savjet. Uvijek nadzirite svoj sustav navodnjavanja. Autori ne preuzimaju odgovornost za &scaron;tetu ili gubitke.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">Zahvale</h2>
+        <p style="font-size: 0.9em; color: #555;">Razvijeno uz pomo&cacute; <a href="https://claude.ai">Claudea</a> od <a href="https://anthropic.com">Anthropica</a>.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">Znanstvene Reference</h2>
+        <ul style="font-size: 0.85em; color: #555; line-height: 1.8;">
+            <li>Allen, R.G. et al. (1998). <em>Crop evapotranspiration.</em> <a href="https://www.fao.org/4/x0490e/x0490e00.htm">FAO Irrigation and Drainage Paper 56</a>.</li>
+            <li>Hargreaves, G.H. &amp; Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. <em>Applied Eng. in Agriculture.</em> <a href="https://doi.org/10.13031/2013.26773">DOI: 10.13031/2013.26773</a></li>
+            <li>Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. <em>Proc. R. Soc. London A.</em> <a href="https://doi.org/10.1098/rspa.1948.0037">DOI: 10.1098/rspa.1948.0037</a></li>
+            <li>Monteith, J.L. (1965). Evaporation and environment. <em>Symp. Soc. Exp. Biol.</em> <a href="https://repository.rothamsted.ac.uk/item/8v5v7/evaporation-and-environment">Rothamsted Repository</a></li>
+            <li>Fereres, E. &amp; Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. <em>J. Exp. Bot.</em> <a href="https://doi.org/10.1093/jxb/erl165">DOI: 10.1093/jxb/erl165</a></li>
+        </ul>
+    </div>
+</section>
+
+<section style="background: var(--accent-light); padding: 16px 20px; text-align: center; font-size: 0.85em; color: #555;">
+    <div class="container">
+        Ovaj prijevod je izra&dstrok;en automatski. Svaki doprinos za pobolj&scaron;anje je dobrodo&scaron;ao —
+        <a href="https://github.com/drake69/NeverDry/issues" style="color: var(--accent);">otvori issue</a> ili po&scaron;alji pull request.
+    </div>
+</section>
+
+<footer>
+    <p>NeverDry &mdash; MIT Licenca &mdash; Napravljeno s 🌱 od <a href="https://github.com/drake69">drake69</a></p>
+</footer>
+
+</body>
+</html>

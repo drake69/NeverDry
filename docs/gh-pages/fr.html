@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeverDry — Irrigation Intelligente pour Home Assistant</title>
+    <style>
+        :root {
+            --accent: #1f6aa5;
+            --accent-light: #d6e8f5;
+            --bg: #f8fafb;
+            --text: #2c3e50;
+            --card-bg: #ffffff;
+            --green: #27ae60;
+            --orange: #f39c12;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text);
+            background: var(--bg);
+            line-height: 1.6;
+        }
+        .lang-bar { background: rgba(0,0,0,0.15); padding: 8px 20px; text-align: right; }
+        .lang-bar a { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.85em; margin-left: 12px; padding: 2px 8px; border-radius: 4px; transition: background 0.2s; }
+        .lang-bar a:hover { background: rgba(255,255,255,0.15); }
+        .lang-bar a.active { background: rgba(255,255,255,0.25); color: white; font-weight: 600; }
+        .hero { background: linear-gradient(135deg, var(--accent), #2980b9); color: white; padding: 80px 20px 60px; text-align: center; }
+        .hero h1 { font-size: 3em; font-weight: 700; margin-bottom: 0.3em; }
+        .hero .tagline { font-size: 1.3em; opacity: 0.9; max-width: 600px; margin: 0 auto 1.5em; }
+        .hero .badges { margin: 1.5em 0; }
+        .hero .badges img { margin: 0 4px; vertical-align: middle; }
+        .hero .cta { display: inline-block; background: white; color: var(--accent); padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; margin: 0.5em; transition: transform 0.2s; }
+        .hero .cta:hover { transform: translateY(-2px); }
+        .hero .cta.secondary { background: rgba(255,255,255,0.15); color: white; border: 2px solid rgba(255,255,255,0.5); }
+        .container { max-width: 960px; margin: 0 auto; padding: 0 20px; }
+        .features { padding: 60px 0; }
+        .features h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+        .feature-card { background: var(--card-bg); border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .feature-card h3 { font-size: 1.2em; margin-bottom: 0.5em; color: var(--accent); }
+        .feature-card .icon { font-size: 2em; margin-bottom: 0.3em; }
+        .how-it-works { padding: 60px 0; background: white; }
+        .how-it-works h2 { text-align: center; font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .how-it-works .formula { text-align: center; font-size: 1.2em; background: var(--accent-light); padding: 20px; border-radius: 8px; margin: 1.5em auto; max-width: 700px; font-family: "Georgia", serif; }
+        .how-it-works p { max-width: 700px; margin: 1em auto; text-align: center; }
+        .families { padding: 60px 0; }
+        .families h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .families table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .families th { background: var(--accent); color: white; padding: 12px 16px; text-align: left; }
+        .families td { padding: 10px 16px; border-bottom: 1px solid #eee; }
+        .families tr:nth-child(even) { background: #f9f9f9; }
+        .install { padding: 60px 0; background: white; }
+        .install h2 { text-align: center; font-size: 2em; margin-bottom: 1em; color: var(--accent); }
+        .install-steps { max-width: 600px; margin: 0 auto; }
+        .install-steps ol { padding-left: 1.5em; }
+        .install-steps li { margin-bottom: 0.8em; font-size: 1.05em; }
+        .install-steps code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+        .support { padding: 60px 0; text-align: center; }
+        .support h2 { font-size: 2em; margin-bottom: 0.5em; color: var(--accent); }
+        .support p { max-width: 500px; margin: 0.5em auto 1.5em; }
+        .support .patreon-btn { display: inline-block; background: #FF424D; color: white; padding: 14px 36px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; transition: transform 0.2s; }
+        .support .patreon-btn:hover { transform: translateY(-2px); }
+        footer { background: var(--text); color: rgba(255,255,255,0.7); padding: 30px 20px; text-align: center; font-size: 0.9em; }
+        footer a { color: rgba(255,255,255,0.9); }
+    </style>
+</head>
+<body>
+
+<nav class="lang-bar" style="background: var(--accent);">
+    <a href="index.html">EN</a>
+    <a href="it.html">IT</a>
+    <a href="de.html">DE</a>
+    <a href="at.html">AT</a>
+    <a href="fr.html" class="active">FR</a>
+    <a href="es.html">ES</a>
+    <a href="pt.html">PT</a>
+    <a href="hu.html">HU</a>
+    <a href="hr.html">HR</a>
+</nav>
+
+<section class="hero">
+    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
+    <h1>NeverDry</h1>
+    <p class="tagline">Irrigation intelligente pour Home Assistant. Un mod&egrave;le scientifique de bilan hydrique qui sait quand et combien de temps arroser votre jardin.</p>
+    <div class="badges">
+        <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
+        <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
+        <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS">
+    </div>
+    <a class="cta" href="https://github.com/drake69/NeverDry">D&eacute;p&ocirc;t GitHub</a>
+    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Documentation</a>
+</section>
+
+<section class="features">
+    <div class="container">
+        <h2>Fonctionnalit&eacute;s</h2>
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="icon">🌡️</div>
+                <h3>Mod&egrave;le ET Scientifique</h3>
+                <p>Bilan hydrique FAO-56 simplifi&eacute;. Estime l'&eacute;vapotranspiration &agrave; partir de la temp&eacute;rature avec deux param&egrave;tres calibrables.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌱</div>
+                <h3>10 Familles de Plantes</h3>
+                <p>Coefficient cultural (Kc) par zone avec variation saisonni&egrave;re. Gazon, l&eacute;gumes, succulentes, arbres fruitiers et plus. Adaptation automatique &agrave; l'h&eacute;misph&egrave;re.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🚿</div>
+                <h3>Contr&ocirc;le Direct des Vannes</h3>
+                <p>Ouvre et ferme les vannes automatiquement. Irrigation multi-zones s&eacute;quentielle avec arr&ecirc;t d'urgence.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>D&eacute;ficit par Zone</h3>
+                <p>Chaque zone suit son propre d&eacute;ficit hydrique du sol. Diff&eacute;rentes plantes s'ass&egrave;chent &agrave; des rythmes diff&eacute;rents — comme il se doit.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌧️</div>
+                <h3>Sensible &agrave; la Pluie</h3>
+                <p>Saute automatiquement l'irrigation les jours de pluie. Le d&eacute;ficit diminue &agrave; chaque &eacute;v&eacute;nement pluvieux.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>Configuration par Interface</h3>
+                <p>Configuration compl&egrave;te depuis l'interface Home Assistant. Aucune modification YAML n&eacute;cessaire.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Mises &agrave; Jour Transparentes</h3>
+                <p>Releases automatis&eacute;es via GitHub Actions. La migration de configuration pr&eacute;serve vos param&egrave;tres entre les versions. Mise &agrave; jour en un clic dans HACS.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="how-it-works">
+    <div class="container">
+        <h2>Comment &ccedil;a Marche</h2>
+        <p>NeverDry suit un bilan hydrique simple pour chaque zone d'irrigation :</p>
+        <div class="formula">
+            D<sub>zone</sub>(t) = D<sub>zone</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; pluie
+        </div>
+        <p>Quand le d&eacute;ficit est &eacute;lev&eacute;, le sol est sec et a besoin d'eau. Quand il pleut, le d&eacute;ficit diminue. Apr&egrave;s l'irrigation, il se remet &agrave; z&eacute;ro. <strong>1 mm de d&eacute;ficit = 1 litre par m&egrave;tre carr&eacute; n&eacute;cessaire.</strong></p>
+    </div>
+</section>
+
+<section class="families">
+    <div class="container">
+        <h2>Familles de Plantes</h2>
+        <table>
+            <thead>
+                <tr><th>Famille</th><th>Hiver</th><th>Printemps</th><th>&Eacute;t&eacute;</th><th>Automne</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Gazon / Pelouse</td><td>0.45</td><td>0.85</td><td>1.00</td><td>0.70</td></tr>
+                <tr><td>L&eacute;gumes (saisonniers)</td><td>0.30</td><td>0.70</td><td>1.10</td><td>0.50</td></tr>
+                <tr><td>Arbres fruitiers (caducs)</td><td>0.35</td><td>0.70</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Arbustes ornementaux</td><td>0.40</td><td>0.65</td><td>0.80</td><td>0.55</td></tr>
+                <tr><td>Herbes aromatiques (m&eacute;diterran&eacute;ennes)</td><td>0.30</td><td>0.55</td><td>0.70</td><td>0.40</td></tr>
+                <tr><td>Agrumes / Persistants fruitiers</td><td>0.60</td><td>0.65</td><td>0.70</td><td>0.65</td></tr>
+                <tr><td>Rosiers</td><td>0.35</td><td>0.75</td><td>0.95</td><td>0.55</td></tr>
+                <tr><td>Succulentes / Cact&eacute;es</td><td>0.15</td><td>0.25</td><td>0.35</td><td>0.20</td></tr>
+                <tr><td>Couvre-sol indig&egrave;ne</td><td>0.25</td><td>0.45</td><td>0.55</td><td>0.35</td></tr>
+                <tr><td>Jardin mixte</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="install">
+    <div class="container">
+        <h2>Installation</h2>
+        <div class="install-steps">
+            <h3>Via HACS (recommand&eacute;)</h3>
+            <ol>
+                <li>Ouvrir HACS &rarr; Int&eacute;grations &rarr; <strong>D&eacute;p&ocirc;ts personnalis&eacute;s</strong></li>
+                <li>Ajouter <code>https://github.com/drake69/NeverDry</code> comme <strong>Int&eacute;gration</strong></li>
+                <li>Rechercher <strong>NeverDry</strong> et installer</li>
+                <li>Red&eacute;marrer Home Assistant</li>
+                <li>Param&egrave;tres &rarr; Appareils et Services &rarr; <strong>Ajouter une int&eacute;gration</strong> &rarr; NeverDry</li>
+            </ol>
+            <h3 style="margin-top: 1.5em;">Manuel</h3>
+            <ol>
+                <li>Copier <code>custom_components/never_dry/</code> dans le r&eacute;pertoire config de HA</li>
+                <li>Red&eacute;marrer Home Assistant</li>
+                <li>Ajouter l'int&eacute;gration depuis l'interface</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<section class="support">
+    <div class="container">
+        <h2>Soutenir le Projet</h2>
+        <p>NeverDry est gratuit et open source. S'il sauve votre jardin (et votre facture d'eau), offrez-moi un caf&eacute;.</p>
+        <a class="patreon-btn" href="https://www.patreon.com/c/69Drake">☕ Soutenir sur Patreon — 5 $</a>
+    </div>
+</section>
+
+<section class="support" style="background: #f0f0f0; padding: 40px 0;">
+    <div class="container" style="text-align: left; max-width: 700px;">
+        <h2 style="text-align: center;">Avertissement</h2>
+        <p style="font-size: 0.9em; color: #555;">NeverDry est un projet amateur pour usage r&eacute;sidentiel. Il n'est pas certifi&eacute; pour les applications agricoles, commerciales ou critiques. Le mod&egrave;le ET est une simplification de la norme FAO-56 et ne remplace pas un conseil agronomique professionnel. Surveillez toujours votre syst&egrave;me d'irrigation. Les auteurs d&eacute;clinent toute responsabilit&eacute;.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">Remerciements</h2>
+        <p style="font-size: 0.9em; color: #555;">D&eacute;velopp&eacute; avec l'aide de <a href="https://claude.ai">Claude</a> par <a href="https://anthropic.com">Anthropic</a>.</p>
+
+        <h2 style="text-align: center; margin-top: 2em;">R&eacute;f&eacute;rences Scientifiques</h2>
+        <ul style="font-size: 0.85em; color: #555; line-height: 1.8;">
+            <li>Allen, R.G. et al. (1998). <em>Crop evapotranspiration.</em> <a href="https://www.fao.org/4/x0490e/x0490e00.htm">FAO Irrigation and Drainage Paper 56</a>.</li>
+            <li>Hargreaves, G.H. &amp; Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. <em>Applied Eng. in Agriculture.</em> <a href="https://doi.org/10.13031/2013.26773">DOI: 10.13031/2013.26773</a></li>
+            <li>Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. <em>Proc. R. Soc. London A.</em> <a href="https://doi.org/10.1098/rspa.1948.0037">DOI: 10.1098/rspa.1948.0037</a></li>
+            <li>Monteith, J.L. (1965). Evaporation and environment. <em>Symp. Soc. Exp. Biol.</em> <a href="https://repository.rothamsted.ac.uk/item/8v5v7/evaporation-and-environment">Rothamsted Repository</a></li>
+            <li>Fereres, E. &amp; Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. <em>J. Exp. Bot.</em> <a href="https://doi.org/10.1093/jxb/erl165">DOI: 10.1093/jxb/erl165</a></li>
+        </ul>
+    </div>
+</section>
+
+<section style="background: var(--accent-light); padding: 16px 20px; text-align: center; font-size: 0.85em; color: #555;">
+    <div class="container">
+        Cette traduction a &eacute;t&eacute; g&eacute;n&eacute;r&eacute;e automatiquement. Toute contribution pour l'am&eacute;liorer est la bienvenue —
+        <a href="https://github.com/drake69/NeverDry/issues" style="color: var(--accent);">ouvrez une issue</a> ou envoyez une pull request.
+    </div>
+</section>
+
+<footer>
+    <p>NeverDry &mdash; Licence MIT &mdash; Fait avec 🌱 par <a href="https://github.com/drake69">drake69</a></p>
+</footer>
+
+</body>
+</html>

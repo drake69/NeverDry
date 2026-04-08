@@ -1,15 +1,17 @@
 """Tests for IrrigationController — valve control and irrigation cycles."""
 
-import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
-
-from never_dry.controller import IrrigationController
 from never_dry.const import (
-    CONF_ZONE_NAME, CONF_ZONE_VALVE, CONF_ZONE_AREA,
-    CONF_ZONE_EFFICIENCY, CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_AREA,
+    CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_NAME,
+    MIN_SERVICE_INTERVAL_S,
 )
+from never_dry.controller import IrrigationController
 
 
 class TestControllerState:
@@ -57,12 +59,17 @@ class TestIrrigateSingleZone:
     async def test_skips_zone_without_valve(self, hass_mock, di_sensor):
         """Zone without valve should be skipped."""
         from never_dry.sensor import IrrigationZoneSensor
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "NoValve",
-            CONF_ZONE_AREA: 10.0,
-            CONF_ZONE_EFFICIENCY: 0.85,
-            CONF_ZONE_FLOW_RATE: 5.0,
-        }, di_sensor)
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "NoValve",
+                CONF_ZONE_AREA: 10.0,
+                CONF_ZONE_EFFICIENCY: 0.85,
+                CONF_ZONE_FLOW_RATE: 5.0,
+            },
+            di_sensor,
+        )
 
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         ctrl._wait_with_stop_check = AsyncMock()
@@ -82,10 +89,7 @@ class TestIrrigateSingleZone:
         await controller._irrigate_zones(["Orto"])
 
         # No valve calls for zero duration
-        hass_mock_calls = [
-            c for c in controller._hass.services.async_call.call_args_list
-            if "turn_on" in str(c)
-        ]
+        hass_mock_calls = [c for c in controller._hass.services.async_call.call_args_list if "turn_on" in str(c)]
         assert len(hass_mock_calls) == 0
 
     @pytest.mark.asyncio
@@ -93,8 +97,6 @@ class TestIrrigateSingleZone:
         """Zone should be marked as irrigating during the cycle."""
         zone_orto._zone_deficit = 5.0
         irrigating_states = []
-
-        original_wait = controller._wait_with_stop_check
 
         async def capture_state(duration):
             irrigating_states.append(zone_orto.is_irrigating)
@@ -122,11 +124,7 @@ class TestIrrigateAllZones:
         await controller._irrigate_zones(["Orto", "Prato"])
 
         calls = hass_mock.services.async_call.call_args_list
-        turn_on_entities = [
-            c.args[2]["entity_id"]
-            for c in calls
-            if c.args[1] == "turn_on"
-        ]
+        turn_on_entities = [c.args[2]["entity_id"] for c in calls if c.args[1] == "turn_on"]
         assert turn_on_entities == ["switch.valve_orto", "switch.valve_prato"]
 
     @pytest.mark.asyncio
@@ -155,10 +153,7 @@ class TestEmergencyStop:
         call_mock.data = {}
         await controller._handle_stop(call_mock)
 
-        close_calls = [
-            c for c in hass_mock.services.async_call.call_args_list
-            if c.args[1] == "turn_off"
-        ]
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[1] == "turn_off"]
         valve_ids = {c.args[2]["entity_id"] for c in close_calls}
         assert "switch.valve_orto" in valve_ids
         assert "switch.valve_prato" in valve_ids
@@ -185,10 +180,7 @@ class TestEmergencyStop:
         await controller._irrigate_zones(["Orto", "Prato"])
 
         # Only the first zone's valve should have been opened
-        turn_on_calls = [
-            c for c in hass_mock.services.async_call.call_args_list
-            if c.args[1] == "turn_on"
-        ]
+        turn_on_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[1] == "turn_on"]
         assert len(turn_on_calls) == 1
 
         # Zone deficits should NOT be reset (cycle was interrupted)
@@ -200,50 +192,66 @@ class TestSystemType:
     """Test irrigation system type default efficiencies."""
 
     def test_drip_default_efficiency(self, hass_mock, di_sensor):
-        from never_dry.sensor import IrrigationZoneSensor
         from never_dry.const import CONF_ZONE_SYSTEM_TYPE
+        from never_dry.sensor import IrrigationZoneSensor
 
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "Drip",
-            CONF_ZONE_AREA: 10.0,
-            CONF_ZONE_FLOW_RATE: 5.0,
-            CONF_ZONE_SYSTEM_TYPE: "drip",
-        }, di_sensor)
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Drip",
+                CONF_ZONE_AREA: 10.0,
+                CONF_ZONE_FLOW_RATE: 5.0,
+                CONF_ZONE_SYSTEM_TYPE: "drip",
+            },
+            di_sensor,
+        )
         assert zone._efficiency == 0.92
 
     def test_sprinkler_default_efficiency(self, hass_mock, di_sensor):
-        from never_dry.sensor import IrrigationZoneSensor
         from never_dry.const import CONF_ZONE_SYSTEM_TYPE
+        from never_dry.sensor import IrrigationZoneSensor
 
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "Sprinkler",
-            CONF_ZONE_AREA: 50.0,
-            CONF_ZONE_FLOW_RATE: 15.0,
-            CONF_ZONE_SYSTEM_TYPE: "sprinkler",
-        }, di_sensor)
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Sprinkler",
+                CONF_ZONE_AREA: 50.0,
+                CONF_ZONE_FLOW_RATE: 15.0,
+                CONF_ZONE_SYSTEM_TYPE: "sprinkler",
+            },
+            di_sensor,
+        )
         assert zone._efficiency == 0.68
 
     def test_explicit_efficiency_overrides_system_type(self, hass_mock, di_sensor):
-        from never_dry.sensor import IrrigationZoneSensor
         from never_dry.const import CONF_ZONE_SYSTEM_TYPE
+        from never_dry.sensor import IrrigationZoneSensor
 
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "Custom",
-            CONF_ZONE_AREA: 10.0,
-            CONF_ZONE_FLOW_RATE: 5.0,
-            CONF_ZONE_SYSTEM_TYPE: "drip",
-            CONF_ZONE_EFFICIENCY: 0.75,
-        }, di_sensor)
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Custom",
+                CONF_ZONE_AREA: 10.0,
+                CONF_ZONE_FLOW_RATE: 5.0,
+                CONF_ZONE_SYSTEM_TYPE: "drip",
+                CONF_ZONE_EFFICIENCY: 0.75,
+            },
+            di_sensor,
+        )
         assert zone._efficiency == 0.75
 
     def test_no_system_type_uses_global_default(self, hass_mock, di_sensor):
         from never_dry.sensor import IrrigationZoneSensor
 
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "Plain",
-            CONF_ZONE_AREA: 10.0,
-            CONF_ZONE_FLOW_RATE: 5.0,
-        }, di_sensor)
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Plain",
+                CONF_ZONE_AREA: 10.0,
+                CONF_ZONE_FLOW_RATE: 5.0,
+            },
+            di_sensor,
+        )
         assert zone._efficiency == 0.85
 
 
@@ -279,16 +287,18 @@ class TestMonitoringMode:
         """Create controller with zones that have no valves."""
         from never_dry.sensor import IrrigationZoneSensor
 
-        zone = IrrigationZoneSensor(hass_mock, {
-            CONF_ZONE_NAME: "Garden",
-            CONF_ZONE_AREA: 30.0,
-            CONF_ZONE_EFFICIENCY: 0.85,
-            CONF_ZONE_FLOW_RATE: 10.0,
-        }, di_sensor)
-        zone._zone_deficit = zone_deficit
-        ctrl = IrrigationController(
-            hass_mock, di_sensor, [zone], inter_zone_delay=0
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Garden",
+                CONF_ZONE_AREA: 30.0,
+                CONF_ZONE_EFFICIENCY: 0.85,
+                CONF_ZONE_FLOW_RATE: 10.0,
+            },
+            di_sensor,
         )
+        zone._zone_deficit = zone_deficit
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         return ctrl, zone
 
     def test_monitoring_mode_detected(self, hass_mock, di_sensor):
@@ -319,7 +329,7 @@ class TestMonitoringMode:
     @pytest.mark.asyncio
     async def test_notify_when_deficit_above_threshold(self, hass_mock, di_sensor):
         """Should send notification when zone deficit exceeds threshold."""
-        ctrl, zone = self._make_no_valve_controller(hass_mock, di_sensor, zone_deficit=25.0)
+        ctrl, _zone = self._make_no_valve_controller(hass_mock, di_sensor, zone_deficit=25.0)
 
         await ctrl._check_and_notify()
 
@@ -346,3 +356,71 @@ class TestMonitoringMode:
         await ctrl._check_and_notify()
 
         hass_mock.services.async_call.assert_not_called()
+
+
+class TestRateLimiting:
+    """Test service call rate limiting."""
+
+    def test_first_call_not_throttled(self, controller):
+        """First service call should never be throttled."""
+        assert controller._is_throttled("test") is False
+
+    def test_rapid_second_call_is_throttled(self, controller):
+        """A call within MIN_SERVICE_INTERVAL_S should be throttled."""
+        controller._is_throttled("first")
+        assert controller._is_throttled("second") is True
+
+    def test_call_after_interval_not_throttled(self, controller):
+        """A call after the minimum interval should not be throttled."""
+        controller._is_throttled("first")
+        # Simulate time passing beyond the throttle window
+        controller._last_service_call = time.monotonic() - MIN_SERVICE_INTERVAL_S - 1
+        assert controller._is_throttled("second") is False
+
+    @pytest.mark.asyncio
+    async def test_reset_throttled_does_nothing(self, controller, di_sensor):
+        """Throttled reset should not modify deficit."""
+        di_sensor._deficit = 15.0
+        controller._is_throttled("warmup")  # set the timestamp
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_reset(call_mock)
+
+        assert di_sensor._deficit == 15.0  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_irrigate_zone_throttled_does_nothing(self, controller, zone_orto):
+        """Throttled irrigate_zone should not start irrigation."""
+        zone_orto._zone_deficit = 10.0
+        controller._is_throttled("warmup")
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_irrigate_zone(call_mock)
+
+        assert controller.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_irrigate_all_throttled_does_nothing(self, controller):
+        """Throttled irrigate_all should not start irrigation."""
+        controller._is_throttled("warmup")
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_irrigate_all(call_mock)
+
+        assert controller.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_stop_is_never_throttled(self, controller, hass_mock):
+        """Emergency stop should never be throttled."""
+        controller._is_throttled("warmup")  # set timestamp
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_stop(call_mock)
+
+        # Stop should still close valves even when called rapidly
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[1] == "turn_off"]
+        assert len(close_calls) >= 1

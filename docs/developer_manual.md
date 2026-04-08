@@ -10,6 +10,9 @@
 6. [Config flow](#6-config-flow)
 7. [Testing](#7-testing)
 8. [Adding a new ET tier](#8-adding-a-new-et-tier)
+9. [Versioning and releases](#9-versioning-and-releases)
+10. [Config entry migration](#10-config-entry-migration)
+11. [Security CI](#11-security-ci)
 
 ---
 
@@ -290,3 +293,162 @@ To add a new ET calculation method (e.g., Hargreaves-Samani):
 5. Update `config_flow.py` to expose the new sensor fields
 6. Update `strings.json` and `translations/en.json` with UI labels
 7. Add tests in `test_never_dry_sensor.py`
+
+## 9. Versioning and releases
+
+### Version scheme
+
+NeverDry follows **semantic versioning** (SemVer): `MAJOR.MINOR.PATCH`.
+
+| Bump | When |
+|------|------|
+| **PATCH** (0.1.0 → 0.1.1) | Bug fixes, documentation updates |
+| **MINOR** (0.1.0 → 0.2.0) | New features, new config keys, new sensor attributes |
+| **MAJOR** (0.x → 1.0.0) | Breaking changes (removed config keys, changed behavior) |
+
+### Single source of truth
+
+The version lives in **one place**: `manifest.json` → `"version"`.
+
+### Release workflow
+
+Releases are automated via GitHub Actions (`.github/workflows/release.yml`):
+
+1. **Bump the version** using the provided script:
+   ```bash
+   ./scripts/bump_version.sh 0.2.0
+   ```
+   This:
+   - Validates semver format
+   - Checks the working tree is clean
+   - Updates `manifest.json`
+   - Creates a commit (`release: bump version to 0.2.0`)
+   - Creates an annotated git tag `v0.2.0`
+
+2. **Push to trigger the release**:
+   ```bash
+   git push origin main && git push origin v0.2.0
+   ```
+
+3. **GitHub Actions automatically**:
+   - Runs the full test suite
+   - Verifies `manifest.json` version matches the tag
+   - Packages `custom_components/never_dry/` into `never_dry.zip`
+   - Creates a GitHub Release with auto-generated release notes
+
+4. **HACS** detects the new release and notifies users of the available update.
+
+### Pre-release checklist
+
+- [ ] All tests pass (`python3 -m pytest tests/ -v`)
+- [ ] No uncommitted changes
+- [ ] `HACS` validation passes locally or in CI
+- [ ] Changelog / release notes drafted (GitHub auto-generates from PR titles)
+
+## 10. Config entry migration
+
+### Overview
+
+Home Assistant calls `async_migrate_entry()` (in `__init__.py`) automatically when a config entry's stored version is **lower** than `ConfigFlow.VERSION`. This allows safe schema upgrades without requiring users to remove and re-add the integration.
+
+### How it works
+
+1. `CONFIG_VERSION` in `const.py` is the **single source of truth** for the config schema version
+2. `NeverDryConfigFlow.VERSION` references `CONFIG_VERSION`
+3. When HA loads an entry with `entry.version < CONFIG_VERSION`, it calls `async_migrate_entry()`
+
+### Adding a migration
+
+When you change the config entry schema (add, rename, or remove keys):
+
+1. **Increment `CONFIG_VERSION`** in `const.py`:
+   ```python
+   CONFIG_VERSION = 2  # was 1
+   ```
+
+2. **Add a migration block** in `async_migrate_entry()` (`__init__.py`):
+   ```python
+   if entry.version == 1:
+       new_data = {**entry.data}
+       # Example: add a new key with a default value
+       new_data.setdefault("new_key", "default_value")
+       # Example: rename a key
+       # new_data["new_name"] = new_data.pop("old_name", default)
+       hass.config_entries.async_update_entry(
+           entry, data=new_data, version=2
+       )
+   ```
+
+3. **Chain migrations** for users who skip versions:
+   ```python
+   if entry.version == 1:
+       # migrate 1 → 2
+       ...
+   if entry.version == 2:
+       # migrate 2 → 3
+       ...
+   ```
+   Each block advances the version by one, so a user on v1 upgrading to v3 runs both migrations sequentially.
+
+4. **Add tests** for each migration path.
+
+### Important notes
+
+- Migrations must be **idempotent** — running the same migration twice must not corrupt data
+- Always provide **sensible defaults** for new keys so existing installations don't break
+- Never remove data that might be needed by a rollback — instead, deprecate and ignore
+- Log the migration at `_LOGGER.info` level for user visibility
+
+## 11. Security CI
+
+The integration is protected by a three-layer security pipeline (`.github/workflows/security.yml`) that runs on every push and PR to `main`.
+
+### Layer 1: Bandit Static Analysis
+
+[Bandit](https://bandit.readthedocs.io/) is a Python static analysis tool that finds common security issues:
+- Hardcoded passwords and secrets
+- Use of dangerous functions (`eval`, `exec`, `subprocess`, etc.)
+- Insecure cryptographic practices
+- SQL injection patterns
+
+Bandit runs with `--severity-level medium --confidence-level medium` to filter noise. The report is uploaded as a CI artifact.
+
+### Layer 2: Forbidden Pattern Guard
+
+A custom shell-based check that **hard-fails** on patterns that must never appear in integration code:
+
+| Pattern | Risk | Severity |
+|---------|------|----------|
+| `eval()` / `exec()` | Arbitrary code execution | **BLOCK** |
+| `subprocess` / `os.system()` / `os.popen()` | Shell injection | **BLOCK** |
+| `pickle` / `marshal` / `shelve` | Unsafe deserialization | **BLOCK** |
+| `__import__()` | Dynamic code loading | **BLOCK** |
+| `compile()` | Code compilation (review) | WARN |
+| `importlib.import_module()` | Dynamic import (review) | WARN |
+| `open()` | File access (review) | WARN |
+| `requests` / `urllib` | SSRF risk (review) | WARN |
+| `from_string` / `Environment()` | Template injection (review) | WARN |
+
+**BLOCK** patterns fail the CI. **WARN** patterns produce annotations but don't fail.
+
+### Layer 3: CodeQL Analysis
+
+GitHub's [CodeQL](https://codeql.github.com/) runs semantic analysis with `security-and-quality` queries. Results appear in the repository's **Security** → **Code scanning alerts** tab.
+
+### If a check fails
+
+1. **Bandit finding**: Read the finding ID (e.g., `B102`), check if it's a true positive. If safe, add `# nosec B102` with a comment explaining why.
+2. **Forbidden pattern**: This is almost always a true positive. Refactor to avoid the dangerous function. If absolutely necessary, discuss in the PR.
+3. **CodeQL alert**: Review in the GitHub Security tab. Dismiss with a reason if it's a false positive.
+
+### Running locally
+
+```bash
+# Bandit
+pip install bandit
+bandit -r custom_components/never_dry/ --severity-level medium --confidence-level medium
+
+# Forbidden patterns (quick check)
+grep -rn 'eval\|exec\|subprocess\|os\.system\|pickle\|__import__' custom_components/never_dry/ --include='*.py'
+# Should return nothing
+```

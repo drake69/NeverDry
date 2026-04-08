@@ -1,0 +1,152 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bandit:
+    name: Bandit Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit on integration code
+        run: |
+          bandit -r custom_components/never_dry/ \
+            -f json -o bandit-report.json \
+            --severity-level medium \
+            --confidence-level medium \
+            || true
+
+      - name: Display Bandit results
+        run: |
+          bandit -r custom_components/never_dry/ \
+            --severity-level medium \
+            --confidence-level medium
+
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+  forbidden-patterns:
+    name: Forbidden Pattern Guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Check for dangerous function calls
+        run: |
+          echo "=== Checking for forbidden patterns in integration code ==="
+          FAILED=0
+
+          # eval() / exec() — arbitrary code execution
+          if grep -rn 'eval\s*(' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: eval() found — risk of arbitrary code execution"
+            FAILED=1
+          fi
+          if grep -rn 'exec\s*(' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: exec() found — risk of arbitrary code execution"
+            FAILED=1
+          fi
+
+          # compile() with exec/eval mode
+          if grep -rn 'compile\s*(' custom_components/never_dry/ --include='*.py' | grep -v '# safe:'; then
+            echo "::warning::compile() found — verify it is not used for code execution"
+          fi
+
+          # subprocess / os.system / os.popen — shell injection
+          if grep -rn 'subprocess' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: subprocess module found — risk of shell injection"
+            FAILED=1
+          fi
+          if grep -rn 'os\.system\s*(' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: os.system() found — risk of shell injection"
+            FAILED=1
+          fi
+          if grep -rn 'os\.popen\s*(' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: os.popen() found — risk of shell injection"
+            FAILED=1
+          fi
+
+          # pickle / marshal — unsafe deserialization
+          if grep -rn 'import pickle\|import marshal\|import shelve' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: unsafe deserialization module found (pickle/marshal/shelve)"
+            FAILED=1
+          fi
+
+          # __import__ — dynamic import (code injection vector)
+          if grep -rn '__import__\s*(' custom_components/never_dry/ --include='*.py'; then
+            echo "::error::FORBIDDEN: __import__() found — risk of dynamic code loading"
+            FAILED=1
+          fi
+
+          # importlib with user input patterns
+          if grep -rn 'importlib\.import_module' custom_components/never_dry/ --include='*.py'; then
+            echo "::warning::importlib.import_module() found — verify no user input reaches this call"
+          fi
+
+          # open() with write mode outside known safe patterns
+          if grep -rn "open\s*(" custom_components/never_dry/ --include='*.py' | grep -v '# safe:' | grep -v 'test'; then
+            echo "::warning::open() found — verify file paths are not user-controlled"
+          fi
+
+          # requests / urllib with user-controlled URLs
+          if grep -rn 'import requests\|import urllib' custom_components/never_dry/ --include='*.py'; then
+            echo "::warning::HTTP library found — verify URLs are not user-controlled (SSRF risk)"
+          fi
+
+          # Template injection — Jinja2 from_string
+          if grep -rn 'from_string\|Environment(' custom_components/never_dry/ --include='*.py'; then
+            echo "::warning::Jinja2 template construction found — verify no user input in templates"
+          fi
+
+          # SQL patterns (unlikely in HA but guard anyway)
+          if grep -rn 'execute\s*(' custom_components/never_dry/ --include='*.py' | grep -i 'sql\|cursor\|query'; then
+            echo "::error::FORBIDDEN: SQL execution pattern found — risk of SQL injection"
+            FAILED=1
+          fi
+
+          if [ $FAILED -eq 0 ]; then
+            echo ""
+            echo "All checks passed — no forbidden patterns found."
+          else
+            echo ""
+            echo "FAILED — forbidden patterns detected. See errors above."
+            exit 1
+          fi
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@a65a038433a26f4363cf9f029e3b9ceac831ad5d # v3.28.10
+        with:
+          languages: python
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@a65a038433a26f4363cf9f029e3b9ceac831ad5d # v3.28.10
+        with:
+          category: "/language:python"

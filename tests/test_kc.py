@@ -1,15 +1,18 @@
 """Tests for crop coefficient (Kc) computation and per-zone deficit tracking."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from never_dry.sensor import compute_kc, IrrigationZoneSensor
+import pytest
 from never_dry.const import (
-    CONF_ZONE_NAME, CONF_ZONE_VALVE, CONF_ZONE_AREA,
-    CONF_ZONE_EFFICIENCY, CONF_ZONE_FLOW_RATE,
-    CONF_ZONE_PLANT_FAMILY, CONF_ZONE_KC,
+    CONF_ZONE_AREA,
+    CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_KC,
+    CONF_ZONE_NAME,
+    CONF_ZONE_PLANT_FAMILY,
+    CONF_ZONE_VALVE,
 )
-
+from never_dry.sensor import IrrigationZoneSensor, compute_kc
 
 # ══════════════════════════════════════════════════════════
 #  compute_kc pure function
