@@ -222,20 +222,13 @@ NeverDry is based on established agronomic science. The key references are:
 
 ### Evapotranspiration Methods
 
-- **Hargreaves, G.H., Samani, Z.A.** (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99.
-- **Hargreaves, G.H., Allen, R.G.** (2003). History and evaluation of Hargreaves evapotranspiration equation. *J. Irrig. Drain. Eng.*, 129(1), 53–63.
-- **Penman, H.L.** (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193(1032), 120–145.
-- **Monteith, J.L.** (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234.
-
-### Crop Water Requirements
-
-- **Doorenbos, J., Pruitt, W.O.** (1977). *Guidelines for predicting crop water requirements.* FAO Irrigation and Drainage Paper 24. Rome: FAO.
-- **Steduto, P., Hsiao, T.C., Fereres, E., Raes, D.** (2012). *Crop yield response to water.* FAO Irrigation and Drainage Paper 66. Rome: FAO.
+- **Hargreaves, G.H., Samani, Z.A.** (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99. DOI: [10.13031/2013.26773](https://doi.org/10.13031/2013.26773) — [PDF](https://academic.uprm.edu/hdc/TMAG4035_ETo/hargreaves%20samani%201985.pdf)
+- **Penman, H.L.** (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193(1032), 120–145. DOI: [10.1098/rspa.1948.0037](https://doi.org/10.1098/rspa.1948.0037)
+- **Monteith, J.L.** (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234. — [Rothamsted Repository](https://repository.rothamsted.ac.uk/item/8v5v7/evaporation-and-environment) | [PubMed](https://pubmed.ncbi.nlm.nih.gov/5321565/)
 
 ### Deficit Irrigation
 
-- **Fereres, E., Soriano, M.A.** (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159.
-- **Pereira, L.S., Oweis, T., Zairi, A.** (2002). Irrigation management under water scarcity. *Agricultural Water Management*, 57(3), 175–206.
+- **Fereres, E., Soriano, M.A.** (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159. DOI: [10.1093/jxb/erl165](https://doi.org/10.1093/jxb/erl165)
 
 ---
 

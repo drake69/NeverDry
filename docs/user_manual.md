@@ -523,7 +523,7 @@ This project was developed with the assistance of [Claude](https://claude.ai) by
 ## Scientific References
 
 - Allen, R.G., Pereira, L.S., Raes, D., Smith, M. (1998). *Crop evapotranspiration.* [FAO Irrigation and Drainage Paper 56](https://www.fao.org/4/x0490e/x0490e00.htm).
-- Hargreaves, G.H., Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99.
-- Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193, 120–145.
-- Monteith, J.L. (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234.
-- Fereres, E., Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159.
+- Hargreaves, G.H., Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. *Applied Engineering in Agriculture*, 1(2), 96–99. [DOI: 10.13031/2013.26773](https://doi.org/10.13031/2013.26773)
+- Penman, H.L. (1948). Natural evaporation from open water, bare soil and grass. *Proc. R. Soc. London A*, 193, 120–145. [DOI: 10.1098/rspa.1948.0037](https://doi.org/10.1098/rspa.1948.0037)
+- Monteith, J.L. (1965). Evaporation and environment. *Symp. Soc. Exp. Biol.*, 19, 205–234. [Rothamsted Repository](https://repository.rothamsted.ac.uk/item/8v5v7/evaporation-and-environment)
+- Fereres, E., Soriano, M.A. (2007). Deficit irrigation for reducing agricultural water use. *J. Exp. Bot.*, 58(2), 147–159. [DOI: 10.1093/jxb/erl165](https://doi.org/10.1093/jxb/erl165)
