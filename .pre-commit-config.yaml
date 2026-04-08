@@ -1,0 +1,14 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.3
+    hooks:
+      - id: bandit
+        args: [-r, custom_components/never_dry/, --severity-level, medium, --confidence-level, medium]
+        pass_filenames: false

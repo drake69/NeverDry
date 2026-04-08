@@ -10,9 +10,10 @@ Provides:
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -25,19 +26,17 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType
 
-from .controller import IrrigationController
 from .const import (
     CONF_ALPHA,
-    CONF_INTER_ZONE_DELAY,
     CONF_D_MAX,
     CONF_FIELD_CAPACITY,
+    CONF_INTER_ZONE_DELAY,
     CONF_RAIN_SENSOR,
     CONF_RAIN_SENSOR_TYPE,
     CONF_ROOT_DEPTH,
     CONF_T_BASE,
     CONF_TEMP_SENSOR,
     CONF_VWC_SENSOR,
-    CONF_ZONES,
     CONF_ZONE_AREA,
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_RATE,
@@ -47,6 +46,7 @@ from .const import (
     CONF_ZONE_SYSTEM_TYPE,
     CONF_ZONE_THRESHOLD,
     CONF_ZONE_VALVE,
+    CONF_ZONES,
     DEFAULT_ALPHA,
     DEFAULT_D_MAX,
     DEFAULT_EFFICIENCY,
@@ -57,13 +57,12 @@ from .const import (
     DEFAULT_ROOT_DEPTH,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
-    DOMAIN,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
-    RAIN_TYPE_DAILY_TOTAL,
     RAIN_TYPE_EVENT,
     SYSTEM_TYPES,
 )
+from .controller import IrrigationController
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,9 +155,7 @@ def _setup_controller(
 ) -> IrrigationController:
     """Create the irrigation controller and register all services."""
     inter_zone_delay = config.get(CONF_INTER_ZONE_DELAY, DEFAULT_INTER_ZONE_DELAY)
-    controller = IrrigationController(
-        hass, di_sensor, zone_sensors, inter_zone_delay
-    )
+    controller = IrrigationController(hass, di_sensor, zone_sensors, inter_zone_delay)
     controller.register_services()
     return controller
 
@@ -213,9 +210,7 @@ class ETSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register state change listener on temperature sensor."""
-        async_track_state_change_event(
-            self._hass, [self._temp_sensor], self._on_temp_change
-        )
+        async_track_state_change_event(self._hass, [self._temp_sensor], self._on_temp_change)
 
     @callback
     def _on_temp_change(self, event) -> None:
@@ -265,9 +260,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._vwc_sensor = config.get(CONF_VWC_SENSOR)
         self._field_cap = config.get(CONF_FIELD_CAPACITY, DEFAULT_FIELD_CAPACITY)
         self._root_depth = config.get(CONF_ROOT_DEPTH, DEFAULT_ROOT_DEPTH)
-        self._rain_type = config.get(
-            CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE
-        )
+        self._rain_type = config.get(CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE)
         self._deficit = 0.0
         self._last_rain = 0.0  # tracks last rain reading for delta computation
         self._last_update = datetime.now()
@@ -286,18 +279,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         """Restore previous state and register listeners."""
         last = await self.async_get_last_state()
         if last and last.state not in ("unknown", "unavailable"):
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 self._deficit = float(last.state)
-            except (ValueError, TypeError):
-                pass
 
         tracked = [self._temp_sensor, self._rain_sensor]
         if self._vwc_sensor:
             tracked.append(self._vwc_sensor)
 
-        async_track_state_change_event(
-            self._hass, tracked, self._on_sensor_change
-        )
+        async_track_state_change_event(self._hass, tracked, self._on_sensor_change)
 
     @callback
     def _on_sensor_change(self, event) -> None:
@@ -323,18 +312,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
 
             # Update reference deficit
             et_dt = et_h * dt_h
-            self._deficit = max(
-                0.0, min(self._deficit + et_dt - rain_delta, self._d_max)
-            )
+            self._deficit = max(0.0, min(self._deficit + et_dt - rain_delta, self._d_max))
 
             # Broadcast delta to zone listeners
             self._broadcast_to_zones(dt_h, et_h, rain_delta)
 
         self.async_write_ha_state()
 
-    def _broadcast_to_zones(
-        self, dt_h: float, et_h: float, rain: float
-    ) -> None:
+    def _broadcast_to_zones(self, dt_h: float, et_h: float, rain: float) -> None:
         """Notify all registered zone sensors with ET/rain data."""
         for listener in self._zone_listeners:
             listener(dt_h, et_h, rain)
@@ -346,9 +331,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             return
         try:
             vwc = float(vwc_state.state)
-            self._deficit = max(
-                0.0, (self._field_cap - vwc) * self._root_depth * 1000
-            )
+            self._deficit = max(0.0, (self._field_cap - vwc) * self._root_depth * 1000)
         except (ValueError, TypeError):
             pass
 
@@ -393,9 +376,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
 
         rain_delta = self._compute_rain_delta()
         et_dt = max(0.0, self._alpha * (t - self._t_base) / 24) * dt_h
-        self._deficit = max(
-            0.0, min(self._deficit + et_dt - rain_delta, self._d_max)
-        )
+        self._deficit = max(0.0, min(self._deficit + et_dt - rain_delta, self._d_max))
 
     def reset(self) -> None:
         """Reset deficit to zero (called after irrigation)."""
@@ -469,12 +450,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         """Restore zone deficit from previous state."""
         last = await self.async_get_last_state()
         if last and last.attributes:
-            try:
-                self._zone_deficit = float(
-                    last.attributes.get("deficit_mm", 0.0)
-                )
-            except (ValueError, TypeError):
-                pass
+            with contextlib.suppress(ValueError, TypeError):
+                self._zone_deficit = float(last.attributes.get("deficit_mm", 0.0))
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
@@ -486,8 +463,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     def _get_current_kc(self) -> float:
         """Compute the current Kc for this zone."""
         doy = datetime.now().timetuple().tm_yday
-        return compute_kc(doy, self._plant_family, self._manual_kc,
-                          self._get_latitude())
+        return compute_kc(doy, self._plant_family, self._manual_kc, self._get_latitude())
 
     def _on_et_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update zone-specific deficit when base sensor broadcasts."""

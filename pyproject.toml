@@ -1,0 +1,23 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "S",      # flake8-bandit
+    "UP",     # pyupgrade
+    "SIM",    # flake8-simplify
+    "RUF",    # ruff-specific rules
+]
+ignore = [
+    "S101",   # assert used (OK in tests)
+    "S311",   # random not for crypto (OK for non-security use)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S106"]
