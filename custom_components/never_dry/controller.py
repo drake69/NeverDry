@@ -1,11 +1,10 @@
 """Irrigation controller for the NeverDry integration.
 
 Manages valve on/off cycles directly. Given a zone (or all zones),
-the controller:
-  1. Opens the valve
-  2. Waits for the calculated duration (based on deficit, area, flow rate)
-  3. Closes the valve
-  4. Resets the deficit
+the controller delivers water using one of three delivery modes:
+  - estimated_flow: open valve → wait timer-based duration → close valve
+  - flow_meter: open valve → monitor flow sensor → close at target volume
+  - volume_preset: send volume to smart valve → wait for self-close
 
 Zones are irrigated sequentially to avoid pressure drops.
 An emergency stop service closes all valves immediately.
@@ -24,7 +23,11 @@ from .const import (
     ATTR_ZONE_NAME,
     DEFAULT_INTER_ZONE_DELAY,
     DEFAULT_THRESHOLD,
+    DELIVERY_MODE_ESTIMATED_FLOW,
+    DELIVERY_MODE_FLOW_METER,
+    DELIVERY_MODE_VOLUME_PRESET,
     DOMAIN,
+    FLOW_METER_POLL_INTERVAL_S,
     MIN_SERVICE_INTERVAL_S,
     SERVICE_IRRIGATE_ALL,
     SERVICE_IRRIGATE_ZONE,
@@ -213,49 +216,35 @@ class IrrigationController:
                     break
 
                 zone = self._zones[zone_name]
-                duration = zone.duration_s
-                valve = zone.valve
 
-                if not valve:
+                if not zone.valve:
                     _LOGGER.warning("Zone '%s' has no valve configured, skipping", zone_name)
                     continue
 
-                if duration <= 0:
+                if zone.volume_liters <= 0:
                     _LOGGER.info(
-                        "Zone '%s' needs 0s irrigation (deficit=%.1fmm), skipping",
+                        "Zone '%s' needs 0L irrigation (deficit=%.1fmm), skipping",
                         zone_name,
                         zone._zone_deficit,
                     )
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', valve='%s', duration=%ds, volume=%.1fL, deficit=%.1fmm",
+                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm",
                     zone_name,
-                    valve,
-                    duration,
+                    zone.delivery_mode,
                     zone.volume_liters,
                     zone._zone_deficit,
                 )
 
-                # Open valve
-                await self._open_valve(valve)
-                zone.set_irrigating(True)
-                zone.async_write_ha_state()
-
-                # Wait for calculated duration
-                await self._wait_with_stop_check(duration)
-
-                # Close valve
-                await self._close_valve(valve)
-                zone.set_irrigating(False)
-                zone.async_write_ha_state()
+                success = await self._deliver_water(zone)
 
                 if self._stop_requested:
                     break
 
-                irrigated_zones.append(zone_name)
-
-                _LOGGER.info("Completed irrigation: zone='%s'", zone_name)
+                if success:
+                    irrigated_zones.append(zone_name)
+                    _LOGGER.info("Completed irrigation: zone='%s'", zone_name)
 
                 # Inter-zone delay (pressure stabilization)
                 if i < len(zone_names) - 1 and not self._stop_requested:
@@ -286,6 +275,162 @@ class IrrigationController:
         finally:
             self._running = False
             self._active_valve = None
+
+    # ── Delivery mode dispatch ────────────────────────────
+
+    async def _deliver_water(self, zone) -> bool:
+        """Deliver water to a zone using its configured delivery mode.
+
+        Returns True if delivery completed successfully.
+        """
+        mode = zone.delivery_mode
+        if mode == DELIVERY_MODE_ESTIMATED_FLOW:
+            return await self._deliver_estimated_flow(zone)
+        if mode == DELIVERY_MODE_FLOW_METER:
+            return await self._deliver_flow_meter(zone)
+        if mode == DELIVERY_MODE_VOLUME_PRESET:
+            return await self._deliver_volume_preset(zone)
+        _LOGGER.error("Unknown delivery mode '%s' for zone '%s'", mode, zone.zone_name)
+        return False
+
+    async def _deliver_estimated_flow(self, zone) -> bool:
+        """Open valve, wait calculated duration, close valve."""
+        duration = zone.duration_s
+        if duration <= 0:
+            return False
+
+        await self._open_valve(zone.valve)
+        zone.set_irrigating(True)
+        zone.async_write_ha_state()
+
+        await self._wait_with_stop_check(duration)
+
+        await self._close_valve(zone.valve)
+        zone.set_irrigating(False)
+        zone.async_write_ha_state()
+        return not self._stop_requested
+
+    async def _deliver_volume_preset(self, zone) -> bool:
+        """Send volume target to smart valve, wait for it to close itself."""
+        volume = zone.volume_liters
+        if volume <= 0:
+            return False
+
+        volume_entity = zone.volume_entity
+        if not volume_entity:
+            _LOGGER.error("Zone '%s' has no volume_entity configured", zone.zone_name)
+            return False
+
+        # Send volume target to the number entity
+        await self._hass.services.async_call(
+            "number", "set_value",
+            {"entity_id": volume_entity, "value": round(volume, 1)},
+        )
+        zone.set_irrigating(True)
+        zone.async_write_ha_state()
+
+        # Wait for the smart valve to finish (monitor switch state)
+        timeout = zone.delivery_timeout
+        elapsed = 0
+        while elapsed < timeout:
+            if self._stop_requested:
+                await self._close_valve(zone.valve)
+                zone.set_irrigating(False)
+                zone.async_write_ha_state()
+                return False
+            await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
+            elapsed += FLOW_METER_POLL_INTERVAL_S
+
+            # Check if the valve switch has turned off (valve closed itself)
+            valve_state = self._hass.states.get(zone.valve)
+            if valve_state and valve_state.state == "off":
+                break
+        else:
+            _LOGGER.warning(
+                "Zone '%s' volume_preset timeout (%ds). Forcing valve close.",
+                zone.zone_name, timeout,
+            )
+            await self._close_valve(zone.valve)
+
+        zone.set_irrigating(False)
+        zone.async_write_ha_state()
+        return True
+
+    async def _deliver_flow_meter(self, zone) -> bool:
+        """Open valve, monitor flow sensor, close when target volume reached."""
+        volume_target = zone.volume_liters
+        if volume_target <= 0:
+            return False
+
+        meter_entity = zone.flow_meter_sensor
+        if not meter_entity:
+            _LOGGER.error("Zone '%s' has no flow_meter_sensor configured", zone.zone_name)
+            return False
+
+        # Read initial meter value
+        initial_reading = self._read_flow_meter(meter_entity)
+        if initial_reading is None:
+            _LOGGER.error(
+                "Flow meter '%s' unavailable for zone '%s', skipping",
+                meter_entity, zone.zone_name,
+            )
+            return False
+
+        await self._open_valve(zone.valve)
+        zone.set_irrigating(True)
+        zone.async_write_ha_state()
+
+        timeout = zone.delivery_timeout
+        elapsed = 0
+        while elapsed < timeout:
+            if self._stop_requested:
+                await self._close_valve(zone.valve)
+                zone.set_irrigating(False)
+                zone.async_write_ha_state()
+                return False
+
+            await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
+            elapsed += FLOW_METER_POLL_INTERVAL_S
+
+            current_reading = self._read_flow_meter(meter_entity)
+            if current_reading is None:
+                _LOGGER.warning(
+                    "Flow meter '%s' became unavailable during irrigation of zone '%s'",
+                    meter_entity, zone.zone_name,
+                )
+                continue
+
+            delivered = current_reading - initial_reading
+            if delivered < 0:
+                # Meter reset during irrigation — use current reading as new baseline
+                _LOGGER.warning("Flow meter reset detected, adjusting baseline")
+                initial_reading = 0.0
+                delivered = current_reading
+
+            if delivered >= volume_target:
+                break
+        else:
+            _LOGGER.warning(
+                "Zone '%s' flow_meter timeout (%ds). Closing valve.",
+                zone.zone_name, timeout,
+            )
+
+        await self._close_valve(zone.valve)
+        zone.set_irrigating(False)
+        zone.async_write_ha_state()
+        return not self._stop_requested
+
+    def _read_flow_meter(self, entity_id: str) -> float | None:
+        """Read the current value of a flow meter sensor."""
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            return float(state.state)
+        except (ValueError, TypeError):
+            return None
+
+    # ── Valve helpers ─────────────────────────────────────
 
     async def _wait_with_stop_check(self, duration_s: int) -> None:
         """Wait for duration, checking for stop requests every second."""

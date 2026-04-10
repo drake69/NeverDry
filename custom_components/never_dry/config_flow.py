@@ -25,7 +25,10 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VWC_SENSOR,
     CONF_ZONE_AREA,
+    CONF_ZONE_DELIVERY_MODE,
+    CONF_ZONE_DELIVERY_TIMEOUT,
     CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
     CONF_ZONE_KC,
     CONF_ZONE_NAME,
@@ -33,13 +36,19 @@ from .const import (
     CONF_ZONE_SYSTEM_TYPE,
     CONF_ZONE_THRESHOLD,
     CONF_ZONE_VALVE,
+    CONF_ZONE_VOLUME_ENTITY,
     CONF_ZONES,
     CONFIG_VERSION,
     DEFAULT_ALPHA,
     DEFAULT_D_MAX,
+    DEFAULT_DELIVERY_MODE,
+    DEFAULT_DELIVERY_TIMEOUT_S,
     DEFAULT_RAIN_SENSOR_TYPE,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
+    DELIVERY_MODE_ESTIMATED_FLOW,
+    DELIVERY_MODE_FLOW_METER,
+    DELIVERY_MODE_VOLUME_PRESET,
     DOMAIN,
     MAX_ZONE_NAME_LENGTH,
     MAX_ZONES,
@@ -110,6 +119,25 @@ STEP_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_ZONE_NAME): selector.TextSelector(),
         vol.Optional(CONF_ZONE_VALVE): selector.EntitySelector(selector.EntitySelectorConfig(domain="switch")),
+        vol.Optional(CONF_ZONE_DELIVERY_MODE, default=DEFAULT_DELIVERY_MODE): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value=DELIVERY_MODE_ESTIMATED_FLOW,
+                        label="Simple on/off — timer-based (default)",
+                    ),
+                    selector.SelectOptionDict(
+                        value=DELIVERY_MODE_FLOW_METER,
+                        label="Valve with flow meter sensor",
+                    ),
+                    selector.SelectOptionDict(
+                        value=DELIVERY_MODE_VOLUME_PRESET,
+                        label="Smart valve with volume dosing",
+                    ),
+                ],
+                mode="dropdown",
+            )
+        ),
         vol.Required(CONF_ZONE_AREA): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
@@ -154,13 +182,28 @@ STEP_ZONE_SCHEMA = vol.Schema(
                 mode="box",
             )
         ),
-        vol.Required(CONF_ZONE_FLOW_RATE): selector.NumberSelector(
+        vol.Optional(CONF_ZONE_FLOW_RATE): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=0.1,
                 max=200.0,
                 step=0.1,
                 mode="box",
                 unit_of_measurement="L/min",
+            )
+        ),
+        vol.Optional(CONF_ZONE_FLOW_METER_SENSOR): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor")
+        ),
+        vol.Optional(CONF_ZONE_VOLUME_ENTITY): selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="number")
+        ),
+        vol.Optional(CONF_ZONE_DELIVERY_TIMEOUT, default=DEFAULT_DELIVERY_TIMEOUT_S): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=60,
+                max=7200,
+                step=60,
+                mode="box",
+                unit_of_measurement="s",
             )
         ),
         vol.Optional(CONF_ZONE_THRESHOLD, default=DEFAULT_THRESHOLD): selector.NumberSelector(
@@ -202,10 +245,17 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             name = user_input.get(CONF_ZONE_NAME, "")
+            mode = user_input.get(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE)
             if len(name) > MAX_ZONE_NAME_LENGTH:
                 errors[CONF_ZONE_NAME] = "zone_name_too_long"
             elif len(self._zones) >= MAX_ZONES:
                 errors["base"] = "too_many_zones"
+            elif mode == DELIVERY_MODE_ESTIMATED_FLOW and not user_input.get(CONF_ZONE_FLOW_RATE):
+                errors[CONF_ZONE_FLOW_RATE] = "flow_rate_required"
+            elif mode == DELIVERY_MODE_FLOW_METER and not user_input.get(CONF_ZONE_FLOW_METER_SENSOR):
+                errors[CONF_ZONE_FLOW_METER_SENSOR] = "flow_meter_required"
+            elif mode == DELIVERY_MODE_VOLUME_PRESET and not user_input.get(CONF_ZONE_VOLUME_ENTITY):
+                errors[CONF_ZONE_VOLUME_ENTITY] = "volume_entity_required"
             else:
                 self._zones.append(user_input)
                 return await self.async_step_add_another()

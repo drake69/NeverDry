@@ -46,11 +46,11 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         return False
 
-    # --- Future migrations go here ---
-    # if entry.version == 1:
-    #     new_data = {**entry.data}
-    #     # ... transform data ...
-    #     hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+    if entry.version == 1:
+        new_data = {**entry.data}
+        for zone in new_data.get("zones", []):
+            zone.setdefault("delivery_mode", "estimated_flow")
+        hass.config_entries.async_update_entry(entry, data=new_data, version=2)
 
     _LOGGER.info(
         "Migration of NeverDry config entry to version %s successful",

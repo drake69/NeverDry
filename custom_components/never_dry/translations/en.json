@@ -29,23 +29,31 @@
         "data": {
           "name": "Zone name",
           "valve": "Valve switch (optional)",
+          "delivery_mode": "Water delivery mode",
           "area_m2": "Irrigated area",
           "system_type": "Irrigation system type",
           "efficiency": "Custom efficiency (overrides system type default)",
           "plant_family": "Plant family",
           "kc": "Custom crop coefficient Kc (overrides plant family)",
-          "flow_rate_lpm": "Valve flow rate",
+          "flow_rate_lpm": "Valve flow rate (estimated_flow only)",
+          "flow_meter_sensor": "Flow meter sensor (flow_meter only)",
+          "volume_entity": "Volume target entity (volume_preset only)",
+          "delivery_timeout": "Safety timeout",
           "threshold": "Threshold for Mode A"
         },
         "data_description": {
           "name": "Display name for this zone (e.g., Vegetable Garden, Lawn)",
           "valve": "The switch entity that controls this zone's irrigation valve. Leave empty for monitoring mode (no valve)",
+          "delivery_mode": "How your valve delivers water. Estimated flow: simple on/off valve, duration calculated from flow rate. Flow meter: valve with a flow sensor, closes at target volume. Volume preset: smart valve that accepts a volume target and closes itself.",
           "area_m2": "Surface area of this irrigation zone in square meters",
           "system_type": "Type of irrigation system — sets default efficiency",
           "efficiency": "Leave empty to use the system type default. Set to override",
           "plant_family": "Select the type of plants in this zone. Sets a seasonal crop coefficient (Kc) that adjusts water demand throughout the year",
           "kc": "Leave empty to use the plant family seasonal profile. Set to override with a fixed Kc value (0.1–2.0)",
-          "flow_rate_lpm": "Water flow rate of the valve in liters per minute. Measure with a bucket and stopwatch",
+          "flow_rate_lpm": "Water flow rate of the valve in liters per minute. Required for estimated_flow mode. Measure with a bucket and stopwatch",
+          "flow_meter_sensor": "Sensor entity that reports cumulative liters delivered. Required for flow_meter mode",
+          "volume_entity": "Number entity on the smart valve that accepts a volume target in liters. Required for volume_preset mode",
+          "delivery_timeout": "Maximum time to wait for flow_meter or volume_preset delivery before forcing valve close (safety limit)",
           "threshold": "Deficit level that triggers Mode A irrigation for this zone"
         }
       },
@@ -56,6 +64,13 @@
           "add_another": "Add another irrigation zone"
         }
       }
+    },
+    "error": {
+      "zone_name_too_long": "Zone name is too long (max 64 characters)",
+      "too_many_zones": "Maximum number of zones reached (50)",
+      "flow_rate_required": "Flow rate is required for estimated_flow delivery mode",
+      "flow_meter_required": "Flow meter sensor is required for flow_meter delivery mode",
+      "volume_entity_required": "Volume entity is required for volume_preset delivery mode"
     },
     "abort": {
       "already_configured": "NeverDry is already configured"
@@ -85,12 +100,16 @@
         "data": {
           "name": "Zone name",
           "valve": "Valve switch (optional)",
+          "delivery_mode": "Water delivery mode",
           "area_m2": "Irrigated area",
           "system_type": "Irrigation system type",
           "efficiency": "Custom efficiency",
           "plant_family": "Plant family",
           "kc": "Custom crop coefficient Kc",
           "flow_rate_lpm": "Valve flow rate",
+          "flow_meter_sensor": "Flow meter sensor",
+          "volume_entity": "Volume target entity",
+          "delivery_timeout": "Safety timeout",
           "threshold": "Threshold for Mode A"
         }
       }
