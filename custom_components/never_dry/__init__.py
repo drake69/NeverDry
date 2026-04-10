@@ -9,6 +9,7 @@ Supports both YAML configuration and UI-based config flow.
 
 import logging
 
+import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
@@ -19,9 +20,11 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["sensor"]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the NeverDry integration from YAML."""
+    """Set up the NeverDry integration."""
     hass.data.setdefault(DOMAIN, {})
     return True
 
