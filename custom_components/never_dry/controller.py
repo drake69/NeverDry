@@ -28,6 +28,7 @@ from .const import (
     MIN_SERVICE_INTERVAL_S,
     SERVICE_IRRIGATE_ALL,
     SERVICE_IRRIGATE_ZONE,
+    SERVICE_MARK_IRRIGATED,
     SERVICE_RESET,
     SERVICE_STOP,
 )
@@ -84,6 +85,7 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ZONE, self._handle_irrigate_zone)
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
+        self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
 
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
@@ -173,6 +175,28 @@ class IrrigationController:
 
         self._running = False
         self._active_valve = None
+
+    async def _handle_mark_irrigated(self, call: ServiceCall) -> None:
+        """Mark one or all zones as manually irrigated (reset deficit, no valve)."""
+        if self._is_throttled("mark_irrigated"):
+            return
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        if zone_name is not None:
+            if zone_name not in self._zones:
+                _LOGGER.error(
+                    "Zone '%s' not found. Available: %s",
+                    zone_name,
+                    list(self._zones.keys()),
+                )
+                return
+            self._zones[zone_name].reset_deficit()
+            self._zones[zone_name].async_write_ha_state()
+            _LOGGER.info("Zone '%s' marked as irrigated, deficit reset", zone_name)
+        else:
+            for zs in self._zones.values():
+                zs.reset_deficit()
+                zs.async_write_ha_state()
+            _LOGGER.info("All zones marked as irrigated, deficits reset")
 
     # ── Core irrigation logic ────────────────────────────
 

@@ -28,3 +28,18 @@ stop:
   description: >
     Immediately close all irrigation valves. Use this to abort an
     irrigation cycle in progress.
+
+mark_irrigated:
+  name: Mark zone as irrigated
+  description: >
+    Signal that a zone has been watered manually or by an external system.
+    Resets the zone deficit to zero without operating any valve.
+    If no zone is specified, all zones are marked as irrigated.
+  fields:
+    zone_name:
+      name: Zone name
+      description: The zone to mark as irrigated. Leave empty for all zones.
+      required: false
+      example: "Vegetable Garden"
+      selector:
+        text:
