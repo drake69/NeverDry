@@ -323,7 +323,8 @@ class IrrigationController:
 
         # Send volume target to the number entity
         await self._hass.services.async_call(
-            "number", "set_value",
+            "number",
+            "set_value",
             {"entity_id": volume_entity, "value": round(volume, 1)},
         )
         zone.set_irrigating(True)
@@ -348,7 +349,8 @@ class IrrigationController:
         else:
             _LOGGER.warning(
                 "Zone '%s' volume_preset timeout (%ds). Forcing valve close.",
-                zone.zone_name, timeout,
+                zone.zone_name,
+                timeout,
             )
             await self._close_valve(zone.valve)
 
@@ -372,7 +374,8 @@ class IrrigationController:
         if initial_reading is None:
             _LOGGER.error(
                 "Flow meter '%s' unavailable for zone '%s', skipping",
-                meter_entity, zone.zone_name,
+                meter_entity,
+                zone.zone_name,
             )
             return False
 
@@ -396,7 +399,8 @@ class IrrigationController:
             if current_reading is None:
                 _LOGGER.warning(
                     "Flow meter '%s' became unavailable during irrigation of zone '%s'",
-                    meter_entity, zone.zone_name,
+                    meter_entity,
+                    zone.zone_name,
                 )
                 continue
 
@@ -412,7 +416,8 @@ class IrrigationController:
         else:
             _LOGGER.warning(
                 "Zone '%s' flow_meter timeout (%ds). Closing valve.",
-                zone.zone_name, timeout,
+                zone.zone_name,
+                timeout,
             )
 
         await self._close_valve(zone.valve)

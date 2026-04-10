@@ -64,14 +64,21 @@ def _create_ha_stubs():
     entity_platform_mod = ModuleType("homeassistant.helpers.entity_platform")
     entity_platform_mod.AddEntitiesCallback = MagicMock
 
+    # homeassistant.helpers.config_validation
+    cv_mod = ModuleType("homeassistant.helpers.config_validation")
+    cv_mod.config_entry_only_config_schema = lambda domain: {}
+
     # Register all stubs
+    helpers_mod = ModuleType("homeassistant.helpers")
+    helpers_mod.config_validation = cv_mod
     mods = {
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
         "homeassistant.components.sensor": sensor_mod,
         "homeassistant.config_entries": config_entries_mod,
         "homeassistant.core": core_mod,
-        "homeassistant.helpers": ModuleType("homeassistant.helpers"),
+        "homeassistant.helpers": helpers_mod,
+        "homeassistant.helpers.config_validation": cv_mod,
         "homeassistant.helpers.entity_platform": entity_platform_mod,
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
