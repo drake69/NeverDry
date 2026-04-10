@@ -23,7 +23,7 @@ class TestControllerState:
 
     def test_register_services(self, controller, hass_mock):
         controller.register_services()
-        assert hass_mock.services.async_register.call_count == 4
+        assert hass_mock.services.async_register.call_count == 5
 
 
 class TestIrrigateSingleZone:
@@ -424,3 +424,70 @@ class TestRateLimiting:
         # Stop should still close valves even when called rapidly
         close_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[1] == "turn_off"]
         assert len(close_calls) >= 1
+
+
+class TestMarkIrrigated:
+    """Test mark_irrigated service (manual irrigation signal)."""
+
+    @pytest.mark.asyncio
+    async def test_mark_single_zone(self, controller, zone_orto, zone_prato):
+        """Marking a single zone should reset only that zone's deficit."""
+        zone_orto._zone_deficit = 15.0
+        zone_prato._zone_deficit = 20.0
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert zone_orto._zone_deficit == 0.0
+        assert zone_prato._zone_deficit == 20.0  # untouched
+
+    @pytest.mark.asyncio
+    async def test_mark_all_zones(self, controller, zone_orto, zone_prato):
+        """Omitting zone_name should reset all zone deficits."""
+        zone_orto._zone_deficit = 15.0
+        zone_prato._zone_deficit = 20.0
+
+        call_mock = MagicMock()
+        call_mock.data = {}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert zone_orto._zone_deficit == 0.0
+        assert zone_prato._zone_deficit == 0.0
+
+    @pytest.mark.asyncio
+    async def test_mark_unknown_zone_logs_error(self, controller, zone_orto, zone_prato):
+        """Marking a non-existent zone should log an error and not reset anything."""
+        zone_orto._zone_deficit = 15.0
+        zone_prato._zone_deficit = 20.0
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "NonExistent"}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert zone_orto._zone_deficit == 15.0
+        assert zone_prato._zone_deficit == 20.0
+
+    @pytest.mark.asyncio
+    async def test_mark_irrigated_does_not_reset_reference(self, controller, di_sensor, zone_orto):
+        """mark_irrigated should NOT reset the reference deficit."""
+        di_sensor._deficit = 25.0
+        zone_orto._zone_deficit = 15.0
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert di_sensor._deficit == 25.0  # untouched
+
+    @pytest.mark.asyncio
+    async def test_mark_irrigated_throttled(self, controller, zone_orto):
+        """Throttled mark_irrigated should not modify deficit."""
+        zone_orto._zone_deficit = 15.0
+        controller._is_throttled("warmup")  # set the timestamp
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert zone_orto._zone_deficit == 15.0  # unchanged

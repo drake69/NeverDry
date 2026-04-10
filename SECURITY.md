@@ -56,9 +56,14 @@ NeverDry employs the following security practices:
 
 - **Zero runtime dependencies** — no third-party supply chain risk
 - **Static analysis** — Bandit, CodeQL, and custom forbidden pattern guards run on every PR
-- **Input validation** — all config flow inputs are validated with voluptuous schemas and runtime bounds
+- **Input validation** — all config flow inputs are validated with voluptuous schemas and runtime bounds:
+  - Max 50 zones per instance (`MAX_ZONES`)
+  - Zone names max 64 characters (`MAX_ZONE_NAME_LENGTH`)
+  - Numeric parameters bounded (e.g., alpha 0.05–1.0, t_base -5–20, efficiency 0.1–1.0)
+  - Entity selectors domain-constrained (sensor, switch)
 - **No dangerous functions** — `eval()`, `exec()`, `subprocess`, `pickle`, `__import__()` are forbidden and CI-blocked
-- **Service rate limiting** — irrigation services are throttled to prevent abuse
+- **Service rate limiting** — irrigation services throttled to min 10-second intervals; emergency stop is never throttled
+- **Ruff linting** — enforced in CI with bandit security rules (S) enabled
 - **Dependabot** — automatic updates for GitHub Actions versions
 - **Minimal permissions** — workflows use least-privilege RBAC
 
