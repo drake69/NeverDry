@@ -12,7 +12,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
 
-<a href="https://www.patreon.com/c/69Drake"><img src="https://img.shields.io/badge/Support_on_Patreon-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" height="35"></a>
+<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>
 
 ---
 
@@ -205,13 +205,11 @@ t    = V / FlowRate × 60                   [s]     irrigation duration
 - [HACS Publishing Guide](docs/hacs_publishing_guide.md)
 - [Project Homepage](https://drake69.github.io/NeverDry/)
 
----
-
 ## Support
 
-If NeverDry saves your garden (and your water bill), consider supporting the project:
+If NeverDry saves your garden (and your water bill), consider a one-time donation:
 
-<a href="https://www.patreon.com/c/69Drake"><img src="https://img.shields.io/badge/Support_on_Patreon-FF424D?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon" height="35"></a>
+<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>
 
 ---
 
