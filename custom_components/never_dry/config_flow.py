@@ -194,9 +194,7 @@ STEP_ZONE_SCHEMA = vol.Schema(
         vol.Optional(CONF_ZONE_FLOW_METER_SENSOR): selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor")
         ),
-        vol.Optional(CONF_ZONE_VOLUME_ENTITY): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="number")
-        ),
+        vol.Optional(CONF_ZONE_VOLUME_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="number")),
         vol.Optional(CONF_ZONE_DELIVERY_TIMEOUT, default=DEFAULT_DELIVERY_TIMEOUT_S): selector.NumberSelector(
             selector.NumberSelectorConfig(
                 min=60,

@@ -85,7 +85,8 @@ class TestVolumePresetDelivery:
     @pytest.mark.asyncio
     async def test_sends_volume_to_number_entity(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
                 CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
@@ -105,7 +106,8 @@ class TestVolumePresetDelivery:
         assert result is True
         # Check number.set_value was called
         set_value_calls = [
-            c for c in hass_mock.services.async_call.call_args_list
+            c
+            for c in hass_mock.services.async_call.call_args_list
             if c.args[0] == "number" and c.args[1] == "set_value"
         ]
         assert len(set_value_calls) == 1
@@ -114,7 +116,8 @@ class TestVolumePresetDelivery:
     @pytest.mark.asyncio
     async def test_timeout_forces_close(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
                 CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
@@ -139,7 +142,8 @@ class TestVolumePresetDelivery:
     @pytest.mark.asyncio
     async def test_no_volume_entity_returns_false(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET},
         )
         zone._zone_deficit = 5.0
@@ -152,7 +156,8 @@ class TestVolumePresetDelivery:
     @pytest.mark.asyncio
     async def test_stop_during_preset(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
                 CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
@@ -179,7 +184,8 @@ class TestFlowMeterDelivery:
     @pytest.mark.asyncio
     async def test_closes_at_target_volume(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
                 CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
@@ -212,7 +218,8 @@ class TestFlowMeterDelivery:
     @pytest.mark.asyncio
     async def test_unavailable_sensor_skips(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
                 CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
@@ -235,7 +242,8 @@ class TestFlowMeterDelivery:
     @pytest.mark.asyncio
     async def test_no_flow_meter_entity_returns_false(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER},
         )
         zone._zone_deficit = 5.0
@@ -248,7 +256,8 @@ class TestFlowMeterDelivery:
     @pytest.mark.asyncio
     async def test_meter_reset_adjusts_baseline(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
                 CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
@@ -278,7 +287,8 @@ class TestFlowMeterDelivery:
     @pytest.mark.asyncio
     async def test_stop_during_flow_meter(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
                 CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
@@ -335,7 +345,8 @@ class TestDurationByMode:
 
     def test_flow_meter_zero_duration(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER},
         )
         zone._zone_deficit = 5.0
@@ -343,7 +354,8 @@ class TestDurationByMode:
 
     def test_volume_preset_zero_duration(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET},
         )
         zone._zone_deficit = 5.0
@@ -359,7 +371,8 @@ class TestDeliveryModeAttributes:
 
     def test_volume_entity_in_attributes(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
                 CONF_ZONE_VOLUME_ENTITY: "number.valve_vol",
@@ -371,7 +384,8 @@ class TestDeliveryModeAttributes:
 
     def test_flow_meter_in_attributes(self, hass_mock, di_sensor):
         zone = _make_zone(
-            hass_mock, di_sensor,
+            hass_mock,
+            di_sensor,
             **{
                 CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
                 CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow",
