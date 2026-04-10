@@ -1,7 +1,7 @@
 """Constants for the NeverDry integration."""
 
 DOMAIN = "never_dry"
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 
 # ── Sensor inputs ─────────────────────────────────────────
 CONF_TEMP_SENSOR = "temperature_sensor"
@@ -31,6 +31,10 @@ CONF_ZONE_THRESHOLD = "threshold"
 CONF_ZONE_SYSTEM_TYPE = "system_type"
 CONF_ZONE_PLANT_FAMILY = "plant_family"
 CONF_ZONE_KC = "kc"
+CONF_ZONE_DELIVERY_MODE = "delivery_mode"
+CONF_ZONE_VOLUME_ENTITY = "volume_entity"
+CONF_ZONE_FLOW_METER_SENSOR = "flow_meter_sensor"
+CONF_ZONE_DELIVERY_TIMEOUT = "delivery_timeout"
 
 # ── Controller parameters ────────────────────────────────
 CONF_INTER_ZONE_DELAY = "inter_zone_delay"
@@ -66,6 +70,21 @@ PLANT_FAMILIES = {
 }
 
 KC_ANCHOR_DAYS = (15, 105, 196, 288)
+
+# ── Valve delivery modes ────────────────────────────────
+DELIVERY_MODE_VOLUME_PRESET = "volume_preset"
+DELIVERY_MODE_FLOW_METER = "flow_meter"
+DELIVERY_MODE_ESTIMATED_FLOW = "estimated_flow"
+DEFAULT_DELIVERY_MODE = DELIVERY_MODE_ESTIMATED_FLOW
+
+DELIVERY_MODES = {
+    DELIVERY_MODE_ESTIMATED_FLOW: "Simple on/off (timer-based)",
+    DELIVERY_MODE_FLOW_METER: "Valve with flow meter sensor",
+    DELIVERY_MODE_VOLUME_PRESET: "Smart valve with volume dosing",
+}
+
+DEFAULT_DELIVERY_TIMEOUT_S = 3600  # 1 hour safety timeout
+FLOW_METER_POLL_INTERVAL_S = 2
 
 # ── Services ─────────────────────────────────────────────
 SERVICE_RESET = "reset"

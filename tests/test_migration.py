@@ -44,3 +44,41 @@ class TestConfigMigration:
         entry = _make_entry(999)
         result = await async_migrate_entry(hass_mock, entry)
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_v1_to_v2_adds_delivery_mode(self, hass_mock):
+        """V1 entry should get delivery_mode added to all zones."""
+        entry = _make_entry(1)
+        entry.data = {
+            "temperature_sensor": "sensor.temp",
+            "rain_sensor": "sensor.rain",
+            "zones": [
+                {"name": "Orto", "valve": "switch.v1"},
+                {"name": "Prato", "valve": "switch.v2"},
+            ],
+        }
+        result = await async_migrate_entry(hass_mock, entry)
+        assert result is True
+        # Check that zones got delivery_mode added
+        updated_data = hass_mock.config_entries.async_update_entry.call_args
+        new_data = updated_data.kwargs.get("data", updated_data[1].get("data", {}))
+        for zone in new_data["zones"]:
+            assert zone["delivery_mode"] == "estimated_flow"
+
+    @pytest.mark.asyncio
+    async def test_v1_to_v2_preserves_existing_fields(self, hass_mock):
+        """V1 migration should not remove existing zone fields."""
+        entry = _make_entry(1)
+        entry.data = {
+            "temperature_sensor": "sensor.temp",
+            "rain_sensor": "sensor.rain",
+            "zones": [
+                {"name": "Orto", "valve": "switch.v1", "area_m2": 20.0},
+            ],
+        }
+        result = await async_migrate_entry(hass_mock, entry)
+        assert result is True
+        updated_data = hass_mock.config_entries.async_update_entry.call_args
+        new_data = updated_data.kwargs.get("data", updated_data[1].get("data", {}))
+        assert new_data["zones"][0]["area_m2"] == 20.0
+        assert new_data["zones"][0]["name"] == "Orto"

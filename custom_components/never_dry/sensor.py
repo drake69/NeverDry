@@ -38,7 +38,10 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VWC_SENSOR,
     CONF_ZONE_AREA,
+    CONF_ZONE_DELIVERY_MODE,
+    CONF_ZONE_DELIVERY_TIMEOUT,
     CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
     CONF_ZONE_KC,
     CONF_ZONE_NAME,
@@ -46,9 +49,12 @@ from .const import (
     CONF_ZONE_SYSTEM_TYPE,
     CONF_ZONE_THRESHOLD,
     CONF_ZONE_VALVE,
+    CONF_ZONE_VOLUME_ENTITY,
     CONF_ZONES,
     DEFAULT_ALPHA,
     DEFAULT_D_MAX,
+    DEFAULT_DELIVERY_MODE,
+    DEFAULT_DELIVERY_TIMEOUT_S,
     DEFAULT_EFFICIENCY,
     DEFAULT_FIELD_CAPACITY,
     DEFAULT_INTER_ZONE_DELAY,
@@ -57,6 +63,7 @@ from .const import (
     DEFAULT_ROOT_DEPTH,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
+    DELIVERY_MODE_ESTIMATED_FLOW,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
     RAIN_TYPE_EVENT,
@@ -421,6 +428,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._system_type = zone_config.get(CONF_ZONE_SYSTEM_TYPE)
         self._flow_rate = zone_config.get(CONF_ZONE_FLOW_RATE, 0.0)
         self._threshold = zone_config.get(CONF_ZONE_THRESHOLD, DEFAULT_THRESHOLD)
+        self._delivery_mode = zone_config.get(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE)
+        self._volume_entity = zone_config.get(CONF_ZONE_VOLUME_ENTITY)
+        self._flow_meter_sensor = zone_config.get(CONF_ZONE_FLOW_METER_SENSOR)
+        self._delivery_timeout = zone_config.get(CONF_ZONE_DELIVERY_TIMEOUT, DEFAULT_DELIVERY_TIMEOUT_S)
         self._irrigating = False
 
         # Kc: manual override > plant family seasonal profile > 1.0
@@ -490,6 +501,26 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         return self._valve
 
     @property
+    def delivery_mode(self) -> str:
+        """Configured delivery mode for this zone."""
+        return self._delivery_mode
+
+    @property
+    def volume_entity(self) -> str | None:
+        """Entity ID of the number entity for volume_preset mode."""
+        return self._volume_entity
+
+    @property
+    def flow_meter_sensor(self) -> str | None:
+        """Entity ID of the flow meter sensor for flow_meter mode."""
+        return self._flow_meter_sensor
+
+    @property
+    def delivery_timeout(self) -> int:
+        """Safety timeout in seconds for flow_meter and volume_preset modes."""
+        return self._delivery_timeout
+
+    @property
     def is_irrigating(self) -> bool:
         """True if this zone is currently being irrigated."""
         return self._irrigating
@@ -511,7 +542,12 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
 
     @property
     def duration_s(self) -> int:
-        """Irrigation duration for this zone [s]."""
+        """Irrigation duration for this zone [s].
+
+        Only meaningful for estimated_flow mode. Returns 0 for other modes.
+        """
+        if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
+            return 0
         if self._flow_rate <= 0:
             return 0
         return round(self.volume_liters / self._flow_rate * 60)
@@ -523,9 +559,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> dict:
         kc = self._get_current_kc()
-        return {
+        attrs = {
             "zone_name": self._zone_name,
             "valve": self._valve,
+            "delivery_mode": self._delivery_mode,
             "system_type": self._system_type,
             "plant_family": self._plant_family,
             "kc": round(kc, 3),
@@ -539,3 +576,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "deficit_mm": round(self._zone_deficit, 2),
             "irrigating": self._irrigating,
         }
+        if self._volume_entity:
+            attrs["volume_entity"] = self._volume_entity
+        if self._flow_meter_sensor:
+            attrs["flow_meter_sensor"] = self._flow_meter_sensor
+        if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
+            attrs["delivery_timeout_s"] = self._delivery_timeout
+        return attrs

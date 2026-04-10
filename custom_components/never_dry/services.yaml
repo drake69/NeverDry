@@ -5,8 +5,9 @@ reset:
 irrigate_zone:
   name: Irrigate zone
   description: >
-    Start irrigation for a single zone. Opens the valve, waits for the
-    calculated duration based on current deficit, then closes the valve.
+    Start irrigation for a single zone. The irrigation method depends on the
+    zone's configured delivery mode: estimated_flow (timer-based), flow_meter
+    (sensor-monitored), or volume_preset (smart valve with volume dosing).
   fields:
     zone_name:
       name: Zone name
@@ -19,9 +20,9 @@ irrigate_zone:
 irrigate_all:
   name: Irrigate all zones
   description: >
-    Irrigate all configured zones sequentially. Each zone's valve is opened
-    for its calculated duration, with a pause between zones. The deficit is
-    reset after all zones complete.
+    Irrigate all configured zones sequentially. Each zone uses its own
+    delivery mode. A pause between zones allows pressure stabilization.
+    The deficit is reset after all zones complete.
 
 stop:
   name: Emergency stop
