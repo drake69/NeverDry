@@ -1,6 +1,6 @@
 """Tests for MarkIrrigatedButton entities."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from never_dry.button import MarkIrrigatedButton, _create_buttons
