@@ -18,7 +18,7 @@ from .const import CONFIG_VERSION, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "button"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
