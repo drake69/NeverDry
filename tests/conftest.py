@@ -68,12 +68,23 @@ def _create_ha_stubs():
     cv_mod = ModuleType("homeassistant.helpers.config_validation")
     cv_mod.config_entry_only_config_schema = lambda domain: {}
 
+    # homeassistant.components.button
+    button_mod = ModuleType("homeassistant.components.button")
+    button_mod.ButtonEntity = type(
+        "ButtonEntity",
+        (),
+        {
+            "async_press": lambda self: None,
+        },
+    )
+
     # Register all stubs
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
     mods = {
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
+        "homeassistant.components.button": button_mod,
         "homeassistant.components.sensor": sensor_mod,
         "homeassistant.config_entries": config_entries_mod,
         "homeassistant.core": core_mod,
