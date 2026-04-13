@@ -405,16 +405,12 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
                 get_significant_states,
             )
         except ImportError:
-            _LOGGER.warning(
-                "Recorder component not available; starting deficit at 0.0"
-            )
+            _LOGGER.warning("Recorder component not available; starting deficit at 0.0")
             return
 
         instance = get_instance(self._hass)
         if instance is None:
-            _LOGGER.warning(
-                "Recorder instance not available; starting deficit at 0.0"
-            )
+            _LOGGER.warning("Recorder instance not available; starting deficit at 0.0")
             return
 
         now = datetime.utcnow()
@@ -452,8 +448,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self.async_write_ha_state()
 
         _LOGGER.info(
-            "Backfilled deficit from recorder history: %.2f mm "
-            "(%d temp states, %d rain states)",
+            "Backfilled deficit from recorder history: %.2f mm (%d temp states, %d rain states)",
             deficit,
             len(temp_states),
             len(rain_states),
@@ -518,9 +513,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
 
         return deficit
 
-    def _compute_backfill_rain_delta(
-        self, rain_now: float, last_rain: float
-    ) -> float:
+    def _compute_backfill_rain_delta(self, rain_now: float, last_rain: float) -> float:
         """Compute rain delta for backfill replay."""
         if self._rain_type == RAIN_TYPE_EVENT:
             if rain_now == last_rain:

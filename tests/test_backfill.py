@@ -35,9 +35,7 @@ def _patch_recorder(get_instance_rv=None, get_significant_states_rv=None):
 
     mock_instance = get_instance_rv or MagicMock()
     if get_significant_states_rv is not None:
-        mock_instance.async_add_executor_job = AsyncMock(
-            return_value=get_significant_states_rv
-        )
+        mock_instance.async_add_executor_job = AsyncMock(return_value=get_significant_states_rv)
 
     recorder_mod.get_instance = MagicMock(return_value=mock_instance)
     history_mod.get_significant_states = MagicMock()
@@ -249,9 +247,7 @@ class TestBackfillFromRecorder:
     async def test_backfill_graceful_on_db_error(self, sensor):
         """Exception from recorder query yields D=0."""
         _, mock_instance = _patch_recorder()
-        mock_instance.async_add_executor_job = AsyncMock(
-            side_effect=RuntimeError("DB gone")
-        )
+        mock_instance.async_add_executor_job = AsyncMock(side_effect=RuntimeError("DB gone"))
 
         await sensor._backfill_from_recorder()
         assert sensor._deficit == 0.0
