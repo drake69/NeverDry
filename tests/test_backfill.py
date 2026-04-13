@@ -5,10 +5,8 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from never_dry.const import RAIN_TYPE_DAILY_TOTAL
 from never_dry.sensor import DrynessIndexSensor
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
