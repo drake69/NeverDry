@@ -400,8 +400,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         Fails gracefully if recorder is not available.
         """
         try:
-            from homeassistant.components.recorder import get_instance  # noqa: PLC0415
-            from homeassistant.components.recorder.history import (  # noqa: PLC0415
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.history import (
                 get_significant_states,
             )
         except ImportError:
@@ -429,7 +429,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
                 now,
                 entity_ids,
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.warning(
                 "Failed to query recorder for backfill; starting deficit at 0.0",
                 exc_info=True,
