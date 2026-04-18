@@ -313,7 +313,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         """Show menu: edit model params or manage zones."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["model_params", "add_zone"],
+            menu_options=["model_params", "add_zone", "remove_zone"],
         )
 
     async def async_step_model_params(
@@ -392,4 +392,33 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="add_zone",
             data_schema=STEP_ZONE_SCHEMA,
+        )
+
+    async def async_step_remove_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Remove an existing irrigation zone."""
+        zones = list(self._config_entry.data.get(CONF_ZONES, []))
+        zone_names = [z[CONF_ZONE_NAME] for z in zones]
+
+        if not zone_names:
+            return self.async_abort(reason="no_zones")
+
+        if user_input is not None:
+            name_to_remove = user_input["zone_to_remove"]
+            new_data = dict(self._config_entry.data)
+            new_data[CONF_ZONES] = [z for z in zones if z[CONF_ZONE_NAME] != name_to_remove]
+            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+            return self.async_create_entry(data={})
+
+        return self.async_show_form(
+            step_id="remove_zone",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("zone_to_remove"): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=zone_names,
+                            mode="dropdown",
+                        )
+                    ),
+                }
+            ),
         )
