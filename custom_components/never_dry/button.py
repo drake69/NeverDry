@@ -63,13 +63,14 @@ def _create_buttons(hass: HomeAssistant, config: dict, entry_id: str = "yaml") -
 class MarkIrrigatedButton(ButtonEntity):
     """Button to mark a zone as manually irrigated."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:water-check"
 
     def __init__(self, hass: HomeAssistant, zone_name: str, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = f"Mark {zone_name} irrigated"
+        self._attr_name = "Mark irrigated"
         self._attr_unique_id = f"mark_irrigated_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -86,13 +87,14 @@ class MarkIrrigatedButton(ButtonEntity):
 class IrrigateButton(ButtonEntity):
     """Button to trigger irrigation for a zone based on current deficit."""
 
+    _attr_has_entity_name = True
     _attr_icon = "mdi:sprinkler"
 
     def __init__(self, hass: HomeAssistant, zone_name: str, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = f"Irrigate {zone_name}"
+        self._attr_name = "Irrigate"
         self._attr_unique_id = f"irrigate_{slug}"
         if device_info:
             self._attr_device_info = device_info
