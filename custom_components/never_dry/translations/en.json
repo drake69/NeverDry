@@ -83,7 +83,8 @@
         "description": "Choose what to configure.",
         "menu_options": {
           "model_params": "Edit model parameters (α, T_base, D_max)",
-          "add_zone": "Add a new irrigation zone"
+          "add_zone": "Add a new irrigation zone",
+          "remove_zone": "Remove an irrigation zone"
         }
       },
       "model_params": {
@@ -112,7 +113,16 @@
           "delivery_timeout": "Safety timeout",
           "threshold": "Threshold for Mode A"
         }
+      },
+      "remove_zone": {
+        "title": "Remove irrigation zone",
+        "data": {
+          "zone_to_remove": "Zone to remove"
+        }
       }
+    },
+    "abort": {
+      "no_zones": "No zones configured"
     }
   }
 }
