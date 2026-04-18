@@ -369,23 +369,28 @@ class TestRateLimiting:
         """First service call should never be throttled."""
         assert controller._is_throttled("test") is False
 
-    def test_rapid_second_call_is_throttled(self, controller):
-        """A call within MIN_SERVICE_INTERVAL_S should be throttled."""
-        controller._is_throttled("first")
-        assert controller._is_throttled("second") is True
+    def test_rapid_second_call_same_key_is_throttled(self, controller):
+        """A call with the same key within MIN_SERVICE_INTERVAL_S should be throttled."""
+        controller._is_throttled("irrigate_zone", "Orto")
+        assert controller._is_throttled("irrigate_zone", "Orto") is True
+
+    def test_rapid_call_different_zone_not_throttled(self, controller):
+        """A call on a different zone should not be throttled."""
+        controller._is_throttled("irrigate_zone", "Orto")
+        assert controller._is_throttled("irrigate_zone", "Prato") is False
 
     def test_call_after_interval_not_throttled(self, controller):
         """A call after the minimum interval should not be throttled."""
-        controller._is_throttled("first")
+        controller._is_throttled("irrigate_zone", "Orto")
         # Simulate time passing beyond the throttle window
-        controller._last_service_call = time.monotonic() - MIN_SERVICE_INTERVAL_S - 1
-        assert controller._is_throttled("second") is False
+        controller._last_service_call["irrigate_zone:Orto"] = time.monotonic() - MIN_SERVICE_INTERVAL_S - 1
+        assert controller._is_throttled("irrigate_zone", "Orto") is False
 
     @pytest.mark.asyncio
     async def test_reset_throttled_does_nothing(self, controller, di_sensor):
         """Throttled reset should not modify deficit."""
         di_sensor._deficit = 15.0
-        controller._is_throttled("warmup")  # set the timestamp
+        controller._is_throttled("reset")  # set the timestamp
 
         call_mock = MagicMock()
         call_mock.data = {}
@@ -397,7 +402,7 @@ class TestRateLimiting:
     async def test_irrigate_zone_throttled_does_nothing(self, controller, zone_orto):
         """Throttled irrigate_zone should not start irrigation."""
         zone_orto._zone_deficit = 10.0
-        controller._is_throttled("warmup")
+        controller._is_throttled("irrigate_zone", "Orto")
 
         call_mock = MagicMock()
         call_mock.data = {"zone_name": "Orto"}
@@ -408,7 +413,7 @@ class TestRateLimiting:
     @pytest.mark.asyncio
     async def test_irrigate_all_throttled_does_nothing(self, controller):
         """Throttled irrigate_all should not start irrigation."""
-        controller._is_throttled("warmup")
+        controller._is_throttled("irrigate_all")
 
         call_mock = MagicMock()
         call_mock.data = {}
@@ -488,7 +493,7 @@ class TestMarkIrrigated:
     async def test_mark_irrigated_throttled(self, controller, zone_orto):
         """Throttled mark_irrigated should not modify deficit."""
         zone_orto._zone_deficit = 15.0
-        controller._is_throttled("warmup")  # set the timestamp
+        controller._is_throttled("mark_irrigated", "Orto")
 
         call_mock = MagicMock()
         call_mock.data = {"zone_name": "Orto"}
