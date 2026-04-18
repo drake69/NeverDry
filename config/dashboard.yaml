@@ -1,0 +1,80 @@
+##############################################################
+#  NeverDry — Dashboard Card (Lovelace)
+#
+#  Import: Dashboard → Edit → ⋮ → Raw Configuration Editor
+#  Paste this under "views:" → cards section.
+#
+#  Entity IDs follow the pattern:
+#    sensor.neverdry_<zone_slug>_deficit
+#    sensor.neverdry_<zone_slug>_volume
+#    button.neverdry_<zone_slug>_irrigate
+#    button.neverdry_<zone_slug>_mark_irrigated
+#
+#  Adjust entity IDs to match your zone names.
+##############################################################
+
+type: vertical-stack
+cards:
+
+  # ── Header ──────────────────────────────────────────────
+  - type: markdown
+    content: |
+      # 🌱 NeverDry
+      Soil water deficit and irrigation status
+
+  # ── Deficit Chart (global + all zones) ──────────────────
+  - type: history-graph
+    title: Deficit over time
+    hours_to_show: 168  # 7 days
+    entities:
+      - entity: sensor.neverdry_dryness_index
+        name: Global (Kc=1)
+      # ── Add one line per zone ──
+      - entity: sensor.neverdry_giardino_melino_deficit
+        name: Giardino Melino
+      - entity: sensor.neverdry_giardino_ortensia_deficit
+        name: Giardino ortensia
+
+  # ── ET Hourly ───────────────────────────────────────────
+  - type: history-graph
+    title: Evapotranspiration
+    hours_to_show: 48
+    entities:
+      - entity: sensor.neverdry_et_hourly_estimate
+        name: ET (mm/h)
+
+  # ── Zone: Giardino Melino ───────────────────────────────
+  - type: entities
+    title: Giardino Melino
+    icon: mdi:sprinkler-variant
+    entities:
+      - entity: sensor.neverdry_giardino_melino_deficit
+        name: Deficit
+        icon: mdi:water-percent-alert
+      - entity: sensor.neverdry_giardino_melino_volume
+        name: Volume to irrigate
+        icon: mdi:water
+      - entity: button.neverdry_giardino_melino_irrigate
+        name: Irrigate now
+        icon: mdi:sprinkler
+      - entity: button.neverdry_giardino_melino_mark_irrigated
+        name: Mark as irrigated
+        icon: mdi:water-check
+
+  # ── Zone: Giardino ortensia ─────────────────────────────
+  - type: entities
+    title: Giardino ortensia
+    icon: mdi:sprinkler-variant
+    entities:
+      - entity: sensor.neverdry_giardino_ortensia_deficit
+        name: Deficit
+        icon: mdi:water-percent-alert
+      - entity: sensor.neverdry_giardino_ortensia_volume
+        name: Volume to irrigate
+        icon: mdi:water
+      - entity: button.neverdry_giardino_ortensia_irrigate
+        name: Irrigate now
+        icon: mdi:sprinkler
+      - entity: button.neverdry_giardino_ortensia_mark_irrigated
+        name: Mark as irrigated
+        icon: mdi:water-check
