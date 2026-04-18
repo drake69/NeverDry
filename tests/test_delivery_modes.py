@@ -61,7 +61,7 @@ class TestEstimatedFlowDelivery:
 
         result = await ctrl._deliver_estimated_flow(zone)
 
-        assert result is False
+        assert result == 0.0
         hass_mock.services.async_call.assert_not_called()
 
     def test_default_delivery_mode(self, hass_mock, di_sensor):
@@ -103,7 +103,7 @@ class TestVolumePresetDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_volume_preset(zone)
 
-        assert result is True
+        assert result > 0
         # Check number.set_value was called
         set_value_calls = [
             c
@@ -134,7 +134,7 @@ class TestVolumePresetDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_volume_preset(zone)
 
-        assert result is True
+        assert result > 0
         # Valve should be force-closed
         close_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_off" in str(c)]
         assert len(close_calls) >= 1
@@ -151,7 +151,7 @@ class TestVolumePresetDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_volume_preset(zone)
 
-        assert result is False
+        assert result == 0.0
 
     @pytest.mark.asyncio
     async def test_stop_during_preset(self, hass_mock, di_sensor):
@@ -175,7 +175,7 @@ class TestVolumePresetDelivery:
 
         result = await ctrl._deliver_volume_preset(zone)
 
-        assert result is False
+        assert result == 0.0
 
 
 class TestFlowMeterDelivery:
@@ -211,7 +211,7 @@ class TestFlowMeterDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_flow_meter(zone)
 
-        assert result is True
+        assert result > 0
         # Valve should have been opened and closed
         close_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_off" in str(c)]
         assert len(close_calls) >= 1
@@ -235,7 +235,7 @@ class TestFlowMeterDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_flow_meter(zone)
 
-        assert result is False
+        assert result == 0.0
         # No valve should have been opened
         open_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_on" in str(c)]
         assert len(open_calls) == 0
@@ -252,7 +252,7 @@ class TestFlowMeterDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_flow_meter(zone)
 
-        assert result is False
+        assert result == 0.0
 
     @pytest.mark.asyncio
     async def test_meter_reset_adjusts_baseline(self, hass_mock, di_sensor):
@@ -284,7 +284,7 @@ class TestFlowMeterDelivery:
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
         result = await ctrl._deliver_flow_meter(zone)
 
-        assert result is True
+        assert result > 0
 
     @pytest.mark.asyncio
     async def test_stop_during_flow_meter(self, hass_mock, di_sensor):
@@ -309,7 +309,7 @@ class TestFlowMeterDelivery:
 
         result = await ctrl._deliver_flow_meter(zone)
 
-        assert result is False
+        assert result == 0.0
 
 
 class TestDeliveryModeDispatch:
@@ -324,7 +324,7 @@ class TestDeliveryModeDispatch:
 
         result = await ctrl._deliver_water(zone)
 
-        assert result is True
+        assert result > 0
 
     @pytest.mark.asyncio
     async def test_unknown_mode_returns_false(self, hass_mock, di_sensor):
@@ -335,7 +335,7 @@ class TestDeliveryModeDispatch:
 
         result = await ctrl._deliver_water(zone)
 
-        assert result is False
+        assert result == 0.0
 
 
 class TestDurationByMode:
