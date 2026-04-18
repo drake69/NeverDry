@@ -89,6 +89,24 @@ class TestButtonPress:
         assert call_args.args[2][ATTR_ZONE_NAME] == "Vegetable Garden"
 
 
+class TestButtonDeviceInfo:
+    """Test device_info grouping."""
+
+    def test_buttons_have_device_info_from_create(self, hass_mock):
+        config = {CONF_ZONES: [{CONF_ZONE_NAME: "Orto"}]}
+        buttons = _create_buttons(hass_mock, config, entry_id="test_entry")
+        for btn in buttons:
+            assert hasattr(btn, "_attr_device_info")
+            assert (DOMAIN, "test_entry_orto") in btn._attr_device_info["identifiers"]
+
+    def test_buttons_without_entry_id_have_yaml_device(self, hass_mock):
+        config = {CONF_ZONES: [{CONF_ZONE_NAME: "Orto"}]}
+        buttons = _create_buttons(hass_mock, config)
+        for btn in buttons:
+            assert hasattr(btn, "_attr_device_info")
+            assert (DOMAIN, "yaml_orto") in btn._attr_device_info["identifiers"]
+
+
 class TestIrrigateButton:
     """Test irrigate button entity."""
 
