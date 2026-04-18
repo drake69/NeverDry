@@ -278,43 +278,73 @@ class IrrigationController:
                     zone._zone_deficit,
                 )
 
-                success = await self._deliver_water(zone)
+                volume_target = zone.volume_liters
+                delivered = await self._deliver_water(zone)
 
                 if self._stop_requested:
                     break
 
-                if success:
-                    volume = zone.volume_liters
-                    duration = zone.duration_s
-                    irrigated_zones.append(zone_name)
+                if delivered > 0:
+                    irrigated_zones.append(
+                        (zone_name, delivered, volume_target),
+                    )
                     self._hass.bus.async_fire(
                         EVENT_IRRIGATION_COMPLETE,
                         {
                             "zone": zone_name,
                             "source": "automatic",
-                            "volume_liters": round(volume, 1),
-                            "duration_s": duration,
+                            "volume_liters": round(delivered, 1),
+                            "volume_target": round(volume_target, 1),
                             "deficit_mm": round(zone._zone_deficit, 2),
                         },
                     )
-                    _LOGGER.info("Completed irrigation: zone='%s'", zone_name)
+                    _LOGGER.info(
+                        "Completed irrigation: zone='%s', delivered=%.1fL of %.1fL target",
+                        zone_name,
+                        delivered,
+                        volume_target,
+                    )
 
                 # Inter-zone delay (pressure stabilization)
                 if i < len(zone_names) - 1 and not self._stop_requested:
                     _LOGGER.debug("Inter-zone delay: %ds", self._inter_zone_delay)
                     await asyncio.sleep(self._inter_zone_delay)
 
-            # Reset deficits for irrigated zones
+            # Adjust deficits for irrigated zones
             if irrigated_zones and not self._stop_requested:
-                for zone_name in irrigated_zones:
-                    self._zones[zone_name].reset_deficit()
-                    self._zones[zone_name].async_write_ha_state()
-                # Reset reference sensor only if ALL zones were irrigated
-                if set(irrigated_zones) == set(self._zones.keys()):
+                all_complete = True
+                for zone_name, delivered, target in irrigated_zones:
+                    zone = self._zones[zone_name]
+                    if delivered >= target:
+                        # Full irrigation — reset deficit to zero
+                        zone.reset_deficit()
+                    else:
+                        # Partial irrigation — reduce deficit proportionally
+                        all_complete = False
+                        delivered_mm = delivered * zone._efficiency / zone._area if zone._area > 0 else 0.0
+                        zone._zone_deficit = max(
+                            0.0,
+                            zone._zone_deficit - delivered_mm,
+                        )
+                        zone._last_volume_delivered = round(delivered, 1)
+                        zone._session_water_delivered = round(delivered, 1)
+                        zone._total_water_delivered += delivered
+                        zone._yearly_water_delivered += delivered
+                        _LOGGER.info(
+                            "Partial irrigation: zone='%s', delivered=%.1fL/%.1fL, deficit reduced to %.2fmm",
+                            zone_name,
+                            delivered,
+                            target,
+                            zone._zone_deficit,
+                        )
+                    zone.async_write_ha_state()
+                # Reset reference sensor only if ALL zones fully irrigated
+                zone_names_irrigated = {z[0] for z in irrigated_zones}
+                if all_complete and zone_names_irrigated == set(self._zones.keys()):
                     self._dryness.reset()
                 self._dryness.async_write_ha_state()
                 _LOGGER.info(
-                    "Irrigation cycle complete. %d zone(s) irrigated, zone deficits reset",
+                    "Irrigation cycle complete. %d zone(s) irrigated",
                     len(irrigated_zones),
                 )
 
@@ -331,10 +361,10 @@ class IrrigationController:
 
     # ── Delivery mode dispatch ────────────────────────────
 
-    async def _deliver_water(self, zone) -> bool:
+    async def _deliver_water(self, zone) -> float:
         """Deliver water to a zone using its configured delivery mode.
 
-        Returns True if delivery completed successfully.
+        Returns the volume actually delivered in liters (0.0 on failure).
         """
         mode = zone.delivery_mode
         if mode == DELIVERY_MODE_ESTIMATED_FLOW:
@@ -344,13 +374,13 @@ class IrrigationController:
         if mode == DELIVERY_MODE_VOLUME_PRESET:
             return await self._deliver_volume_preset(zone)
         _LOGGER.error("Unknown delivery mode '%s' for zone '%s'", mode, zone.zone_name)
-        return False
+        return 0.0
 
-    async def _deliver_estimated_flow(self, zone) -> bool:
+    async def _deliver_estimated_flow(self, zone) -> float:
         """Open valve, wait calculated duration, close valve."""
         duration = zone.duration_s
         if duration <= 0:
-            return False
+            return 0.0
 
         await self._open_valve(zone.valve)
         zone.set_irrigating(True)
@@ -361,18 +391,19 @@ class IrrigationController:
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return not self._stop_requested
+        # Estimated flow assumes full delivery if not stopped
+        return zone.volume_liters if not self._stop_requested else 0.0
 
-    async def _deliver_volume_preset(self, zone) -> bool:
+    async def _deliver_volume_preset(self, zone) -> float:
         """Send volume target to smart valve, wait for it to close itself."""
         volume = zone.volume_liters
         if volume <= 0:
-            return False
+            return 0.0
 
         volume_entity = zone.volume_entity
         if not volume_entity:
             _LOGGER.error("Zone '%s' has no volume_entity configured", zone.zone_name)
-            return False
+            return 0.0
 
         # Send volume target to the number entity
         await self._hass.services.async_call(
@@ -391,7 +422,7 @@ class IrrigationController:
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return False
+                return 0.0
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
 
@@ -409,23 +440,26 @@ class IrrigationController:
 
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return True
+        # Smart valve reports it completed, assume full delivery
+        return volume
 
-    async def _deliver_flow_meter(self, zone) -> bool:
+    async def _deliver_flow_meter(self, zone) -> float:
         """Open valve, monitor flow sensor, close when target volume reached.
 
         Supports two sensor types:
         - Cumulative volume (L): reads difference between start and current
         - Flow rate (L/h, L/min, m³/h): integrates rate over time
+
+        Returns volume actually delivered in liters.
         """
         volume_target = zone.volume_liters
         if volume_target <= 0:
-            return False
+            return 0.0
 
         meter_entity = zone.flow_meter_sensor
         if not meter_entity:
             _LOGGER.error("Zone '%s' has no flow_meter_sensor configured", zone.zone_name)
-            return False
+            return 0.0
 
         # Detect sensor type from unit of measurement
         is_rate_sensor = self._is_flow_rate_sensor(meter_entity)
@@ -442,7 +476,7 @@ class IrrigationController:
                 meter_entity,
                 zone.zone_name,
             )
-            return False
+            return 0.0
 
         await self._open_valve(zone.valve)
         zone.set_irrigating(True)
@@ -450,12 +484,13 @@ class IrrigationController:
 
         timeout = zone.delivery_timeout
         elapsed = 0
+        delivered = 0.0
         while elapsed < timeout:
             if self._stop_requested:
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return False
+                return delivered
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
@@ -471,7 +506,6 @@ class IrrigationController:
 
             delivered = current_reading - initial_reading
             if delivered < 0:
-                # Meter reset during irrigation — use current reading as new baseline
                 _LOGGER.warning("Flow meter reset detected, adjusting baseline")
                 initial_reading = 0.0
                 delivered = current_reading
@@ -480,18 +514,28 @@ class IrrigationController:
                 break
         else:
             _LOGGER.warning(
-                "Zone '%s' flow_meter timeout (%ds). Closing valve.",
+                "Zone '%s' flow_meter timeout (%ds). Delivered %.1fL of %.1fL target. Closing valve.",
                 zone.zone_name,
                 timeout,
+                delivered,
+                volume_target,
             )
 
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return not self._stop_requested
+        return delivered
 
-    async def _deliver_flow_rate(self, zone, meter_entity: str, volume_target: float) -> bool:
-        """Deliver water by integrating a flow rate sensor over time."""
+    async def _deliver_flow_rate(
+        self,
+        zone,
+        meter_entity: str,
+        volume_target: float,
+    ) -> float:
+        """Deliver water by integrating a flow rate sensor over time.
+
+        Returns volume actually delivered in liters.
+        """
         await self._open_valve(zone.valve)
         zone.set_irrigating(True)
         zone.async_write_ha_state()
@@ -512,7 +556,7 @@ class IrrigationController:
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return False
+                return delivered
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
@@ -523,14 +567,12 @@ class IrrigationController:
 
             # Convert rate to L per poll interval
             unit = self._get_flow_meter_unit(meter_entity)
-            if unit in ("L/h", "l/h"):
-                delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
-            elif unit in ("L/min", "l/min"):
+            if unit in ("L/min", "l/min"):
                 delivered += rate / 60 * FLOW_METER_POLL_INTERVAL_S
             elif unit in ("m³/h",):
                 delivered += rate * 1000 / 3600 * FLOW_METER_POLL_INTERVAL_S
             else:
-                # Assume L/h as default
+                # L/h or default
                 delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
 
             if delivered >= volume_target:
@@ -552,7 +594,7 @@ class IrrigationController:
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return not self._stop_requested
+        return delivered
 
     def _is_flow_rate_sensor(self, entity_id: str) -> bool:
         """Check if the sensor reports a flow rate (not cumulative volume)."""
