@@ -412,7 +412,12 @@ class IrrigationController:
         return True
 
     async def _deliver_flow_meter(self, zone) -> bool:
-        """Open valve, monitor flow sensor, close when target volume reached."""
+        """Open valve, monitor flow sensor, close when target volume reached.
+
+        Supports two sensor types:
+        - Cumulative volume (L): reads difference between start and current
+        - Flow rate (L/h, L/min, m³/h): integrates rate over time
+        """
         volume_target = zone.volume_liters
         if volume_target <= 0:
             return False
@@ -422,7 +427,14 @@ class IrrigationController:
             _LOGGER.error("Zone '%s' has no flow_meter_sensor configured", zone.zone_name)
             return False
 
-        # Read initial meter value
+        # Detect sensor type from unit of measurement
+        is_rate_sensor = self._is_flow_rate_sensor(meter_entity)
+
+        if is_rate_sensor:
+            # Flow rate mode: accumulate volume from rate readings
+            return await self._deliver_flow_rate(zone, meter_entity, volume_target)
+
+        # Cumulative volume mode: read difference
         initial_reading = self._read_flow_meter(meter_entity)
         if initial_reading is None:
             _LOGGER.error(
@@ -478,6 +490,82 @@ class IrrigationController:
         zone.async_write_ha_state()
         return not self._stop_requested
 
+    async def _deliver_flow_rate(self, zone, meter_entity: str, volume_target: float) -> bool:
+        """Deliver water by integrating a flow rate sensor over time."""
+        await self._open_valve(zone.valve)
+        zone.set_irrigating(True)
+        zone.async_write_ha_state()
+
+        delivered = 0.0
+        timeout = zone.delivery_timeout
+        elapsed = 0
+
+        _LOGGER.info(
+            "Zone '%s' using flow rate sensor '%s', target=%.1fL",
+            zone.zone_name,
+            meter_entity,
+            volume_target,
+        )
+
+        while elapsed < timeout:
+            if self._stop_requested:
+                await self._close_valve(zone.valve)
+                zone.set_irrigating(False)
+                zone.async_write_ha_state()
+                return False
+
+            await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
+            elapsed += FLOW_METER_POLL_INTERVAL_S
+
+            rate = self._read_flow_meter(meter_entity)
+            if rate is None or rate < 0:
+                continue
+
+            # Convert rate to L per poll interval
+            unit = self._get_flow_meter_unit(meter_entity)
+            if unit in ("L/h", "l/h"):
+                delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
+            elif unit in ("L/min", "l/min"):
+                delivered += rate / 60 * FLOW_METER_POLL_INTERVAL_S
+            elif unit in ("m³/h",):
+                delivered += rate * 1000 / 3600 * FLOW_METER_POLL_INTERVAL_S
+            else:
+                # Assume L/h as default
+                delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
+
+            if delivered >= volume_target:
+                _LOGGER.info(
+                    "Zone '%s' target reached: delivered=%.1fL",
+                    zone.zone_name,
+                    delivered,
+                )
+                break
+        else:
+            _LOGGER.warning(
+                "Zone '%s' flow_rate timeout (%ds). Delivered %.1fL of %.1fL target. Closing valve.",
+                zone.zone_name,
+                timeout,
+                delivered,
+                volume_target,
+            )
+
+        await self._close_valve(zone.valve)
+        zone.set_irrigating(False)
+        zone.async_write_ha_state()
+        return not self._stop_requested
+
+    def _is_flow_rate_sensor(self, entity_id: str) -> bool:
+        """Check if the sensor reports a flow rate (not cumulative volume)."""
+        unit = self._get_flow_meter_unit(entity_id)
+        return unit in ("L/h", "l/h", "L/min", "l/min", "m³/h")
+
+    def _get_flow_meter_unit(self, entity_id: str) -> str | None:
+        """Get the unit of measurement of a flow meter sensor."""
+        state = self._hass.states.get(entity_id)
+        if state is None:
+            return None
+        return state.attributes.get("unit_of_measurement")
+
     def _read_flow_meter(self, entity_id: str) -> float | None:
         """Read the current value of a flow meter sensor."""
         state = self._hass.states.get(entity_id)
@@ -531,29 +619,50 @@ class IrrigationController:
             return
 
         if old_state.state == "off" and new_state.state == "on":
-            # Valve opened manually — record flow meter baseline if available
-            flow_start = None
+            # Valve opened manually — record baseline
             if zone.flow_meter_sensor:
-                flow_start = self._read_flow_meter(zone.flow_meter_sensor)
-            self._manual_valve_open[entity_id] = flow_start
+                is_rate = self._is_flow_rate_sensor(zone.flow_meter_sensor)
+                if is_rate:
+                    # For rate sensors, record open timestamp
+                    self._manual_valve_open[entity_id] = time.monotonic()
+                else:
+                    # For cumulative sensors, record current reading
+                    self._manual_valve_open[entity_id] = self._read_flow_meter(zone.flow_meter_sensor)
+            else:
+                self._manual_valve_open[entity_id] = None
             _LOGGER.info(
-                "Manual valve open detected: zone='%s', flow_start=%s",
+                "Manual valve open detected: zone='%s'",
                 zone_name,
-                flow_start,
             )
 
         elif old_state.state == "on" and new_state.state == "off":
             # Valve closed — compensate deficit
-            flow_start = self._manual_valve_open.pop(entity_id, None)
+            baseline = self._manual_valve_open.pop(entity_id, None)
 
-            if zone.flow_meter_sensor and flow_start is not None:
-                flow_end = self._read_flow_meter(zone.flow_meter_sensor)
-                if flow_end is not None:
-                    delivered_liters = max(0.0, flow_end - flow_start)
-                    # Convert liters to mm: mm = L / area_m2
-                    if zone._area > 0:
-                        delivered_mm = delivered_liters / zone._area
-                        zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
+            if zone.flow_meter_sensor and baseline is not None:
+                is_rate = self._is_flow_rate_sensor(zone.flow_meter_sensor)
+                if is_rate:
+                    # Estimate volume from average flow rate x duration
+                    duration_s = time.monotonic() - baseline
+                    current_rate = self._read_flow_meter(zone.flow_meter_sensor)
+                    if current_rate is not None and current_rate > 0:
+                        unit = self._get_flow_meter_unit(zone.flow_meter_sensor)
+                        if unit in ("L/min", "l/min"):
+                            delivered_liters = current_rate / 60 * duration_s
+                        elif unit in ("m³/h",):
+                            delivered_liters = current_rate * 1000 / 3600 * duration_s
+                        else:  # L/h or default
+                            delivered_liters = current_rate / 3600 * duration_s
+                    else:
+                        delivered_liters = 0.0
+                else:
+                    # Cumulative: simple difference
+                    flow_end = self._read_flow_meter(zone.flow_meter_sensor)
+                    delivered_liters = max(0.0, flow_end - baseline) if flow_end is not None else 0.0
+
+                if delivered_liters > 0 and zone._area > 0:
+                    delivered_mm = delivered_liters / zone._area
+                    zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
                     _LOGGER.info(
                         "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
                         zone_name,
@@ -563,7 +672,7 @@ class IrrigationController:
                 else:
                     zone.reset_deficit()
                     _LOGGER.info(
-                        "Manual irrigation detected (flow meter unavailable at close): zone='%s', deficit reset",
+                        "Manual irrigation detected (flow meter reading zero): zone='%s', deficit reset",
                         zone_name,
                     )
             else:
