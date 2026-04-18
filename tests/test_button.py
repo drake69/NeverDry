@@ -47,7 +47,7 @@ class TestButtonProperties:
 
     def test_name(self, hass_mock):
         btn = MarkIrrigatedButton(hass_mock, "Orto")
-        assert btn._attr_name == "Mark Orto irrigated"
+        assert btn._attr_name == "Mark irrigated"
 
     def test_unique_id(self, hass_mock):
         btn = MarkIrrigatedButton(hass_mock, "Orto")
@@ -112,7 +112,7 @@ class TestIrrigateButton:
 
     def test_name(self, hass_mock):
         btn = IrrigateButton(hass_mock, "Orto")
-        assert btn._attr_name == "Irrigate Orto"
+        assert btn._attr_name == "Irrigate"
 
     def test_unique_id(self, hass_mock):
         btn = IrrigateButton(hass_mock, "Orto")

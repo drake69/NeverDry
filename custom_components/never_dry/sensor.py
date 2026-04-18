@@ -231,6 +231,7 @@ class ETSensor(SensorEntity):
     Uses a simplified linear model: ET_h = max(0, alpha * (T - T_base) / 24)
     """
 
+    _attr_has_entity_name = True
     _attr_name = "ET Hourly Estimate"
     _attr_unique_id = "et_hourly_estimate"
     _attr_native_unit_of_measurement = "mm/h"
@@ -282,7 +283,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     their own per-zone deficit scaled by Kc.
     """
 
-    _attr_name = "NeverDry"
+    _attr_has_entity_name = True
+    _attr_name = "Dryness Index"
     _attr_unique_id = "never_dry"
     _attr_native_unit_of_measurement = "mm"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -582,6 +584,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     and is auto-adjusted for hemisphere via hass.config.latitude.
     """
 
+    _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = "L"
     _attr_icon = "mdi:sprinkler-variant"
@@ -627,7 +630,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             self._efficiency = DEFAULT_EFFICIENCY
 
         slug = self._zone_name.lower().replace(" ", "_")
-        self._attr_name = f"Irrigation {self._zone_name}"
+        self._attr_name = "Volume"
         self._attr_unique_id = f"irrigation_zone_{slug}"
         if device_info:
             self._attr_device_info = device_info
