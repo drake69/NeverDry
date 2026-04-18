@@ -86,9 +86,20 @@ def _create_ha_stubs():
     recorder_history_mod = ModuleType("homeassistant.components.recorder.history")
     recorder_history_mod.get_significant_states = MagicMock(return_value={})
 
+    # homeassistant.helpers.device_registry
+    device_registry_mod = ModuleType("homeassistant.helpers.device_registry")
+
+    class DeviceInfo(dict):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            self.__dict__.update(kwargs)
+
+    device_registry_mod.DeviceInfo = DeviceInfo
+
     # Register all stubs
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
+    helpers_mod.device_registry = device_registry_mod
     mods = {
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
@@ -101,6 +112,7 @@ def _create_ha_stubs():
         "homeassistant.helpers.entity_platform": entity_platform_mod,
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
+        "homeassistant.helpers.device_registry": device_registry_mod,
         "homeassistant.helpers.typing": typing_mod,
         "homeassistant.components.recorder": recorder_mod,
         "homeassistant.components.recorder.history": recorder_history_mod,
