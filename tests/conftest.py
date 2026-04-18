@@ -78,6 +78,14 @@ def _create_ha_stubs():
         },
     )
 
+    # homeassistant.components.recorder
+    recorder_mod = ModuleType("homeassistant.components.recorder")
+    recorder_mod.get_instance = MagicMock(return_value=MagicMock())
+
+    # homeassistant.components.recorder.history
+    recorder_history_mod = ModuleType("homeassistant.components.recorder.history")
+    recorder_history_mod.get_significant_states = MagicMock(return_value={})
+
     # Register all stubs
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
@@ -94,6 +102,8 @@ def _create_ha_stubs():
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
         "homeassistant.helpers.typing": typing_mod,
+        "homeassistant.components.recorder": recorder_mod,
+        "homeassistant.components.recorder.history": recorder_history_mod,
     }
     sys.modules.update(mods)
 
@@ -148,6 +158,8 @@ def hass_mock():
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     hass.services.async_register = MagicMock()
+    hass.bus = MagicMock()
+    hass.bus.async_fire = MagicMock()
     # async_create_task runs the coroutine directly for testing
     hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
     # Mock HA config with latitude (northern hemisphere)

@@ -1,6 +1,7 @@
 {
   "domain": "never_dry",
   "name": "NeverDry",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@drake69"],
   "config_flow": true,
   "dependencies": [],
