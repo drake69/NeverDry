@@ -640,7 +640,12 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         dryness_sensor.register_zone_listener(self._on_et_update)
 
     async def async_added_to_hass(self) -> None:
-        """Restore zone deficit from previous state."""
+        """Restore zone deficit from previous state.
+
+        If no previous state exists (new zone), initialize from the
+        global Dryness Index scaled by this zone's Kc — so a new zone
+        starts with a realistic deficit instead of zero.
+        """
         last = await self.async_get_last_state()
         if last and last.attributes:
             with contextlib.suppress(ValueError, TypeError):
@@ -650,6 +655,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 if ts:
                     self._last_irrigated = datetime.fromisoformat(ts)
                     self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
+        else:
+            # New zone: seed deficit from global Dryness Index * Kc
+            kc = self._get_current_kc()
+            self._zone_deficit = self._dryness.deficit * kc
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
