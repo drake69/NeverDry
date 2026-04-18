@@ -195,9 +195,10 @@ class TestFlowMeterDelivery:
         zone._zone_deficit = 5.0
         target_volume = zone.volume_liters
 
-        # Simulate flow meter: starts at 100, ends at 100 + target
-        readings = iter([100.0, 100.0 + target_volume + 1])
+        # Simulate flow meter: starts at 100, ends at 100 + target (cumulative L)
+        readings = iter([100.0, 100.0, 100.0 + target_volume + 1])
         meter_state = MagicMock()
+        meter_state.attributes = {"unit_of_measurement": "L"}
 
         def get_state(entity_id):
             if entity_id == "sensor.flow_meter":
@@ -267,9 +268,10 @@ class TestFlowMeterDelivery:
         zone._zone_deficit = 5.0
         target_volume = zone.volume_liters
 
-        # Simulate: initial=100, then meter resets to 0, then reaches target
-        readings = iter([100.0, 50.0, target_volume + 1])
+        # Simulate: unit check, initial=100, then meter resets to 50, then reaches target
+        readings = iter([100.0, 100.0, 50.0, target_volume + 1])
         meter_state = MagicMock()
+        meter_state.attributes = {"unit_of_measurement": "L"}
 
         def get_state(entity_id):
             if entity_id == "sensor.flow_meter":
@@ -299,6 +301,7 @@ class TestFlowMeterDelivery:
 
         meter_state = MagicMock()
         meter_state.state = "0.0"
+        meter_state.attributes = {"unit_of_measurement": "L"}
         hass_mock.states.get = MagicMock(return_value=meter_state)
 
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)

@@ -585,8 +585,11 @@ class TestManualValveDetection:
 
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
 
-        # Simulate flow meter reads: 100L at open, 110L at close → 10L delivered
-        flow_values = iter([MagicMock(state="100.0"), MagicMock(state="110.0")])
+        # Simulate flow meter reads: unit check, 100L at open, unit check + 110L at close
+        # Unit is "L" (cumulative volume, not rate)
+        meter_state = MagicMock(state="100.0", attributes={"unit_of_measurement": "L"})
+        meter_close = MagicMock(state="110.0", attributes={"unit_of_measurement": "L"})
+        flow_values = iter([meter_state, meter_state, meter_close, meter_close])
         original_get = hass_mock.states.get
 
         def mock_get(entity_id):
@@ -813,7 +816,9 @@ class TestValveMonitoringEdgeCases:
         zone._zone_deficit = 10.0
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
 
-        flow_values = iter([MagicMock(state="100.0"), MagicMock(state="120.0")])
+        meter_open = MagicMock(state="100.0", attributes={"unit_of_measurement": "L"})
+        meter_close = MagicMock(state="120.0", attributes={"unit_of_measurement": "L"})
+        flow_values = iter([meter_open, meter_open, meter_close, meter_close])
         hass_mock.states.get = lambda eid: next(flow_values) if eid == "sensor.flow" else None
 
         open_event = self._make_valve_event("switch.valve_na", "off", "on")
@@ -822,8 +827,8 @@ class TestValveMonitoringEdgeCases:
         close_event = self._make_valve_event("switch.valve_na", "on", "off")
         ctrl._on_valve_state_change(close_event)
 
-        # area=0 → no compensation applied, deficit unchanged
-        assert zone._zone_deficit == 10.0
+        # area=0 → can't calculate mm, deficit reset to zero
+        assert zone._zone_deficit == 0.0
 
     def test_manual_event_has_no_volume_or_duration(self, controller, zone_orto, hass_mock):
         """Manual close event should not include volume_liters or duration_s."""

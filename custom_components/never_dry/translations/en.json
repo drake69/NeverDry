@@ -84,6 +84,7 @@
         "menu_options": {
           "model_params": "Edit model parameters (α, T_base, D_max)",
           "add_zone": "Add a new irrigation zone",
+          "edit_zone": "Edit an irrigation zone",
           "remove_zone": "Remove an irrigation zone"
         }
       },
@@ -101,6 +102,30 @@
         "data": {
           "name": "Zone name",
           "valve": "Valve switch (optional)",
+          "delivery_mode": "Water delivery mode",
+          "area_m2": "Irrigated area",
+          "system_type": "Irrigation system type",
+          "efficiency": "Custom efficiency",
+          "plant_family": "Plant family",
+          "kc": "Custom crop coefficient Kc",
+          "flow_rate_lpm": "Valve flow rate",
+          "flow_meter_sensor": "Flow meter sensor",
+          "volume_entity": "Volume target entity",
+          "delivery_timeout": "Safety timeout",
+          "threshold": "Threshold for Mode A"
+        }
+      },
+      "edit_zone": {
+        "title": "Edit irrigation zone",
+        "data": {
+          "zone_to_edit": "Zone to edit"
+        }
+      },
+      "edit_zone_detail": {
+        "title": "Edit zone: {zone_name}",
+        "data": {
+          "name": "Zone name",
+          "valve": "Valve switch",
           "delivery_mode": "Water delivery mode",
           "area_m2": "Irrigated area",
           "system_type": "Irrigation system type",
