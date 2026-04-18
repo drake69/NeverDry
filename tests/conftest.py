@@ -141,7 +141,6 @@ from never_dry.sensor import (  # noqa: E402
     DrynessIndexSensor,
     ETSensor,
     IrrigationZoneSensor,
-    ZoneDeficitSensor,
 )
 
 
