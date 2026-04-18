@@ -640,18 +640,14 @@ class TestBatteryMonitoring:
         return ctrl, zone
 
     def test_low_battery_sends_notification(self, hass_mock, di_sensor):
-        ctrl, _ = self._make_controller_with_battery(
-            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
-        )
+        ctrl, _ = self._make_controller_with_battery(hass_mock, di_sensor, battery_sensor="sensor.valve_battery")
         event = self._make_battery_event("sensor.valve_battery", 10)
         ctrl._on_battery_change(event)
 
         assert "Garden" in ctrl._battery_alerted
 
     def test_no_alert_above_threshold(self, hass_mock, di_sensor):
-        ctrl, _ = self._make_controller_with_battery(
-            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
-        )
+        ctrl, _ = self._make_controller_with_battery(hass_mock, di_sensor, battery_sensor="sensor.valve_battery")
         event = self._make_battery_event("sensor.valve_battery", 50)
         ctrl._on_battery_change(event)
 
@@ -659,9 +655,7 @@ class TestBatteryMonitoring:
 
     def test_alert_only_once(self, hass_mock, di_sensor):
         """Should not re-alert for same zone until battery recovers."""
-        ctrl, _ = self._make_controller_with_battery(
-            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
-        )
+        ctrl, _ = self._make_controller_with_battery(hass_mock, di_sensor, battery_sensor="sensor.valve_battery")
         event = self._make_battery_event("sensor.valve_battery", 10)
         ctrl._on_battery_change(event)
         ctrl._on_battery_change(event)  # second time
@@ -671,9 +665,7 @@ class TestBatteryMonitoring:
 
     def test_re_alerts_after_recovery(self, hass_mock, di_sensor):
         """Should re-alert if battery recovers and drops again."""
-        ctrl, _ = self._make_controller_with_battery(
-            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
-        )
+        ctrl, _ = self._make_controller_with_battery(hass_mock, di_sensor, battery_sensor="sensor.valve_battery")
         # Drop
         ctrl._on_battery_change(self._make_battery_event("sensor.valve_battery", 10))
         assert "Garden" in ctrl._battery_alerted
@@ -720,8 +712,7 @@ class TestIrrigationEvent:
 
         # Event should not have been fired (stop before completion)
         fire_calls = [
-            c for c in hass_mock.bus.async_fire.call_args_list
-            if c.args[0] == "never_dry_irrigation_complete"
+            c for c in hass_mock.bus.async_fire.call_args_list if c.args[0] == "never_dry_irrigation_complete"
         ]
         assert len(fire_calls) == 0
 

@@ -292,6 +292,7 @@ class TestIrrigationFeedback:
         zone.async_get_last_state = AsyncMock(return_value=last_state)
 
         import asyncio
+
         asyncio.get_event_loop().run_until_complete(zone.async_added_to_hass())
 
         assert zone._last_irrigated == datetime.fromisoformat("2026-04-15T10:30:00")

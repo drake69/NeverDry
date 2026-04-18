@@ -74,14 +74,10 @@ class IrrigationController:
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
         self._manual_valve_open: dict[str, float | None] = {}
         # Reverse map: valve_entity_id → zone_name
-        self._valve_to_zone: dict[str, str] = {
-            zs.valve: zs.zone_name for zs in zone_sensors if zs.valve
-        }
+        self._valve_to_zone: dict[str, str] = {zs.valve: zs.zone_name for zs in zone_sensors if zs.valve}
         # Battery sensor → zone_name map
         self._battery_to_zone: dict[str, str] = {
-            zs.battery_sensor: zs.zone_name
-            for zs in zone_sensors
-            if zs.battery_sensor
+            zs.battery_sensor: zs.zone_name for zs in zone_sensors if zs.battery_sensor
         }
         # Track which zones have already been alerted for low battery
         self._battery_alerted: set[str] = set()
@@ -112,16 +108,12 @@ class IrrigationController:
         # Monitor valve state changes to detect manual irrigation
         valve_entities = [v for v in self._valve_to_zone if v]
         if valve_entities:
-            async_track_state_change_event(
-                self._hass, valve_entities, self._on_valve_state_change
-            )
+            async_track_state_change_event(self._hass, valve_entities, self._on_valve_state_change)
 
         # Monitor battery sensors for low-battery alerts
         battery_entities = [b for b in self._battery_to_zone if b]
         if battery_entities:
-            async_track_state_change_event(
-                self._hass, battery_entities, self._on_battery_change
-            )
+            async_track_state_change_event(self._hass, battery_entities, self._on_battery_change)
 
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
@@ -547,8 +539,7 @@ class IrrigationController:
                         delivered_mm = delivered_liters / zone._area
                         zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
                     _LOGGER.info(
-                        "Manual irrigation measured: zone='%s', delivered=%.1fL, "
-                        "new deficit=%.2fmm",
+                        "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
                         zone_name,
                         delivered_liters,
                         zone._zone_deficit,
@@ -556,8 +547,7 @@ class IrrigationController:
                 else:
                     zone.reset_deficit()
                     _LOGGER.info(
-                        "Manual irrigation detected (flow meter unavailable at close): "
-                        "zone='%s', deficit reset",
+                        "Manual irrigation detected (flow meter unavailable at close): zone='%s', deficit reset",
                         zone_name,
                     )
             else:

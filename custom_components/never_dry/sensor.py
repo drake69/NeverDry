@@ -612,9 +612,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 ts = last.attributes.get("last_irrigated")
                 if ts:
                     self._last_irrigated = datetime.fromisoformat(ts)
-                    self._last_volume_delivered = float(
-                        last.attributes.get("last_volume_delivered", 0.0)
-                    )
+                    self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
