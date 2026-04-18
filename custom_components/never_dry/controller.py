@@ -71,7 +71,7 @@ class IrrigationController:
         self._irrigation_task: asyncio.Task | None = None
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
         self._unsub_monitor = None
-        self._last_service_call: float = 0.0
+        self._last_service_call: dict[str, float] = {}
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
         self._manual_valve_open: dict[str, float | None] = {}
         # Reverse map: valve_entity_id → zone_name
@@ -141,19 +141,25 @@ class IrrigationController:
 
     # ── Rate limiting ──────────────────────────────────────
 
-    def _is_throttled(self, service_name: str) -> bool:
-        """Return True if a service call should be rejected (rate limit)."""
+    def _is_throttled(self, service_name: str, zone_name: str | None = None) -> bool:
+        """Return True if a service call should be rejected (rate limit).
+
+        Throttling is per service+zone so that calling irrigate on
+        different zones in quick succession is allowed.
+        """
+        key = f"{service_name}:{zone_name}" if zone_name else service_name
         now = time.monotonic()
-        elapsed = now - self._last_service_call
+        last = self._last_service_call.get(key, 0.0)
+        elapsed = now - last
         if elapsed < MIN_SERVICE_INTERVAL_S:
             _LOGGER.warning(
                 "Service %s throttled — %0.1fs since last call (min %ds)",
-                service_name,
+                key,
                 elapsed,
                 MIN_SERVICE_INTERVAL_S,
             )
             return True
-        self._last_service_call = now
+        self._last_service_call[key] = now
         return False
 
     # ── Service handlers ─────────────────────────────────
@@ -170,9 +176,9 @@ class IrrigationController:
 
     async def _handle_irrigate_zone(self, call: ServiceCall) -> None:
         """Irrigate a single zone by name."""
-        if self._is_throttled("irrigate_zone"):
-            return
         zone_name = call.data.get(ATTR_ZONE_NAME)
+        if self._is_throttled("irrigate_zone", zone_name):
+            return
         if zone_name not in self._zones:
             _LOGGER.error(
                 "Zone '%s' not found. Available: %s",
@@ -216,9 +222,9 @@ class IrrigationController:
 
     async def _handle_mark_irrigated(self, call: ServiceCall) -> None:
         """Mark one or all zones as manually irrigated (reset deficit, no valve)."""
-        if self._is_throttled("mark_irrigated"):
-            return
         zone_name = call.data.get(ATTR_ZONE_NAME)
+        if self._is_throttled("mark_irrigated", zone_name):
+            return
         if zone_name is not None:
             if zone_name not in self._zones:
                 _LOGGER.error(
