@@ -181,7 +181,8 @@ def _create_entities(
         entities.append(zone_sensor)
         entities.append(ZoneDeficitSensor(zone_sensor, zone_device))
         entities.append(ZoneRainSensor(zone_sensor, zone_device))
-        entities.append(ZoneWaterDeliveredSensor(zone_sensor, zone_device))
+        entities.append(ZoneSessionWaterSensor(zone_sensor, zone_device))
+        entities.append(ZoneYearlyWaterSensor(zone_sensor, zone_device))
 
     return entities, di_sensor, zone_sensors
 
@@ -617,6 +618,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._last_volume_delivered: float = 0.0
         self._total_rain: float = 0.0
         self._total_water_delivered: float = 0.0
+        self._yearly_water_delivered: float = 0.0
+        self._yearly_water_year: int = datetime.now().year
+        self._session_water_delivered: float = 0.0
 
         # Kc: manual override > plant family seasonal profile > 1.0
         self._plant_family = zone_config.get(CONF_ZONE_PLANT_FAMILY)
@@ -663,6 +667,14 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 self._total_rain = float(last.attributes.get("total_rain_mm", 0.0))
             with contextlib.suppress(ValueError, TypeError):
                 self._total_water_delivered = float(last.attributes.get("total_water_delivered_l", 0.0))
+            with contextlib.suppress(ValueError, TypeError):
+                self._yearly_water_delivered = float(last.attributes.get("yearly_water_delivered_l", 0.0))
+            with contextlib.suppress(ValueError, TypeError):
+                self._yearly_water_year = int(last.attributes.get("yearly_water_year", datetime.now().year))
+                # Reset yearly counter if year changed since last save
+                if datetime.now().year != self._yearly_water_year:
+                    self._yearly_water_delivered = 0.0
+                    self._yearly_water_year = datetime.now().year
         else:
             # New zone: seed deficit from global Dryness Index * Kc
             kc = self._get_current_kc()
@@ -738,13 +750,23 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
 
     def set_irrigating(self, state: bool) -> None:
         """Set the irrigating state (called by controller)."""
+        if state and not self._irrigating:
+            # Starting a new irrigation session
+            self._session_water_delivered = 0.0
         self._irrigating = state
 
     def reset_deficit(self) -> None:
         """Reset this zone's deficit to zero (called after irrigation)."""
         self._last_volume_delivered = round(self.volume_liters, 1)
+        self._session_water_delivered = self._last_volume_delivered
         self._total_water_delivered += self._last_volume_delivered
-        self._last_irrigated = datetime.now()
+        # Reset yearly counter on year change
+        now = datetime.now()
+        if now.year != self._yearly_water_year:
+            self._yearly_water_delivered = 0.0
+            self._yearly_water_year = now.year
+        self._yearly_water_delivered += self._last_volume_delivered
+        self._last_irrigated = now
         self._zone_deficit = 0.0
 
     @property
@@ -792,6 +814,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         }
         attrs["total_rain_mm"] = round(self._total_rain, 2)
         attrs["total_water_delivered_l"] = round(self._total_water_delivered, 1)
+        attrs["yearly_water_delivered_l"] = round(self._yearly_water_delivered, 1)
+        attrs["yearly_water_year"] = self._yearly_water_year
+        attrs["session_water_delivered_l"] = round(self._session_water_delivered, 1)
         if self._last_irrigated:
             attrs["last_irrigated"] = self._last_irrigated.isoformat()
             attrs["last_volume_delivered"] = self._last_volume_delivered
@@ -879,17 +904,20 @@ class ZoneRainSensor(SensorEntity):
 
 
 # ══════════════════════════════════════════════════════════
-#  ZoneWaterDeliveredSensor (cumulative irrigation per zone in L)
+#  ZoneSessionWaterSensor (current/last irrigation session in L)
 # ══════════════════════════════════════════════════════════
 
 
-class ZoneWaterDeliveredSensor(SensorEntity):
-    """Cumulative water delivered by irrigation to this zone [L]."""
+class ZoneSessionWaterSensor(SensorEntity):
+    """Water delivered in the current or last irrigation session [L].
+
+    Resets to zero when a new irrigation starts.
+    """
 
     _attr_has_entity_name = True
-    _attr_name = "Water delivered"
+    _attr_name = "Session water"
     _attr_native_unit_of_measurement = "L"
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-pump"
 
     def __init__(
@@ -899,7 +927,7 @@ class ZoneWaterDeliveredSensor(SensorEntity):
     ) -> None:
         self._zone_sensor = zone_sensor
         slug = zone_sensor.zone_name.lower().replace(" ", "_")
-        self._attr_unique_id = f"water_delivered_zone_{slug}"
+        self._attr_unique_id = f"session_water_zone_{slug}"
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
@@ -910,4 +938,42 @@ class ZoneWaterDeliveredSensor(SensorEntity):
 
     @property
     def native_value(self) -> float:
-        return round(self._zone_sensor._total_water_delivered, 1)
+        return round(self._zone_sensor._session_water_delivered, 1)
+
+
+# ══════════════════════════════════════════════════════════
+#  ZoneYearlyWaterSensor (yearly cumulative irrigation in L)
+# ══════════════════════════════════════════════════════════
+
+
+class ZoneYearlyWaterSensor(SensorEntity):
+    """Water delivered by irrigation this year [L].
+
+    Resets automatically on January 1st.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Yearly water"
+    _attr_native_unit_of_measurement = "L"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(
+        self,
+        zone_sensor: IrrigationZoneSensor,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        self._zone_sensor = zone_sensor
+        slug = zone_sensor.zone_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"yearly_water_zone_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+        zone_sensor._dryness.register_zone_listener(self._on_update)
+
+    def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
+        """Update when the dryness sensor broadcasts."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._yearly_water_delivered, 1)
