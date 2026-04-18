@@ -179,6 +179,7 @@ def _create_entities(
         zone_sensor = IrrigationZoneSensor(hass, zone_conf, di_sensor, zone_device)
         zone_sensors.append(zone_sensor)
         entities.append(zone_sensor)
+        entities.append(ZoneDeficitSensor(zone_sensor, zone_device))
 
     return entities, di_sensor, zone_sensors
 
@@ -639,7 +640,12 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         dryness_sensor.register_zone_listener(self._on_et_update)
 
     async def async_added_to_hass(self) -> None:
-        """Restore zone deficit from previous state."""
+        """Restore zone deficit from previous state.
+
+        If no previous state exists (new zone), initialize from the
+        global Dryness Index scaled by this zone's Kc — so a new zone
+        starts with a realistic deficit instead of zero.
+        """
         last = await self.async_get_last_state()
         if last and last.attributes:
             with contextlib.suppress(ValueError, TypeError):
@@ -649,6 +655,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 if ts:
                     self._last_irrigated = datetime.fromisoformat(ts)
                     self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
+        else:
+            # New zone: seed deficit from global Dryness Index * Kc
+            kc = self._get_current_kc()
+            self._zone_deficit = self._dryness.deficit * kc
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
@@ -779,3 +789,42 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
             attrs["delivery_timeout_s"] = self._delivery_timeout
         return attrs
+
+
+# ══════════════════════════════════════════════════════════
+#  ZoneDeficitSensor (per-zone deficit in mm)
+# ══════════════════════════════════════════════════════════
+
+
+class ZoneDeficitSensor(SensorEntity):
+    """Per-zone soil water deficit [mm].
+
+    Mirrors the zone deficit from the parent IrrigationZoneSensor
+    as a dedicated sensor entity, making it visible in the device page.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Deficit"
+    _attr_native_unit_of_measurement = "mm"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:water-percent-alert"
+
+    def __init__(
+        self,
+        zone_sensor: IrrigationZoneSensor,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        self._zone_sensor = zone_sensor
+        slug = zone_sensor.zone_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"deficit_zone_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+        zone_sensor._dryness.register_zone_listener(self._on_update)
+
+    def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
+        """Update when the dryness sensor broadcasts."""
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._zone_deficit, 2)
