@@ -9,6 +9,7 @@ from never_dry.const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_RATE,
     CONF_ZONE_NAME,
+    CONF_ZONE_THRESHOLD,
     MIN_SERVICE_INTERVAL_S,
 )
 from never_dry.controller import IrrigationController
@@ -311,20 +312,23 @@ class TestMonitoringMode:
         assert controller.is_monitoring_mode is False
 
     def test_register_services_starts_monitor(self, hass_mock, di_sensor):
-        """In monitoring mode, register_services should start the periodic check."""
+        """In monitoring mode, register_services should start monitoring + anomaly timers."""
         from homeassistant.helpers.event import async_track_time_interval
 
+        async_track_time_interval.reset_mock()
         ctrl, _ = self._make_no_valve_controller(hass_mock, di_sensor)
         ctrl.register_services()
-        async_track_time_interval.assert_called_once()
+        # 2 calls: anomaly check (all modes) + monitoring check (monitoring mode only)
+        assert async_track_time_interval.call_count == 2
 
-    def test_register_services_no_monitor_with_valves(self, controller, hass_mock):
-        """With valves, register_services should NOT start the periodic check."""
+    def test_register_services_anomaly_only_with_valves(self, controller, hass_mock):
+        """With valves, register_services should start only the anomaly timer."""
         from homeassistant.helpers.event import async_track_time_interval
 
         async_track_time_interval.reset_mock()
         controller.register_services()
-        async_track_time_interval.assert_not_called()
+        # Only anomaly check, no monitoring check
+        async_track_time_interval.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_notify_when_deficit_above_threshold(self, hass_mock, di_sensor):
@@ -831,6 +835,83 @@ class TestValveMonitoringEdgeCases:
         assert "volume_liters" not in event_data
         assert "duration_s" not in event_data
         assert event_data["source"] == "manual"
+
+
+class TestDeficitAnomaly:
+    """Test anomalous deficit detection."""
+
+    def _make_controller(self, hass_mock, di_sensor, zone_deficit=0.0, threshold=15.0):
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Garden",
+                "valve": "switch.valve_garden",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.85,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                CONF_ZONE_THRESHOLD: threshold,
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = zone_deficit
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        return ctrl, zone
+
+    @pytest.mark.asyncio
+    async def test_alerts_when_deficit_exceeds_2x_threshold(self, hass_mock, di_sensor):
+        """Should alert when deficit > 2x threshold."""
+        ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=35.0, threshold=15.0)
+        await ctrl._check_deficit_anomaly()
+
+        hass_mock.services.async_call.assert_called_once()
+        call_args = hass_mock.services.async_call.call_args
+        assert call_args.args[0] == "persistent_notification"
+        assert "35.0 mm" in call_args.args[2]["message"]
+        assert "Garden" in ctrl._deficit_anomaly_alerted
+
+    @pytest.mark.asyncio
+    async def test_no_alert_below_2x_threshold(self, hass_mock, di_sensor):
+        """Should not alert when deficit < 2x threshold."""
+        ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=25.0, threshold=15.0)
+        await ctrl._check_deficit_anomaly()
+
+        hass_mock.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_alert_only_once(self, hass_mock, di_sensor):
+        """Should not re-alert for same zone."""
+        ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=40.0, threshold=15.0)
+        await ctrl._check_deficit_anomaly()
+        await ctrl._check_deficit_anomaly()
+
+        assert hass_mock.services.async_call.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_re_alerts_after_recovery(self, hass_mock, di_sensor):
+        """Should re-alert if deficit drops and rises again."""
+        ctrl, zone = self._make_controller(hass_mock, di_sensor, zone_deficit=40.0, threshold=15.0)
+        await ctrl._check_deficit_anomaly()
+        assert "Garden" in ctrl._deficit_anomaly_alerted
+
+        # Deficit recovers
+        zone._zone_deficit = 10.0
+        await ctrl._check_deficit_anomaly()
+        assert "Garden" not in ctrl._deficit_anomaly_alerted
+
+        # Deficit rises again
+        zone._zone_deficit = 35.0
+        await ctrl._check_deficit_anomaly()
+        assert hass_mock.services.async_call.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_exactly_at_2x_threshold_alerts(self, hass_mock, di_sensor):
+        """Deficit exactly at 2x threshold should trigger alert."""
+        ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=30.0, threshold=15.0)
+        await ctrl._check_deficit_anomaly()
+
+        assert "Garden" in ctrl._deficit_anomaly_alerted
 
 
 class TestBatteryMonitoringEdgeCases:

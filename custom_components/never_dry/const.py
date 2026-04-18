@@ -112,6 +112,7 @@ DEFAULT_KC = 1.0
 DEFAULT_RAIN_SENSOR_TYPE = RAIN_TYPE_EVENT
 DEFAULT_BACKFILL_DAYS = 90
 DEFAULT_BATTERY_LOW_THRESHOLD = 15  # percent
+ANOMALY_DEFICIT_MULTIPLIER = 2  # alert when deficit > threshold * this
 CONF_BACKFILL_DAYS = "backfill_days"
 
 # ── Runtime safety limits ────────────────────────────────

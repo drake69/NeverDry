@@ -23,6 +23,7 @@ from homeassistant.helpers.event import (
 )
 
 from .const import (
+    ANOMALY_DEFICIT_MULTIPLIER,
     ATTR_ZONE_NAME,
     DEFAULT_BATTERY_LOW_THRESHOLD,
     DEFAULT_INTER_ZONE_DELAY,
@@ -81,6 +82,8 @@ class IrrigationController:
         }
         # Track which zones have already been alerted for low battery
         self._battery_alerted: set[str] = set()
+        # Track which zones have already been alerted for anomalous deficit
+        self._deficit_anomaly_alerted: set[str] = set()
 
     @property
     def is_monitoring_mode(self) -> bool:
@@ -115,10 +118,17 @@ class IrrigationController:
         if battery_entities:
             async_track_state_change_event(self._hass, battery_entities, self._on_battery_change)
 
+        # Periodic deficit anomaly check (all modes, every 6h)
+        from datetime import timedelta
+
+        async_track_time_interval(
+            self._hass,
+            self._check_deficit_anomaly,
+            timedelta(hours=6),
+        )
+
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
-            from datetime import timedelta
-
             _LOGGER.info(
                 "No valves configured — running in monitoring mode. "
                 "Irrigation alerts will be sent every 6 hours when needed."
@@ -613,6 +623,46 @@ class IrrigationController:
         else:
             # Battery recovered (e.g. replaced) — reset alert
             self._battery_alerted.discard(zone_name)
+
+    # ── Deficit anomaly detection ─────────────────────────
+
+    async def _check_deficit_anomaly(self, now=None) -> None:
+        """Alert when a zone's deficit is anomalously high (possible malfunction).
+
+        Called every 6 hours in all modes. Alerts once per zone until
+        the deficit drops back below the anomaly threshold.
+        """
+        for zs in self._zones.values():
+            threshold = zs.extra_state_attributes.get("threshold_mm", DEFAULT_THRESHOLD)
+            anomaly_limit = threshold * ANOMALY_DEFICIT_MULTIPLIER
+            zone_deficit = zs._zone_deficit
+
+            if zone_deficit >= anomaly_limit:
+                if zs.zone_name not in self._deficit_anomaly_alerted:
+                    self._deficit_anomaly_alerted.add(zs.zone_name)
+                    await self._hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": "Anomalous deficit — possible malfunction",
+                            "message": (
+                                f"Zone **{zs.zone_name}**: deficit {zone_deficit:.1f} mm "
+                                f"exceeds {anomaly_limit:.0f} mm "
+                                f"({ANOMALY_DEFICIT_MULTIPLIER}\u00d7 threshold). "
+                                f"Irrigation may not be working correctly. "
+                                f"Check valve, schedule, and HA logs."
+                            ),
+                            "notification_id": f"{DOMAIN}_anomaly_{zs.zone_name}",
+                        },
+                    )
+                    _LOGGER.warning(
+                        "Deficit anomaly: zone='%s', deficit=%.1fmm, limit=%.0fmm",
+                        zs.zone_name,
+                        zone_deficit,
+                        anomaly_limit,
+                    )
+            else:
+                self._deficit_anomaly_alerted.discard(zs.zone_name)
 
     # ── Monitoring mode (no valves) ──────────────────────
 
