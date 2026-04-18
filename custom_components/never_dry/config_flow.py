@@ -375,6 +375,15 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = dict(self._config_entry.data)
             zones = list(new_data.get(CONF_ZONES, []))
+            # Reject duplicate zone names
+            new_name = user_input[CONF_ZONE_NAME]
+            existing_names = {z[CONF_ZONE_NAME] for z in zones}
+            if new_name in existing_names:
+                return self.async_show_form(
+                    step_id="add_zone",
+                    data_schema=STEP_ZONE_SCHEMA,
+                    errors={"base": "zone_already_exists"},
+                )
             zones.append(user_input)
             new_data[CONF_ZONES] = zones
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
