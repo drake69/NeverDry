@@ -421,7 +421,8 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def async_step_edit_zone_detail(
-        self, user_input: dict[str, Any] | None = None,
+        self,
+        user_input: dict[str, Any] | None = None,
     ) -> config_entries.ConfigFlowResult:
         """Edit zone details with current values as defaults."""
         zones = list(self._config_entry.data.get(CONF_ZONES, []))
@@ -432,14 +433,12 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             new_data = dict(self._config_entry.data)
-            new_zones = [
-                z for z in zones
-                if z[CONF_ZONE_NAME] != self._edit_zone_name
-            ]
+            new_zones = [z for z in zones if z[CONF_ZONE_NAME] != self._edit_zone_name]
             new_zones.append(user_input)
             new_data[CONF_ZONES] = new_zones
             self.hass.config_entries.async_update_entry(
-                self._config_entry, data=new_data,
+                self._config_entry,
+                data=new_data,
             )
             return self.async_create_entry(data={})
 
@@ -479,104 +478,131 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 label="Manual / hose (η=0.55)",
             ),
         ]
-        pf_opts = [
-            selector.SelectOptionDict(value=k, label=d["label"])
-            for k, d in PLANT_FAMILIES.items()
-        ]
+        pf_opts = [selector.SelectOptionDict(value=k, label=d["label"]) for k, d in PLANT_FAMILIES.items()]
         ent_sw = selector.EntitySelectorConfig(domain="switch")
         ent_sn = selector.EntitySelectorConfig(domain="sensor")
         ent_nr = selector.EntitySelectorConfig(domain="number")
 
-        schema = vol.Schema({
-            vol.Required(
-                CONF_ZONE_NAME, default=_d(CONF_ZONE_NAME, ""),
-            ): selector.TextSelector(),
-            vol.Optional(
-                CONF_ZONE_VALVE, default=_d(CONF_ZONE_VALVE),
-            ): selector.EntitySelector(ent_sw),
-            vol.Optional(
-                CONF_ZONE_DELIVERY_MODE,
-                default=_d(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=dm_opts, mode="dropdown",
-                )
-            ),
-            vol.Required(
-                CONF_ZONE_AREA, default=_d(CONF_ZONE_AREA, 10.0),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1, max=10000.0, step=0.1,
-                    mode="box", unit_of_measurement="m²",
-                )
-            ),
-            vol.Required(
-                CONF_ZONE_SYSTEM_TYPE,
-                default=_d(CONF_ZONE_SYSTEM_TYPE, SYSTEM_TYPE_DRIP),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=st_opts, mode="dropdown",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_EFFICIENCY, default=_d(CONF_ZONE_EFFICIENCY),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1, max=1.0, step=0.05, mode="slider",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_PLANT_FAMILY,
-                default=_d(CONF_ZONE_PLANT_FAMILY),
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=pf_opts, mode="dropdown",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_KC, default=_d(CONF_ZONE_KC),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1, max=2.0, step=0.05, mode="box",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_FLOW_RATE, default=_d(CONF_ZONE_FLOW_RATE),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0.1, max=200.0, step=0.1,
-                    mode="box", unit_of_measurement="L/min",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_FLOW_METER_SENSOR,
-                default=_d(CONF_ZONE_FLOW_METER_SENSOR),
-            ): selector.EntitySelector(ent_sn),
-            vol.Optional(
-                CONF_ZONE_VOLUME_ENTITY,
-                default=_d(CONF_ZONE_VOLUME_ENTITY),
-            ): selector.EntitySelector(ent_nr),
-            vol.Optional(
-                CONF_ZONE_DELIVERY_TIMEOUT,
-                default=_d(
-                    CONF_ZONE_DELIVERY_TIMEOUT, DEFAULT_DELIVERY_TIMEOUT_S,
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_ZONE_NAME,
+                    default=_d(CONF_ZONE_NAME, ""),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_ZONE_VALVE,
+                    default=_d(CONF_ZONE_VALVE),
+                ): selector.EntitySelector(ent_sw),
+                vol.Optional(
+                    CONF_ZONE_DELIVERY_MODE,
+                    default=_d(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=dm_opts,
+                        mode="dropdown",
+                    )
                 ),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=60, max=7200, step=60,
-                    mode="box", unit_of_measurement="s",
-                )
-            ),
-            vol.Optional(
-                CONF_ZONE_THRESHOLD,
-                default=_d(CONF_ZONE_THRESHOLD, DEFAULT_THRESHOLD),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=1.0, max=100.0, step=1.0,
-                    mode="box", unit_of_measurement="mm",
-                )
-            ),
-        })
+                vol.Required(
+                    CONF_ZONE_AREA,
+                    default=_d(CONF_ZONE_AREA, 10.0),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=10000.0,
+                        step=0.1,
+                        mode="box",
+                        unit_of_measurement="m²",
+                    )
+                ),
+                vol.Required(
+                    CONF_ZONE_SYSTEM_TYPE,
+                    default=_d(CONF_ZONE_SYSTEM_TYPE, SYSTEM_TYPE_DRIP),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=st_opts,
+                        mode="dropdown",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_EFFICIENCY,
+                    default=_d(CONF_ZONE_EFFICIENCY),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=1.0,
+                        step=0.05,
+                        mode="slider",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_PLANT_FAMILY,
+                    default=_d(CONF_ZONE_PLANT_FAMILY),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=pf_opts,
+                        mode="dropdown",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_KC,
+                    default=_d(CONF_ZONE_KC),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=2.0,
+                        step=0.05,
+                        mode="box",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_FLOW_RATE,
+                    default=_d(CONF_ZONE_FLOW_RATE),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0.1,
+                        max=200.0,
+                        step=0.1,
+                        mode="box",
+                        unit_of_measurement="L/min",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_FLOW_METER_SENSOR,
+                    default=_d(CONF_ZONE_FLOW_METER_SENSOR),
+                ): selector.EntitySelector(ent_sn),
+                vol.Optional(
+                    CONF_ZONE_VOLUME_ENTITY,
+                    default=_d(CONF_ZONE_VOLUME_ENTITY),
+                ): selector.EntitySelector(ent_nr),
+                vol.Optional(
+                    CONF_ZONE_DELIVERY_TIMEOUT,
+                    default=_d(
+                        CONF_ZONE_DELIVERY_TIMEOUT,
+                        DEFAULT_DELIVERY_TIMEOUT_S,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=60,
+                        max=7200,
+                        step=60,
+                        mode="box",
+                        unit_of_measurement="s",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_THRESHOLD,
+                    default=_d(CONF_ZONE_THRESHOLD, DEFAULT_THRESHOLD),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1.0,
+                        max=100.0,
+                        step=1.0,
+                        mode="box",
+                        unit_of_measurement="mm",
+                    )
+                ),
+            }
+        )
 
         return self.async_show_form(
             step_id="edit_zone_detail",
