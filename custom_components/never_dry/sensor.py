@@ -21,6 +21,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -67,6 +68,7 @@ from .const import (
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
     DELIVERY_MODE_ESTIMATED_FLOW,
+    DOMAIN,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
     RAIN_TYPE_EVENT,
@@ -140,17 +142,41 @@ def compute_kc(
 # ══════════════════════════════════════════════════════════
 
 
+def _hub_device_info(entry_id: str) -> DeviceInfo:
+    """Device info for the main NeverDry hub (ET + deficit sensors)."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry_id)},
+        name="NeverDry",
+        manufacturer="NeverDry",
+        model="Smart Watering Controller",
+    )
+
+
+def _zone_device_info(entry_id: str, zone_name: str) -> DeviceInfo:
+    """Device info for a zone (sensor + buttons grouped together)."""
+    slug = zone_name.lower().replace(" ", "_")
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{entry_id}_{slug}")},
+        name=f"NeverDry {zone_name}",
+        manufacturer="NeverDry",
+        model="Irrigation Zone",
+        via_device=(DOMAIN, entry_id),
+    )
+
+
 def _create_entities(
-    hass: HomeAssistant, config: dict
+    hass: HomeAssistant, config: dict, entry_id: str = "yaml"
 ) -> tuple[list[SensorEntity], DrynessIndexSensor, list[IrrigationZoneSensor]]:
     """Create sensor entities from a config dict (shared by YAML and UI)."""
-    et_sensor = ETSensor(hass, config)
-    di_sensor = DrynessIndexSensor(hass, config)
+    hub_device = _hub_device_info(entry_id)
+    et_sensor = ETSensor(hass, config, hub_device)
+    di_sensor = DrynessIndexSensor(hass, config, hub_device)
     entities: list[SensorEntity] = [et_sensor, di_sensor]
 
     zone_sensors: list[IrrigationZoneSensor] = []
     for zone_conf in config.get(CONF_ZONES, []):
-        zone_sensor = IrrigationZoneSensor(hass, zone_conf, di_sensor)
+        zone_device = _zone_device_info(entry_id, zone_conf[CONF_ZONE_NAME])
+        zone_sensor = IrrigationZoneSensor(hass, zone_conf, di_sensor, zone_device)
         zone_sensors.append(zone_sensor)
         entities.append(zone_sensor)
 
@@ -189,7 +215,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the NeverDry sensors from a config entry (UI)."""
     config = dict(entry.data)
-    entities, di_sensor, zone_sensors = _create_entities(hass, config)
+    entities, di_sensor, zone_sensors = _create_entities(hass, config, entry.entry_id)
     async_add_entities(entities, True)
     _setup_controller(hass, config, di_sensor, zone_sensors)
 
@@ -211,12 +237,14 @@ class ETSensor(SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:sun-thermometer"
 
-    def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
+    def __init__(self, hass: HomeAssistant, config: ConfigType, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
         self._temp_sensor = config[CONF_TEMP_SENSOR]
         self._alpha = config.get(CONF_ALPHA, DEFAULT_ALPHA)
         self._t_base = config.get(CONF_T_BASE, DEFAULT_T_BASE)
         self._value = 0.0
+        if device_info:
+            self._attr_device_info = device_info
 
     async def async_added_to_hass(self) -> None:
         """Register state change listener on temperature sensor."""
@@ -260,7 +288,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-percent-alert"
 
-    def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
+    def __init__(self, hass: HomeAssistant, config: ConfigType, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
         self._temp_sensor = config[CONF_TEMP_SENSOR]
         self._rain_sensor = config[CONF_RAIN_SENSOR]
@@ -276,6 +304,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._last_rain = 0.0  # tracks last rain reading for delta computation
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
+        if device_info:
+            self._attr_device_info = device_info
 
     def register_zone_listener(self, listener: Callable) -> None:
         """Register a zone sensor callback for ET/rain broadcasts."""
@@ -561,6 +591,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         hass: HomeAssistant,
         zone_config: dict,
         dryness_sensor: DrynessIndexSensor,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         self._hass = hass
         self._dryness = dryness_sensor
@@ -598,6 +629,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         slug = self._zone_name.lower().replace(" ", "_")
         self._attr_name = f"Irrigation {self._zone_name}"
         self._attr_unique_id = f"irrigation_zone_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
 
         # Register as listener on the dryness sensor
         dryness_sensor.register_zone_listener(self._on_et_update)
