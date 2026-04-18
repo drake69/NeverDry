@@ -28,6 +28,7 @@ def _create_ha_stubs():
 
     class SensorStateClass:
         MEASUREMENT = "measurement"
+        TOTAL_INCREASING = "total_increasing"
 
     sensor_mod.SensorStateClass = SensorStateClass
 
