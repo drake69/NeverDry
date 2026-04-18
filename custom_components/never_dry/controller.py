@@ -16,17 +16,22 @@ import asyncio
 import logging
 import time
 
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.helpers.event import (
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 
 from .const import (
     ATTR_ZONE_NAME,
+    DEFAULT_BATTERY_LOW_THRESHOLD,
     DEFAULT_INTER_ZONE_DELAY,
     DEFAULT_THRESHOLD,
     DELIVERY_MODE_ESTIMATED_FLOW,
     DELIVERY_MODE_FLOW_METER,
     DELIVERY_MODE_VOLUME_PRESET,
     DOMAIN,
+    EVENT_IRRIGATION_COMPLETE,
     FLOW_METER_POLL_INTERVAL_S,
     MIN_SERVICE_INTERVAL_S,
     SERVICE_IRRIGATE_ALL,
@@ -66,6 +71,16 @@ class IrrigationController:
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
         self._unsub_monitor = None
         self._last_service_call: float = 0.0
+        # Manual valve tracking: valve_entity_id → flow meter reading at valve open
+        self._manual_valve_open: dict[str, float | None] = {}
+        # Reverse map: valve_entity_id → zone_name
+        self._valve_to_zone: dict[str, str] = {zs.valve: zs.zone_name for zs in zone_sensors if zs.valve}
+        # Battery sensor → zone_name map
+        self._battery_to_zone: dict[str, str] = {
+            zs.battery_sensor: zs.zone_name for zs in zone_sensors if zs.battery_sensor
+        }
+        # Track which zones have already been alerted for low battery
+        self._battery_alerted: set[str] = set()
 
     @property
     def is_monitoring_mode(self) -> bool:
@@ -89,6 +104,16 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
         self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
+
+        # Monitor valve state changes to detect manual irrigation
+        valve_entities = [v for v in self._valve_to_zone if v]
+        if valve_entities:
+            async_track_state_change_event(self._hass, valve_entities, self._on_valve_state_change)
+
+        # Monitor battery sensors for low-battery alerts
+        battery_entities = [b for b in self._battery_to_zone if b]
+        if battery_entities:
+            async_track_state_change_event(self._hass, battery_entities, self._on_battery_change)
 
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
@@ -243,7 +268,19 @@ class IrrigationController:
                     break
 
                 if success:
+                    volume = zone.volume_liters
+                    duration = zone.duration_s
                     irrigated_zones.append(zone_name)
+                    self._hass.bus.async_fire(
+                        EVENT_IRRIGATION_COMPLETE,
+                        {
+                            "zone": zone_name,
+                            "source": "automatic",
+                            "volume_liters": round(volume, 1),
+                            "duration_s": duration,
+                            "deficit_mm": round(zone._zone_deficit, 2),
+                        },
+                    )
                     _LOGGER.info("Completed irrigation: zone='%s'", zone_name)
 
                 # Inter-zone delay (pressure stabilization)
@@ -454,6 +491,128 @@ class IrrigationController:
         await self._hass.services.async_call("switch", "turn_off", {"entity_id": entity_id})
         if self._active_valve == entity_id:
             self._active_valve = None
+
+    # ── Manual valve detection ───────────────────────────
+
+    @callback
+    def _on_valve_state_change(self, event) -> None:
+        """Detect manual valve operation (not initiated by controller)."""
+        if self._running:
+            return  # controller is driving the valve, ignore
+
+        entity_id = event.data.get("entity_id")
+        new_state = event.data.get("new_state")
+        old_state = event.data.get("old_state")
+
+        if new_state is None or old_state is None:
+            return
+        if entity_id not in self._valve_to_zone:
+            return
+
+        zone_name = self._valve_to_zone[entity_id]
+        zone = self._zones.get(zone_name)
+        if zone is None:
+            return
+
+        if old_state.state == "off" and new_state.state == "on":
+            # Valve opened manually — record flow meter baseline if available
+            flow_start = None
+            if zone.flow_meter_sensor:
+                flow_start = self._read_flow_meter(zone.flow_meter_sensor)
+            self._manual_valve_open[entity_id] = flow_start
+            _LOGGER.info(
+                "Manual valve open detected: zone='%s', flow_start=%s",
+                zone_name,
+                flow_start,
+            )
+
+        elif old_state.state == "on" and new_state.state == "off":
+            # Valve closed — compensate deficit
+            flow_start = self._manual_valve_open.pop(entity_id, None)
+
+            if zone.flow_meter_sensor and flow_start is not None:
+                flow_end = self._read_flow_meter(zone.flow_meter_sensor)
+                if flow_end is not None:
+                    delivered_liters = max(0.0, flow_end - flow_start)
+                    # Convert liters to mm: mm = L / area_m2
+                    if zone._area > 0:
+                        delivered_mm = delivered_liters / zone._area
+                        zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
+                    _LOGGER.info(
+                        "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
+                        zone_name,
+                        delivered_liters,
+                        zone._zone_deficit,
+                    )
+                else:
+                    zone.reset_deficit()
+                    _LOGGER.info(
+                        "Manual irrigation detected (flow meter unavailable at close): zone='%s', deficit reset",
+                        zone_name,
+                    )
+            else:
+                # No flow meter — full deficit reset
+                zone.reset_deficit()
+                _LOGGER.info(
+                    "Manual irrigation detected (no flow meter): zone='%s', deficit reset",
+                    zone_name,
+                )
+
+            zone.async_write_ha_state()
+            self._hass.bus.async_fire(
+                EVENT_IRRIGATION_COMPLETE,
+                {
+                    "zone": zone_name,
+                    "source": "manual",
+                    "deficit_mm": round(zone._zone_deficit, 2),
+                },
+            )
+
+    # ── Battery monitoring ────────────────────────────────
+
+    @callback
+    def _on_battery_change(self, event) -> None:
+        """Alert when a valve battery drops below threshold."""
+        new_state = event.data.get("new_state")
+        if new_state is None:
+            return
+
+        entity_id = event.data.get("entity_id")
+        if entity_id not in self._battery_to_zone:
+            return
+
+        try:
+            level = float(new_state.state)
+        except (ValueError, TypeError):
+            return
+
+        zone_name = self._battery_to_zone[entity_id]
+
+        if level <= DEFAULT_BATTERY_LOW_THRESHOLD:
+            if zone_name not in self._battery_alerted:
+                self._battery_alerted.add(zone_name)
+                self._hass.async_create_task(
+                    self._hass.services.async_call(
+                        "persistent_notification",
+                        "create",
+                        {
+                            "title": "Low battery — irrigation valve",
+                            "message": (
+                                f"Zone **{zone_name}**: valve battery at {level:.0f}%. "
+                                f"Replace batteries soon to avoid irrigation failures."
+                            ),
+                            "notification_id": f"{DOMAIN}_battery_{zone_name}",
+                        },
+                    )
+                )
+                _LOGGER.warning(
+                    "Low battery alert: zone='%s', level=%.0f%%",
+                    zone_name,
+                    level,
+                )
+        else:
+            # Battery recovered (e.g. replaced) — reset alert
+            self._battery_alerted.discard(zone_name)
 
     # ── Monitoring mode (no valves) ──────────────────────
 

@@ -17,6 +17,7 @@ from .const import (
     CONF_ZONE_NAME,
     CONF_ZONES,
     DOMAIN,
+    SERVICE_IRRIGATE_ZONE,
     SERVICE_MARK_IRRIGATED,
 )
 
@@ -46,6 +47,7 @@ def _create_buttons(hass: HomeAssistant, config: dict) -> list[ButtonEntity]:
     for zone_conf in config.get(CONF_ZONES, []):
         zone_name = zone_conf[CONF_ZONE_NAME]
         buttons.append(MarkIrrigatedButton(hass, zone_name))
+        buttons.append(IrrigateButton(hass, zone_name))
     return buttons
 
 
@@ -66,5 +68,26 @@ class MarkIrrigatedButton(ButtonEntity):
         await self._hass.services.async_call(
             DOMAIN,
             SERVICE_MARK_IRRIGATED,
+            {ATTR_ZONE_NAME: self._zone_name},
+        )
+
+
+class IrrigateButton(ButtonEntity):
+    """Button to trigger irrigation for a zone based on current deficit."""
+
+    _attr_icon = "mdi:sprinkler"
+
+    def __init__(self, hass: HomeAssistant, zone_name: str) -> None:
+        self._hass = hass
+        self._zone_name = zone_name
+        slug = zone_name.lower().replace(" ", "_")
+        self._attr_name = f"Irrigate {zone_name}"
+        self._attr_unique_id = f"irrigate_{slug}"
+
+    async def async_press(self) -> None:
+        """Handle the button press — start irrigation for this zone."""
+        await self._hass.services.async_call(
+            DOMAIN,
+            SERVICE_IRRIGATE_ZONE,
             {ATTR_ZONE_NAME: self._zone_name},
         )

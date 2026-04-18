@@ -13,7 +13,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import (
     SensorEntity,
@@ -28,6 +28,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_ALPHA,
+    CONF_BACKFILL_DAYS,
     CONF_D_MAX,
     CONF_FIELD_CAPACITY,
     CONF_INTER_ZONE_DELAY,
@@ -38,6 +39,7 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VWC_SENSOR,
     CONF_ZONE_AREA,
+    CONF_ZONE_BATTERY_SENSOR,
     CONF_ZONE_DELIVERY_MODE,
     CONF_ZONE_DELIVERY_TIMEOUT,
     CONF_ZONE_EFFICIENCY,
@@ -52,6 +54,7 @@ from .const import (
     CONF_ZONE_VOLUME_ENTITY,
     CONF_ZONES,
     DEFAULT_ALPHA,
+    DEFAULT_BACKFILL_DAYS,
     DEFAULT_D_MAX,
     DEFAULT_DELIVERY_MODE,
     DEFAULT_DELIVERY_TIMEOUT_S,
@@ -268,6 +271,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._field_cap = config.get(CONF_FIELD_CAPACITY, DEFAULT_FIELD_CAPACITY)
         self._root_depth = config.get(CONF_ROOT_DEPTH, DEFAULT_ROOT_DEPTH)
         self._rain_type = config.get(CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE)
+        self._backfill_days = config.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS)
         self._deficit = 0.0
         self._last_rain = 0.0  # tracks last rain reading for delta computation
         self._last_update = datetime.now()
@@ -285,9 +289,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore previous state and register listeners."""
         last = await self.async_get_last_state()
+        restored = False
         if last and last.state not in ("unknown", "unavailable"):
             with contextlib.suppress(ValueError, TypeError):
                 self._deficit = float(last.state)
+                restored = True
+
+        if not restored:
+            await self._backfill_from_recorder()
 
         tracked = [self._temp_sensor, self._rain_sensor]
         if self._vwc_sensor:
@@ -385,6 +394,139 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         et_dt = max(0.0, self._alpha * (t - self._t_base) / 24) * dt_h
         self._deficit = max(0.0, min(self._deficit + et_dt - rain_delta, self._d_max))
 
+    async def _backfill_from_recorder(self) -> None:
+        """Replay historical T/rain from HA recorder to bootstrap deficit.
+
+        Called only on first-time setup (no RestoreEntity state).
+        Fails gracefully if recorder is not available.
+        """
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.history import (
+                get_significant_states,
+            )
+        except ImportError:
+            _LOGGER.warning("Recorder component not available; starting deficit at 0.0")
+            return
+
+        instance = get_instance(self._hass)
+        if instance is None:
+            _LOGGER.warning("Recorder instance not available; starting deficit at 0.0")
+            return
+
+        now = datetime.utcnow()
+        start_time = now - timedelta(days=self._backfill_days)
+        entity_ids = [self._temp_sensor, self._rain_sensor]
+
+        try:
+            history = await instance.async_add_executor_job(
+                get_significant_states,
+                self._hass,
+                start_time,
+                now,
+                entity_ids,
+            )
+        except Exception:
+            _LOGGER.warning(
+                "Failed to query recorder for backfill; starting deficit at 0.0",
+                exc_info=True,
+            )
+            return
+
+        if not history:
+            _LOGGER.info("No recorder history found for backfill")
+            return
+
+        temp_states = history.get(self._temp_sensor, [])
+        rain_states = history.get(self._rain_sensor, [])
+
+        if not temp_states:
+            _LOGGER.info("No temperature history for backfill")
+            return
+
+        deficit = self._replay_water_balance(temp_states, rain_states)
+        self._deficit = deficit
+        self.async_write_ha_state()
+
+        _LOGGER.info(
+            "Backfilled deficit from recorder history: %.2f mm (%d temp states, %d rain states)",
+            deficit,
+            len(temp_states),
+            len(rain_states),
+        )
+
+    def _replay_water_balance(
+        self,
+        temp_states: list,
+        rain_states: list,
+    ) -> float:
+        """Replay the ET water-balance loop over historical states.
+
+        Returns the final deficit value.
+        """
+        events: list[tuple[datetime, str, float]] = []
+
+        for s in temp_states:
+            if s.state in ("unknown", "unavailable"):
+                continue
+            try:
+                events.append((s.last_changed, "temp", float(s.state)))
+            except (ValueError, TypeError):
+                continue
+
+        for s in rain_states:
+            if s.state in ("unknown", "unavailable"):
+                continue
+            try:
+                events.append((s.last_changed, "rain", float(s.state)))
+            except (ValueError, TypeError):
+                continue
+
+        events.sort(key=lambda e: e[0])
+
+        if not events:
+            return 0.0
+
+        deficit = 0.0
+        last_temp: float | None = None
+        last_rain = 0.0
+        last_time = events[0][0]
+
+        for ts, kind, value in events:
+            if kind == "temp":
+                if last_temp is not None:
+                    dt_h = (ts - last_time).total_seconds() / 3600.0
+                    et_h = max(0.0, self._alpha * (last_temp - self._t_base) / 24)
+                    deficit = max(0.0, min(deficit + et_h * dt_h, self._d_max))
+                last_temp = value
+                last_time = ts
+
+            elif kind == "rain":
+                if last_temp is not None:
+                    dt_h = (ts - last_time).total_seconds() / 3600.0
+                    et_h = max(0.0, self._alpha * (last_temp - self._t_base) / 24)
+                    deficit = max(0.0, min(deficit + et_h * dt_h, self._d_max))
+                    last_time = ts
+
+                rain_delta = self._compute_backfill_rain_delta(value, last_rain)
+                deficit = max(0.0, deficit - rain_delta)
+                last_rain = value
+
+        return deficit
+
+    def _compute_backfill_rain_delta(self, rain_now: float, last_rain: float) -> float:
+        """Compute rain delta for backfill replay."""
+        if self._rain_type == RAIN_TYPE_EVENT:
+            if rain_now == last_rain:
+                return 0.0
+            return max(0.0, rain_now)
+
+        # daily_total: negative delta = midnight rollover
+        rain_delta = rain_now - last_rain
+        if rain_delta < 0:
+            rain_delta = rain_now
+        return max(0.0, rain_delta)
+
     def reset(self) -> None:
         """Reset deficit to zero (called after irrigation)."""
         self._deficit = 0.0
@@ -432,7 +574,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._volume_entity = zone_config.get(CONF_ZONE_VOLUME_ENTITY)
         self._flow_meter_sensor = zone_config.get(CONF_ZONE_FLOW_METER_SENSOR)
         self._delivery_timeout = zone_config.get(CONF_ZONE_DELIVERY_TIMEOUT, DEFAULT_DELIVERY_TIMEOUT_S)
+        self._battery_sensor = zone_config.get(CONF_ZONE_BATTERY_SENSOR)
         self._irrigating = False
+        self._last_irrigated: datetime | None = None
+        self._last_volume_delivered: float = 0.0
 
         # Kc: manual override > plant family seasonal profile > 1.0
         self._plant_family = zone_config.get(CONF_ZONE_PLANT_FAMILY)
@@ -463,6 +608,11 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         if last and last.attributes:
             with contextlib.suppress(ValueError, TypeError):
                 self._zone_deficit = float(last.attributes.get("deficit_mm", 0.0))
+            with contextlib.suppress(ValueError, TypeError):
+                ts = last.attributes.get("last_irrigated")
+                if ts:
+                    self._last_irrigated = datetime.fromisoformat(ts)
+                    self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
@@ -516,6 +666,11 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         return self._flow_meter_sensor
 
     @property
+    def battery_sensor(self) -> str | None:
+        """Entity ID of the battery sensor for low-battery alerts."""
+        return self._battery_sensor
+
+    @property
     def delivery_timeout(self) -> int:
         """Safety timeout in seconds for flow_meter and volume_preset modes."""
         return self._delivery_timeout
@@ -531,6 +686,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
 
     def reset_deficit(self) -> None:
         """Reset this zone's deficit to zero (called after irrigation)."""
+        self._last_volume_delivered = round(self.volume_liters, 1)
+        self._last_irrigated = datetime.now()
         self._zone_deficit = 0.0
 
     @property
@@ -576,6 +733,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "deficit_mm": round(self._zone_deficit, 2),
             "irrigating": self._irrigating,
         }
+        if self._last_irrigated:
+            attrs["last_irrigated"] = self._last_irrigated.isoformat()
+            attrs["last_volume_delivered"] = self._last_volume_delivered
         if self._volume_entity:
             attrs["volume_entity"] = self._volume_entity
         if self._flow_meter_sensor:

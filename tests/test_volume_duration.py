@@ -225,3 +225,76 @@ class TestMultiZone:
         zone_orto._zone_deficit = 5.0
         zone_prato._zone_deficit = 20.0
         assert zone_orto.volume_liters < zone_prato.volume_liters
+
+
+class TestIrrigationFeedback:
+    """Test last_irrigated and last_volume_delivered tracking."""
+
+    def test_reset_deficit_sets_last_irrigated(self, zone_orto):
+        """reset_deficit should record a timestamp."""
+        assert zone_orto._last_irrigated is None
+        zone_orto._zone_deficit = 10.0
+        zone_orto.reset_deficit()
+        assert zone_orto._last_irrigated is not None
+
+    def test_reset_deficit_sets_last_volume_delivered(self, zone_orto):
+        """reset_deficit should capture volume before resetting."""
+        zone_orto._zone_deficit = 10.0
+        expected_volume = round(zone_orto.volume_liters, 1)
+        zone_orto.reset_deficit()
+        assert zone_orto._last_volume_delivered == expected_volume
+
+    def test_reset_deficit_zero_volume(self, zone_orto):
+        """reset_deficit with zero deficit should record 0 volume."""
+        zone_orto._zone_deficit = 0.0
+        zone_orto.reset_deficit()
+        assert zone_orto._last_volume_delivered == 0.0
+        assert zone_orto._last_irrigated is not None
+
+    def test_last_irrigated_in_attributes(self, zone_orto, di_sensor):
+        """last_irrigated should appear in extra_state_attributes after reset."""
+        zone_orto._zone_deficit = 5.0
+        zone_orto.reset_deficit()
+        attrs = zone_orto.extra_state_attributes
+        assert "last_irrigated" in attrs
+        assert "last_volume_delivered" in attrs
+
+    def test_no_last_irrigated_before_reset(self, zone_orto, di_sensor):
+        """last_irrigated should NOT appear in attributes before any reset."""
+        attrs = zone_orto.extra_state_attributes
+        assert "last_irrigated" not in attrs
+
+    def test_restore_last_irrigated(self, hass_mock, di_sensor):
+        """last_irrigated and last_volume_delivered should be restored from state."""
+        from datetime import datetime
+        from unittest.mock import AsyncMock, MagicMock
+
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                "name": "Test",
+                "area_m2": 20.0,
+                "efficiency": 0.9,
+                "flow_rate_lpm": 8.0,
+            },
+            di_sensor,
+        )
+
+        # Simulate RestoreEntity returning a previous state
+        last_state = MagicMock()
+        last_state.attributes = {
+            "deficit_mm": "3.5",
+            "last_irrigated": "2026-04-15T10:30:00",
+            "last_volume_delivered": "55.0",
+        }
+        zone.async_get_last_state = AsyncMock(return_value=last_state)
+
+        import asyncio
+
+        asyncio.get_event_loop().run_until_complete(zone.async_added_to_hass())
+
+        assert zone._last_irrigated == datetime.fromisoformat("2026-04-15T10:30:00")
+        assert zone._last_volume_delivered == 55.0
+        assert zone._zone_deficit == 3.5
