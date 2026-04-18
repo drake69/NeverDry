@@ -70,7 +70,8 @@
       "too_many_zones": "Maximum number of zones reached (50)",
       "flow_rate_required": "Flow rate is required for estimated_flow delivery mode",
       "flow_meter_required": "Flow meter sensor is required for flow_meter delivery mode",
-      "volume_entity_required": "Volume entity is required for volume_preset delivery mode"
+      "volume_entity_required": "Volume entity is required for volume_preset delivery mode",
+      "zone_already_exists": "A zone with this name already exists"
     },
     "abort": {
       "already_configured": "NeverDry is already configured"

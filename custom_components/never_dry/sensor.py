@@ -706,7 +706,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 0.0,
                 min(self._zone_deficit + et_h * kc * dt_h - rain, self._d_max),
             )
-        self.async_write_ha_state()
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
 
     @property
     def zone_name(self) -> str:
@@ -861,7 +862,8 @@ class ZoneDeficitSensor(SensorEntity):
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
-        self.async_write_ha_state()
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float:
@@ -896,7 +898,8 @@ class ZoneRainSensor(SensorEntity):
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
-        self.async_write_ha_state()
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float:
@@ -934,7 +937,8 @@ class ZoneSessionWaterSensor(SensorEntity):
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
-        self.async_write_ha_state()
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float:
@@ -972,7 +976,8 @@ class ZoneYearlyWaterSensor(SensorEntity):
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
-        self.async_write_ha_state()
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
 
     @property
     def native_value(self) -> float:
