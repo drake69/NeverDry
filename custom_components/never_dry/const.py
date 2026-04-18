@@ -35,6 +35,7 @@ CONF_ZONE_DELIVERY_MODE = "delivery_mode"
 CONF_ZONE_VOLUME_ENTITY = "volume_entity"
 CONF_ZONE_FLOW_METER_SENSOR = "flow_meter_sensor"
 CONF_ZONE_DELIVERY_TIMEOUT = "delivery_timeout"
+CONF_ZONE_BATTERY_SENSOR = "battery_sensor"
 
 # ── Controller parameters ────────────────────────────────
 CONF_INTER_ZONE_DELAY = "inter_zone_delay"
@@ -95,6 +96,9 @@ SERVICE_MARK_IRRIGATED = "mark_irrigated"
 
 ATTR_ZONE_NAME = "zone_name"
 
+# ── Events ──────────────────────────────────────────────
+EVENT_IRRIGATION_COMPLETE = "never_dry_irrigation_complete"
+
 # ── Defaults ─────────────────────────────────────────────
 DEFAULT_ALPHA = 0.22
 DEFAULT_T_BASE = 9.0
@@ -107,6 +111,7 @@ DEFAULT_INTER_ZONE_DELAY = 30
 DEFAULT_KC = 1.0
 DEFAULT_RAIN_SENSOR_TYPE = RAIN_TYPE_EVENT
 DEFAULT_BACKFILL_DAYS = 90
+DEFAULT_BATTERY_LOW_THRESHOLD = 15  # percent
 CONF_BACKFILL_DAYS = "backfill_days"
 
 # ── Runtime safety limits ────────────────────────────────

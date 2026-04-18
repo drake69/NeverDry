@@ -491,3 +491,426 @@ class TestMarkIrrigated:
         await controller._handle_mark_irrigated(call_mock)
 
         assert zone_orto._zone_deficit == 15.0  # unchanged
+
+
+class TestManualValveDetection:
+    """Test automatic detection of manual valve operation."""
+
+    def _make_valve_event(self, entity_id, old_state, new_state):
+        """Create a mock state change event for a valve."""
+        event = MagicMock()
+        old = MagicMock()
+        old.state = old_state
+        new = MagicMock()
+        new.state = new_state
+        event.data = {
+            "entity_id": entity_id,
+            "old_state": old,
+            "new_state": new,
+        }
+        return event
+
+    def test_manual_open_detected(self, controller, hass_mock):
+        """Manual valve open should be tracked."""
+        event = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(event)
+        assert "switch.valve_orto" in controller._manual_valve_open
+
+    def test_manual_close_resets_deficit_no_flow_meter(self, controller, zone_orto, hass_mock):
+        """Manual valve close without flow meter should reset deficit."""
+        zone_orto._zone_deficit = 15.0
+
+        # Simulate open
+        open_event = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(open_event)
+
+        # Simulate close
+        close_event = self._make_valve_event("switch.valve_orto", "on", "off")
+        controller._on_valve_state_change(close_event)
+
+        assert zone_orto._zone_deficit == 0.0
+
+    def test_manual_close_fires_event(self, controller, zone_orto, hass_mock):
+        """Manual valve close should fire irrigation complete event."""
+        zone_orto._zone_deficit = 15.0
+
+        open_event = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(open_event)
+
+        close_event = self._make_valve_event("switch.valve_orto", "on", "off")
+        controller._on_valve_state_change(close_event)
+
+        hass_mock.bus.async_fire.assert_called_once()
+        call_args = hass_mock.bus.async_fire.call_args
+        assert call_args.args[0] == "never_dry_irrigation_complete"
+        assert call_args.args[1]["source"] == "manual"
+        assert call_args.args[1]["zone"] == "Orto"
+
+    def test_ignored_when_controller_running(self, controller, zone_orto, hass_mock):
+        """Valve changes during controller-driven irrigation should be ignored."""
+        zone_orto._zone_deficit = 15.0
+        controller._running = True
+
+        open_event = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(open_event)
+
+        assert "switch.valve_orto" not in controller._manual_valve_open
+
+    def test_flow_meter_compensates_deficit(self, hass_mock, di_sensor):
+        """With flow meter, deficit should be reduced by measured water, not fully reset."""
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Metered",
+                "valve": "switch.valve_metered",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.90,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                "flow_meter_sensor": "sensor.flow_meter",
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = 10.0  # mm
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        # Simulate flow meter reads: 100L at open, 110L at close → 10L delivered
+        flow_values = iter([MagicMock(state="100.0"), MagicMock(state="110.0")])
+        original_get = hass_mock.states.get
+
+        def mock_get(entity_id):
+            if entity_id == "sensor.flow_meter":
+                return next(flow_values)
+            return original_get(entity_id)
+
+        hass_mock.states.get = mock_get
+
+        # Open
+        event_open = MagicMock()
+        old_s, new_s = MagicMock(), MagicMock()
+        old_s.state, new_s.state = "off", "on"
+        event_open.data = {"entity_id": "switch.valve_metered", "old_state": old_s, "new_state": new_s}
+        ctrl._on_valve_state_change(event_open)
+
+        # Close
+        event_close = MagicMock()
+        old_s2, new_s2 = MagicMock(), MagicMock()
+        old_s2.state, new_s2.state = "on", "off"
+        event_close.data = {"entity_id": "switch.valve_metered", "old_state": old_s2, "new_state": new_s2}
+        ctrl._on_valve_state_change(event_close)
+
+        # 10L delivered on 20m² → 0.5mm effective, * 0.9 efficiency → 0.45mm compensation
+        # deficit should be 10.0 - 0.45 = 9.55
+        assert zone._zone_deficit == pytest.approx(9.55, abs=0.01)
+
+    def test_unknown_valve_ignored(self, controller, hass_mock):
+        """Events for unknown valve entities should be ignored."""
+        event = self._make_valve_event("switch.unknown", "off", "on")
+        controller._on_valve_state_change(event)
+        assert "switch.unknown" not in controller._manual_valve_open
+
+
+class TestBatteryMonitoring:
+    """Test low-battery alert for valve sensors."""
+
+    def _make_battery_event(self, entity_id, level):
+        """Create a mock battery state change event."""
+        event = MagicMock()
+        new = MagicMock()
+        new.state = str(level)
+        event.data = {"entity_id": entity_id, "new_state": new}
+        return event
+
+    def _make_controller_with_battery(self, hass_mock, di_sensor, battery_sensor=None):
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone_config = {
+            CONF_ZONE_NAME: "Garden",
+            "valve": "switch.valve_garden",
+            CONF_ZONE_AREA: 20.0,
+            CONF_ZONE_EFFICIENCY: 0.85,
+            CONF_ZONE_FLOW_RATE: 8.0,
+        }
+        if battery_sensor:
+            zone_config["battery_sensor"] = battery_sensor
+        zone = IrrigationZoneSensor(hass_mock, zone_config, di_sensor)
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        return ctrl, zone
+
+    def test_low_battery_sends_notification(self, hass_mock, di_sensor):
+        ctrl, _ = self._make_controller_with_battery(
+            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
+        )
+        event = self._make_battery_event("sensor.valve_battery", 10)
+        ctrl._on_battery_change(event)
+
+        assert "Garden" in ctrl._battery_alerted
+
+    def test_no_alert_above_threshold(self, hass_mock, di_sensor):
+        ctrl, _ = self._make_controller_with_battery(
+            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
+        )
+        event = self._make_battery_event("sensor.valve_battery", 50)
+        ctrl._on_battery_change(event)
+
+        assert len(ctrl._battery_alerted) == 0
+
+    def test_alert_only_once(self, hass_mock, di_sensor):
+        """Should not re-alert for same zone until battery recovers."""
+        ctrl, _ = self._make_controller_with_battery(
+            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
+        )
+        event = self._make_battery_event("sensor.valve_battery", 10)
+        ctrl._on_battery_change(event)
+        ctrl._on_battery_change(event)  # second time
+
+        # Zone should only be in alerted set once
+        assert len(ctrl._battery_alerted) == 1
+
+    def test_re_alerts_after_recovery(self, hass_mock, di_sensor):
+        """Should re-alert if battery recovers and drops again."""
+        ctrl, _ = self._make_controller_with_battery(
+            hass_mock, di_sensor, battery_sensor="sensor.valve_battery"
+        )
+        # Drop
+        ctrl._on_battery_change(self._make_battery_event("sensor.valve_battery", 10))
+        assert "Garden" in ctrl._battery_alerted
+        # Recover
+        ctrl._on_battery_change(self._make_battery_event("sensor.valve_battery", 80))
+        assert "Garden" not in ctrl._battery_alerted
+        # Drop again
+        ctrl._on_battery_change(self._make_battery_event("sensor.valve_battery", 12))
+        assert "Garden" in ctrl._battery_alerted
+
+    def test_no_battery_sensor_no_tracking(self, hass_mock, di_sensor):
+        ctrl, _ = self._make_controller_with_battery(hass_mock, di_sensor)
+        assert len(ctrl._battery_to_zone) == 0
+
+
+class TestIrrigationEvent:
+    """Test irrigation complete event firing."""
+
+    @pytest.mark.asyncio
+    async def test_event_fired_on_zone_completion(self, controller, hass_mock, zone_orto):
+        """Event should be fired when a zone completes irrigation."""
+        zone_orto._zone_deficit = 5.0
+        controller._wait_with_stop_check = AsyncMock()
+
+        await controller._irrigate_zones(["Orto"])
+
+        hass_mock.bus.async_fire.assert_called()
+        call_args = hass_mock.bus.async_fire.call_args
+        assert call_args.args[0] == "never_dry_irrigation_complete"
+        assert call_args.args[1]["source"] == "automatic"
+        assert call_args.args[1]["zone"] == "Orto"
+
+    @pytest.mark.asyncio
+    async def test_no_event_on_stop(self, controller, hass_mock, zone_orto, zone_prato):
+        """No event should fire if irrigation is stopped."""
+        zone_orto._zone_deficit = 10.0
+
+        async def stop_during_wait(duration):
+            controller._stop_requested = True
+
+        controller._wait_with_stop_check = stop_during_wait
+
+        await controller._irrigate_zones(["Orto"])
+
+        # Event should not have been fired (stop before completion)
+        fire_calls = [
+            c for c in hass_mock.bus.async_fire.call_args_list
+            if c.args[0] == "never_dry_irrigation_complete"
+        ]
+        assert len(fire_calls) == 0
+
+
+class TestValveMonitoringEdgeCases:
+    """Edge cases for manual valve detection."""
+
+    def _make_valve_event(self, entity_id, old_state, new_state):
+        event = MagicMock()
+        old = MagicMock()
+        old.state = old_state
+        new = MagicMock()
+        new.state = new_state
+        event.data = {
+            "entity_id": entity_id,
+            "old_state": old,
+            "new_state": new,
+        }
+        return event
+
+    def test_none_new_state_ignored(self, controller):
+        """Event with new_state=None should be silently ignored."""
+        event = MagicMock()
+        event.data = {"entity_id": "switch.valve_orto", "old_state": MagicMock(), "new_state": None}
+        controller._on_valve_state_change(event)
+        assert "switch.valve_orto" not in controller._manual_valve_open
+
+    def test_none_old_state_ignored(self, controller):
+        """Event with old_state=None should be silently ignored."""
+        event = MagicMock()
+        event.data = {"entity_id": "switch.valve_orto", "old_state": None, "new_state": MagicMock()}
+        controller._on_valve_state_change(event)
+        assert "switch.valve_orto" not in controller._manual_valve_open
+
+    def test_flow_meter_unavailable_at_open(self, hass_mock, di_sensor):
+        """Flow meter returning None at open should store None as baseline."""
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Metered",
+                "valve": "switch.valve_m",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.9,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                "flow_meter_sensor": "sensor.flow",
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = 10.0
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        # Flow meter returns unavailable
+        unavail = MagicMock()
+        unavail.state = "unavailable"
+        hass_mock.states.get = lambda eid: unavail if eid == "sensor.flow" else None
+
+        event = self._make_valve_event("switch.valve_m", "off", "on")
+        ctrl._on_valve_state_change(event)
+        assert ctrl._manual_valve_open["switch.valve_m"] is None
+
+        # Close: flow_start is None → should fall back to full reset
+        close_event = self._make_valve_event("switch.valve_m", "on", "off")
+        # Flow meter now available at close
+        avail = MagicMock()
+        avail.state = "50.0"
+        hass_mock.states.get = lambda eid: avail if eid == "sensor.flow" else None
+        ctrl._on_valve_state_change(close_event)
+        # flow_start was None → code takes else branch → full reset
+        assert zone._zone_deficit == 0.0
+
+    def test_zero_area_no_division_error(self, hass_mock, di_sensor):
+        """Zone with area=0 should not crash on manual valve close with flow meter."""
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "NoArea",
+                "valve": "switch.valve_na",
+                CONF_ZONE_AREA: 0.0,
+                CONF_ZONE_EFFICIENCY: 0.9,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                "flow_meter_sensor": "sensor.flow",
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = 10.0
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        flow_values = iter([MagicMock(state="100.0"), MagicMock(state="120.0")])
+        hass_mock.states.get = lambda eid: next(flow_values) if eid == "sensor.flow" else None
+
+        open_event = self._make_valve_event("switch.valve_na", "off", "on")
+        ctrl._on_valve_state_change(open_event)
+
+        close_event = self._make_valve_event("switch.valve_na", "on", "off")
+        ctrl._on_valve_state_change(close_event)
+
+        # area=0 → no compensation applied, deficit unchanged
+        assert zone._zone_deficit == 10.0
+
+    def test_manual_event_has_no_volume_or_duration(self, controller, zone_orto, hass_mock):
+        """Manual close event should not include volume_liters or duration_s."""
+        zone_orto._zone_deficit = 15.0
+
+        open_ev = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(open_ev)
+
+        close_ev = self._make_valve_event("switch.valve_orto", "on", "off")
+        controller._on_valve_state_change(close_ev)
+
+        call_args = hass_mock.bus.async_fire.call_args
+        event_data = call_args.args[1]
+        assert "volume_liters" not in event_data
+        assert "duration_s" not in event_data
+        assert event_data["source"] == "manual"
+
+
+class TestBatteryMonitoringEdgeCases:
+    """Edge cases for battery alert logic."""
+
+    def _make_battery_event(self, entity_id, level):
+        event = MagicMock()
+        new = MagicMock()
+        new.state = str(level)
+        event.data = {"entity_id": entity_id, "new_state": new}
+        return event
+
+    def _make_controller_with_battery(self, hass_mock, di_sensor):
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Garden",
+                "valve": "switch.valve_garden",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.85,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                "battery_sensor": "sensor.valve_battery",
+            },
+            di_sensor,
+        )
+        return IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    def test_non_numeric_battery_state(self, hass_mock, di_sensor):
+        """Non-numeric battery state should not crash."""
+        ctrl = self._make_controller_with_battery(hass_mock, di_sensor)
+        event = self._make_battery_event("sensor.valve_battery", "unavailable")
+        ctrl._on_battery_change(event)  # should not raise
+        assert len(ctrl._battery_alerted) == 0
+
+    def test_exactly_at_threshold_alerts(self, hass_mock, di_sensor):
+        """Battery exactly at 15% should trigger alert."""
+        ctrl = self._make_controller_with_battery(hass_mock, di_sensor)
+        event = self._make_battery_event("sensor.valve_battery", 15)
+        ctrl._on_battery_change(event)
+        assert "Garden" in ctrl._battery_alerted
+
+    def test_unknown_battery_entity_ignored(self, hass_mock, di_sensor):
+        """Battery event for unknown entity should be ignored."""
+        ctrl = self._make_controller_with_battery(hass_mock, di_sensor)
+        event = self._make_battery_event("sensor.unknown_battery", 5)
+        ctrl._on_battery_change(event)
+        assert len(ctrl._battery_alerted) == 0
+
+    def test_none_new_state_ignored(self, hass_mock, di_sensor):
+        """Battery event with new_state=None should be silently ignored."""
+        ctrl = self._make_controller_with_battery(hass_mock, di_sensor)
+        event = MagicMock()
+        event.data = {"entity_id": "sensor.valve_battery", "new_state": None}
+        ctrl._on_battery_change(event)
+        assert len(ctrl._battery_alerted) == 0
+
+
+class TestMarkIrrigatedFeedback:
+    """Test that mark_irrigated now sets irrigation timestamps via reset_deficit."""
+
+    @pytest.mark.asyncio
+    async def test_mark_irrigated_sets_last_irrigated(self, controller, zone_orto):
+        """mark_irrigated calls reset_deficit which should set last_irrigated."""
+        zone_orto._zone_deficit = 15.0
+        assert zone_orto._last_irrigated is None
+
+        call_mock = MagicMock()
+        call_mock.data = {"zone_name": "Orto"}
+        await controller._handle_mark_irrigated(call_mock)
+
+        assert zone_orto._last_irrigated is not None
+        assert zone_orto._last_volume_delivered > 0

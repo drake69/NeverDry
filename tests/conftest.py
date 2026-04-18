@@ -158,6 +158,8 @@ def hass_mock():
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
     hass.services.async_register = MagicMock()
+    hass.bus = MagicMock()
+    hass.bus.async_fire = MagicMock()
     # async_create_task runs the coroutine directly for testing
     hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
     # Mock HA config with latitude (northern hemisphere)

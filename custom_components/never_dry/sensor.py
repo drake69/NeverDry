@@ -39,6 +39,7 @@ from .const import (
     CONF_TEMP_SENSOR,
     CONF_VWC_SENSOR,
     CONF_ZONE_AREA,
+    CONF_ZONE_BATTERY_SENSOR,
     CONF_ZONE_DELIVERY_MODE,
     CONF_ZONE_DELIVERY_TIMEOUT,
     CONF_ZONE_EFFICIENCY,
@@ -573,7 +574,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._volume_entity = zone_config.get(CONF_ZONE_VOLUME_ENTITY)
         self._flow_meter_sensor = zone_config.get(CONF_ZONE_FLOW_METER_SENSOR)
         self._delivery_timeout = zone_config.get(CONF_ZONE_DELIVERY_TIMEOUT, DEFAULT_DELIVERY_TIMEOUT_S)
+        self._battery_sensor = zone_config.get(CONF_ZONE_BATTERY_SENSOR)
         self._irrigating = False
+        self._last_irrigated: datetime | None = None
+        self._last_volume_delivered: float = 0.0
 
         # Kc: manual override > plant family seasonal profile > 1.0
         self._plant_family = zone_config.get(CONF_ZONE_PLANT_FAMILY)
@@ -604,6 +608,13 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         if last and last.attributes:
             with contextlib.suppress(ValueError, TypeError):
                 self._zone_deficit = float(last.attributes.get("deficit_mm", 0.0))
+            with contextlib.suppress(ValueError, TypeError):
+                ts = last.attributes.get("last_irrigated")
+                if ts:
+                    self._last_irrigated = datetime.fromisoformat(ts)
+                    self._last_volume_delivered = float(
+                        last.attributes.get("last_volume_delivered", 0.0)
+                    )
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
@@ -657,6 +668,11 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         return self._flow_meter_sensor
 
     @property
+    def battery_sensor(self) -> str | None:
+        """Entity ID of the battery sensor for low-battery alerts."""
+        return self._battery_sensor
+
+    @property
     def delivery_timeout(self) -> int:
         """Safety timeout in seconds for flow_meter and volume_preset modes."""
         return self._delivery_timeout
@@ -672,6 +688,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
 
     def reset_deficit(self) -> None:
         """Reset this zone's deficit to zero (called after irrigation)."""
+        self._last_volume_delivered = round(self.volume_liters, 1)
+        self._last_irrigated = datetime.now()
         self._zone_deficit = 0.0
 
     @property
@@ -717,6 +735,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "deficit_mm": round(self._zone_deficit, 2),
             "irrigating": self._irrigating,
         }
+        if self._last_irrigated:
+            attrs["last_irrigated"] = self._last_irrigated.isoformat()
+            attrs["last_volume_delivered"] = self._last_volume_delivered
         if self._volume_entity:
             attrs["volume_entity"] = self._volume_entity
         if self._flow_meter_sensor:
