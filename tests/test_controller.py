@@ -861,7 +861,7 @@ class TestDeficitAnomaly:
 
     @pytest.mark.asyncio
     async def test_alerts_when_deficit_exceeds_2x_threshold(self, hass_mock, di_sensor):
-        """Should alert when deficit > 2× threshold."""
+        """Should alert when deficit > 2x threshold."""
         ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=35.0, threshold=15.0)
         await ctrl._check_deficit_anomaly()
 
@@ -873,7 +873,7 @@ class TestDeficitAnomaly:
 
     @pytest.mark.asyncio
     async def test_no_alert_below_2x_threshold(self, hass_mock, di_sensor):
-        """Should not alert when deficit < 2× threshold."""
+        """Should not alert when deficit < 2x threshold."""
         ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=25.0, threshold=15.0)
         await ctrl._check_deficit_anomaly()
 
@@ -907,7 +907,7 @@ class TestDeficitAnomaly:
 
     @pytest.mark.asyncio
     async def test_exactly_at_2x_threshold_alerts(self, hass_mock, di_sensor):
-        """Deficit exactly at 2× threshold should trigger alert."""
+        """Deficit exactly at 2x threshold should trigger alert."""
         ctrl, _ = self._make_controller(hass_mock, di_sensor, zone_deficit=30.0, threshold=15.0)
         await ctrl._check_deficit_anomaly()
 
