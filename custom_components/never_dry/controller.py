@@ -19,6 +19,7 @@ import time
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers.event import (
     async_track_state_change_event,
+    async_track_time_change,
     async_track_time_interval,
 )
 
@@ -127,6 +128,32 @@ class IrrigationController:
             timedelta(hours=6),
         )
 
+        # Schedule daily irrigation per zone
+        for zs in self._zones.values():
+            irr_time = zs.irrigation_time
+            if irr_time and zs.valve:
+                try:
+                    parts = irr_time.split(":")
+                    hour, minute = int(parts[0]), int(parts[1])
+                    async_track_time_change(
+                        self._hass,
+                        self._make_scheduled_handler(zs.zone_name),
+                        hour=hour,
+                        minute=minute,
+                        second=0,
+                    )
+                    _LOGGER.info(
+                        "Scheduled daily irrigation: zone='%s' at %s",
+                        zs.zone_name,
+                        irr_time,
+                    )
+                except (ValueError, IndexError):
+                    _LOGGER.error(
+                        "Invalid irrigation_time '%s' for zone '%s'",
+                        irr_time,
+                        zs.zone_name,
+                    )
+
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
             _LOGGER.info(
@@ -138,6 +165,46 @@ class IrrigationController:
                 self._check_and_notify,
                 timedelta(hours=6),
             )
+
+    # ── Scheduled irrigation ────────────────────────────────
+
+    def _make_scheduled_handler(self, zone_name: str):
+        """Create a time-triggered handler for a specific zone."""
+
+        @callback
+        def _handler(now) -> None:
+            zone = self._zones.get(zone_name)
+            if zone is None:
+                return
+            threshold = zone.extra_state_attributes.get(
+                "threshold_mm",
+                DEFAULT_THRESHOLD,
+            )
+            if zone._zone_deficit < threshold:
+                _LOGGER.debug(
+                    "Scheduled check: zone='%s' deficit=%.1fmm < threshold=%.1fmm, skipping",
+                    zone_name,
+                    zone._zone_deficit,
+                    threshold,
+                )
+                return
+            if self._running:
+                _LOGGER.warning(
+                    "Scheduled irrigation for '%s' skipped — another irrigation is in progress",
+                    zone_name,
+                )
+                return
+            _LOGGER.info(
+                "Scheduled irrigation triggered: zone='%s', deficit=%.1fmm, threshold=%.1fmm",
+                zone_name,
+                zone._zone_deficit,
+                threshold,
+            )
+            self._irrigation_task = self._hass.async_create_task(
+                self._irrigate_zones([zone_name]),
+            )
+
+        return _handler
 
     # ── Rate limiting ──────────────────────────────────────
 

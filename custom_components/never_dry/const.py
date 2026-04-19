@@ -36,6 +36,7 @@ CONF_ZONE_VOLUME_ENTITY = "volume_entity"
 CONF_ZONE_FLOW_METER_SENSOR = "flow_meter_sensor"
 CONF_ZONE_DELIVERY_TIMEOUT = "delivery_timeout"
 CONF_ZONE_BATTERY_SENSOR = "battery_sensor"
+CONF_ZONE_IRRIGATION_TIME = "irrigation_time"
 
 # ── Controller parameters ────────────────────────────────
 CONF_INTER_ZONE_DELAY = "inter_zone_delay"
@@ -111,6 +112,7 @@ DEFAULT_INTER_ZONE_DELAY = 30
 DEFAULT_KC = 1.0
 DEFAULT_RAIN_SENSOR_TYPE = RAIN_TYPE_EVENT
 DEFAULT_BACKFILL_DAYS = 90
+DEFAULT_IRRIGATION_TIME = "06:00"  # default daily irrigation check time
 DEFAULT_BATTERY_LOW_THRESHOLD = 15  # percent
 ANOMALY_DEFICIT_MULTIPLIER = 2  # alert when deficit > threshold * this
 CONF_BACKFILL_DAYS = "backfill_days"
