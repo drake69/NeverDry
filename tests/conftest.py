@@ -41,6 +41,7 @@ def _create_ha_stubs():
     # homeassistant.helpers.event
     event_mod = ModuleType("homeassistant.helpers.event")
     event_mod.async_track_state_change_event = MagicMock()
+    event_mod.async_track_time_change = MagicMock()
     event_mod.async_track_time_interval = MagicMock()
 
     # homeassistant.helpers.restore_state

@@ -39,7 +39,8 @@
           "flow_meter_sensor": "Flow meter sensor (flow_meter only)",
           "volume_entity": "Volume target entity (volume_preset only)",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         },
         "data_description": {
           "name": "Display name for this zone (e.g., Vegetable Garden, Lawn)",
@@ -54,7 +55,8 @@
           "flow_meter_sensor": "Sensor entity that reports cumulative liters delivered. Required for flow_meter mode",
           "volume_entity": "Number entity on the smart valve that accepts a volume target in liters. Required for volume_preset mode",
           "delivery_timeout": "Maximum time to wait for flow_meter or volume_preset delivery before forcing valve close (safety limit)",
-          "threshold": "Deficit level that triggers Mode A irrigation for this zone"
+          "threshold": "Deficit level (mm) that triggers automatic irrigation for this zone",
+          "irrigation_time": "Time of day when NeverDry checks the deficit and irrigates if above threshold. Leave empty to disable automatic scheduling"
         }
       },
       "add_another": {
@@ -113,7 +115,8 @@
           "flow_meter_sensor": "Flow meter sensor",
           "volume_entity": "Volume target entity",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         }
       },
       "edit_zone": {
@@ -137,7 +140,8 @@
           "flow_meter_sensor": "Flow meter sensor",
           "volume_entity": "Volume target entity",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         }
       },
       "remove_zone": {

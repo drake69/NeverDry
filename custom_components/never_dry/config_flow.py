@@ -30,6 +30,7 @@ from .const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_IRRIGATION_TIME,
     CONF_ZONE_KC,
     CONF_ZONE_NAME,
     CONF_ZONE_PLANT_FAMILY,
@@ -43,6 +44,7 @@ from .const import (
     DEFAULT_D_MAX,
     DEFAULT_DELIVERY_MODE,
     DEFAULT_DELIVERY_TIMEOUT_S,
+    DEFAULT_IRRIGATION_TIME,
     DEFAULT_RAIN_SENSOR_TYPE,
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
@@ -213,6 +215,10 @@ STEP_ZONE_SCHEMA = vol.Schema(
                 unit_of_measurement="mm",
             )
         ),
+        vol.Optional(
+            CONF_ZONE_IRRIGATION_TIME,
+            default=DEFAULT_IRRIGATION_TIME,
+        ): selector.TimeSelector(),
     }
 )
 
@@ -601,6 +607,13 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="mm",
                     )
                 ),
+                vol.Optional(
+                    CONF_ZONE_IRRIGATION_TIME,
+                    default=_d(
+                        CONF_ZONE_IRRIGATION_TIME,
+                        DEFAULT_IRRIGATION_TIME,
+                    ),
+                ): selector.TimeSelector(),
             }
         )
 
