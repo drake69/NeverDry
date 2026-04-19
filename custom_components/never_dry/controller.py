@@ -128,12 +128,15 @@ class IrrigationController:
             timedelta(hours=6),
         )
 
-        # Schedule daily irrigation per zone
+        # Set up automatic irrigation per zone based on mode
         for zs in self._zones.values():
-            irr_time = zs.irrigation_time
-            if irr_time and zs.valve:
+            if not zs.valve:
+                continue
+            mode = zs.irrigation_mode
+
+            if mode == "scheduled" and zs.irrigation_time:
                 try:
-                    parts = irr_time.split(":")
+                    parts = zs.irrigation_time.split(":")
                     hour, minute = int(parts[0]), int(parts[1])
                     async_track_time_change(
                         self._hass,
@@ -143,16 +146,27 @@ class IrrigationController:
                         second=0,
                     )
                     _LOGGER.info(
-                        "Scheduled daily irrigation: zone='%s' at %s",
+                        "Mode B (scheduled): zone='%s' at %s",
                         zs.zone_name,
-                        irr_time,
+                        zs.irrigation_time,
                     )
                 except (ValueError, IndexError):
                     _LOGGER.error(
                         "Invalid irrigation_time '%s' for zone '%s'",
-                        irr_time,
+                        zs.irrigation_time,
                         zs.zone_name,
                     )
+
+            elif mode == "reactive":
+                # Register listener on dryness sensor for reactive mode
+                zs._dryness.register_zone_listener(
+                    self._make_reactive_handler(zs.zone_name),
+                )
+                _LOGGER.info(
+                    "Mode A (reactive): zone='%s', threshold=%.1fmm",
+                    zs.zone_name,
+                    zs._threshold,
+                )
 
         # Start monitoring mode if no valves are configured
         if self._monitoring_mode:
@@ -199,6 +213,31 @@ class IrrigationController:
                 zone_name,
                 zone._zone_deficit,
                 threshold,
+            )
+            self._irrigation_task = self._hass.async_create_task(
+                self._irrigate_zones([zone_name]),
+            )
+
+        return _handler
+
+    def _make_reactive_handler(self, zone_name: str):
+        """Create a deficit-triggered handler for reactive mode (Mode A)."""
+
+        def _handler(dt_h: float, et_h: float, rain: float) -> None:
+            zone = self._zones.get(zone_name)
+            if zone is None:
+                return
+            if zone._zone_deficit < zone._threshold:
+                return
+            if self._running:
+                return
+            if self._is_throttled("reactive", zone_name):
+                return
+            _LOGGER.info(
+                "Reactive irrigation triggered: zone='%s', deficit=%.1fmm >= threshold=%.1fmm",
+                zone_name,
+                zone._zone_deficit,
+                zone._threshold,
             )
             self._irrigation_task = self._hass.async_create_task(
                 self._irrigate_zones([zone_name]),

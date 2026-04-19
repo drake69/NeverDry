@@ -30,6 +30,7 @@ from .const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_IRRIGATION_MODE,
     CONF_ZONE_IRRIGATION_TIME,
     CONF_ZONE_KC,
     CONF_ZONE_NAME,
@@ -44,6 +45,7 @@ from .const import (
     DEFAULT_D_MAX,
     DEFAULT_DELIVERY_MODE,
     DEFAULT_DELIVERY_TIMEOUT_S,
+    DEFAULT_IRRIGATION_MODE,
     DEFAULT_IRRIGATION_TIME,
     DEFAULT_RAIN_SENSOR_TYPE,
     DEFAULT_T_BASE,
@@ -52,6 +54,9 @@ from .const import (
     DELIVERY_MODE_FLOW_METER,
     DELIVERY_MODE_VOLUME_PRESET,
     DOMAIN,
+    IRRIGATION_MODE_MANUAL,
+    IRRIGATION_MODE_REACTIVE,
+    IRRIGATION_MODE_SCHEDULED,
     MAX_ZONE_NAME_LENGTH,
     MAX_ZONES,
     PLANT_FAMILIES,
@@ -204,6 +209,28 @@ STEP_ZONE_SCHEMA = vol.Schema(
                 step=60,
                 mode="box",
                 unit_of_measurement="s",
+            )
+        ),
+        vol.Optional(
+            CONF_ZONE_IRRIGATION_MODE,
+            default=DEFAULT_IRRIGATION_MODE,
+        ): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value=IRRIGATION_MODE_MANUAL,
+                        label="Manual only (button / service call)",
+                    ),
+                    selector.SelectOptionDict(
+                        value=IRRIGATION_MODE_REACTIVE,
+                        label="Reactive (irrigate when deficit > threshold)",
+                    ),
+                    selector.SelectOptionDict(
+                        value=IRRIGATION_MODE_SCHEDULED,
+                        label="Scheduled (check daily at set time)",
+                    ),
+                ],
+                mode="dropdown",
             )
         ),
         vol.Optional(CONF_ZONE_THRESHOLD, default=DEFAULT_THRESHOLD): selector.NumberSelector(
@@ -593,6 +620,31 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                         step=60,
                         mode="box",
                         unit_of_measurement="s",
+                    )
+                ),
+                vol.Optional(
+                    CONF_ZONE_IRRIGATION_MODE,
+                    default=_d(
+                        CONF_ZONE_IRRIGATION_MODE,
+                        DEFAULT_IRRIGATION_MODE,
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=IRRIGATION_MODE_MANUAL,
+                                label="Manual only",
+                            ),
+                            selector.SelectOptionDict(
+                                value=IRRIGATION_MODE_REACTIVE,
+                                label="Reactive",
+                            ),
+                            selector.SelectOptionDict(
+                                value=IRRIGATION_MODE_SCHEDULED,
+                                label="Scheduled",
+                            ),
+                        ],
+                        mode="dropdown",
                     )
                 ),
                 vol.Optional(

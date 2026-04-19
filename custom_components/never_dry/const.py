@@ -36,7 +36,14 @@ CONF_ZONE_VOLUME_ENTITY = "volume_entity"
 CONF_ZONE_FLOW_METER_SENSOR = "flow_meter_sensor"
 CONF_ZONE_DELIVERY_TIMEOUT = "delivery_timeout"
 CONF_ZONE_BATTERY_SENSOR = "battery_sensor"
+CONF_ZONE_IRRIGATION_MODE = "irrigation_mode"
 CONF_ZONE_IRRIGATION_TIME = "irrigation_time"
+
+# Irrigation modes
+IRRIGATION_MODE_MANUAL = "manual"
+IRRIGATION_MODE_REACTIVE = "reactive"
+IRRIGATION_MODE_SCHEDULED = "scheduled"
+DEFAULT_IRRIGATION_MODE = IRRIGATION_MODE_MANUAL
 
 # ── Controller parameters ────────────────────────────────
 CONF_INTER_ZONE_DELAY = "inter_zone_delay"
