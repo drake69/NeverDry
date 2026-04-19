@@ -185,6 +185,17 @@ def _create_entities(
         entities.append(ZoneRainSensor(zone_sensor, zone_device))
         entities.append(ZoneSessionWaterSensor(zone_sensor, zone_device))
         entities.append(ZoneYearlyWaterSensor(zone_sensor, zone_device))
+        # Operational info
+        entities.append(ZoneLastIrrigatedSensor(zone_sensor, zone_device))
+        entities.append(ZoneLastSourceSensor(zone_sensor, zone_device))
+        entities.append(ZoneLastVolumeSensor(zone_sensor, zone_device))
+        entities.append(ZoneKcSensor(zone_sensor, zone_device))
+        # Diagnostic (config)
+        entities.append(ZoneIrrigationModeSensor(zone_sensor, zone_device))
+        entities.append(ZoneIrrigationTimeSensor(zone_sensor, zone_device))
+        entities.append(ZoneThresholdSensor(zone_sensor, zone_device))
+        entities.append(ZoneAreaSensor(zone_sensor, zone_device))
+        entities.append(ZoneEfficiencySensor(zone_sensor, zone_device))
 
     return entities, di_sensor, zone_sensors
 
@@ -1002,3 +1013,205 @@ class ZoneYearlyWaterSensor(SensorEntity):
     @property
     def native_value(self) -> float:
         return round(self._zone_sensor._yearly_water_delivered, 1)
+
+
+# ══════════════════════════════════════════════════════════
+#  Zone diagnostic / info sensors
+# ══════════════════════════════════════════════════════════
+
+
+class _ZoneTextSensor(SensorEntity):
+    """Base for zone text sensors shown in device page."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        zone_sensor: IrrigationZoneSensor,
+        name: str,
+        icon: str,
+        unique_suffix: str,
+        device_info: DeviceInfo | None = None,
+        diagnostic: bool = False,
+    ) -> None:
+        self._zone_sensor = zone_sensor
+        self._attr_name = name
+        self._attr_icon = icon
+        slug = zone_sensor.zone_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"{unique_suffix}_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+        if diagnostic:
+            from homeassistant.const import EntityCategory
+
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+
+class ZoneLastIrrigatedSensor(_ZoneTextSensor):
+    """When the zone was last irrigated."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Last irrigated",
+            "mdi:clock-outline",
+            "last_irrigated_zone",
+            device_info,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        ts = self._zone_sensor._last_irrigated
+        return ts.isoformat() if ts else None
+
+
+class ZoneLastSourceSensor(_ZoneTextSensor):
+    """How the zone was last irrigated."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Last source",
+            "mdi:information-outline",
+            "last_source_zone",
+            device_info,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        return self._zone_sensor._last_irrigation_source
+
+
+class ZoneLastVolumeSensor(_ZoneTextSensor):
+    """Volume delivered in the last irrigation."""
+
+    _attr_native_unit_of_measurement = "L"
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Last volume",
+            "mdi:water",
+            "last_volume_zone",
+            device_info,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._last_volume_delivered, 1)
+
+
+class ZoneIrrigationModeSensor(_ZoneTextSensor):
+    """Configured irrigation mode."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Irrigation mode",
+            "mdi:cog",
+            "irrigation_mode_zone",
+            device_info,
+            diagnostic=True,
+        )
+
+    @property
+    def native_value(self) -> str:
+        return self._zone_sensor._irrigation_mode
+
+
+class ZoneIrrigationTimeSensor(_ZoneTextSensor):
+    """Configured daily irrigation time."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Irrigation time",
+            "mdi:clock-time-six",
+            "irrigation_time_zone",
+            device_info,
+            diagnostic=True,
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        return self._zone_sensor._irrigation_time
+
+
+class ZoneThresholdSensor(_ZoneTextSensor):
+    """Configured irrigation threshold."""
+
+    _attr_native_unit_of_measurement = "mm"
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Threshold",
+            "mdi:target",
+            "threshold_zone",
+            device_info,
+            diagnostic=True,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return self._zone_sensor._threshold
+
+
+class ZoneAreaSensor(_ZoneTextSensor):
+    """Configured zone area."""
+
+    _attr_native_unit_of_measurement = "m²"
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Area",
+            "mdi:texture-box",
+            "area_zone",
+            device_info,
+            diagnostic=True,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return self._zone_sensor._area
+
+
+class ZoneEfficiencySensor(_ZoneTextSensor):
+    """Configured zone efficiency."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Efficiency",
+            "mdi:percent",
+            "efficiency_zone",
+            device_info,
+            diagnostic=True,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._efficiency, 2)
+
+
+class ZoneKcSensor(_ZoneTextSensor):
+    """Current crop coefficient Kc."""
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Kc",
+            "mdi:leaf",
+            "kc_zone",
+            device_info,
+        )
+        zone_sensor._dryness.register_zone_listener(self._on_update)
+
+    def _on_update(self, dt_h, et_h, rain):
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._get_current_kc(), 3)

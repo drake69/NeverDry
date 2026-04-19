@@ -98,6 +98,15 @@ def _create_ha_stubs():
 
     device_registry_mod.DeviceInfo = DeviceInfo
 
+    # homeassistant.const
+    const_mod = ModuleType("homeassistant.const")
+
+    class EntityCategory:
+        DIAGNOSTIC = "diagnostic"
+        CONFIG = "config"
+
+    const_mod.EntityCategory = EntityCategory
+
     # Register all stubs
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
@@ -108,6 +117,7 @@ def _create_ha_stubs():
         "homeassistant.components.button": button_mod,
         "homeassistant.components.sensor": sensor_mod,
         "homeassistant.config_entries": config_entries_mod,
+        "homeassistant.const": const_mod,
         "homeassistant.core": core_mod,
         "homeassistant.helpers": helpers_mod,
         "homeassistant.helpers.config_validation": cv_mod,
