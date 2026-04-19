@@ -620,6 +620,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._irrigating = False
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
+        self._last_irrigation_source: str | None = None
         self._total_rain: float = 0.0
         self._total_water_delivered: float = 0.0
         self._yearly_water_delivered: float = 0.0
@@ -667,6 +668,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                 if ts:
                     self._last_irrigated = datetime.fromisoformat(ts)
                     self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
+                    self._last_irrigation_source = last.attributes.get("last_irrigation_source")
             with contextlib.suppress(ValueError, TypeError):
                 self._total_rain = float(last.attributes.get("total_rain_mm", 0.0))
             with contextlib.suppress(ValueError, TypeError):
@@ -770,8 +772,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             self._session_water_delivered = 0.0
         self._irrigating = state
 
-    def reset_deficit(self) -> None:
+    def reset_deficit(self, source: str = "unknown") -> None:
         """Reset this zone's deficit to zero (called after irrigation)."""
+        self._last_irrigation_source = source
         self._last_volume_delivered = round(self.volume_liters, 1)
         self._session_water_delivered = self._last_volume_delivered
         self._total_water_delivered += self._last_volume_delivered
@@ -837,6 +840,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         if self._last_irrigated:
             attrs["last_irrigated"] = self._last_irrigated.isoformat()
             attrs["last_volume_delivered"] = self._last_volume_delivered
+            attrs["last_irrigation_source"] = self._last_irrigation_source
         if self._volume_entity:
             attrs["volume_entity"] = self._volume_entity
         if self._flow_meter_sensor:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers.event import (
@@ -73,6 +74,7 @@ class IrrigationController:
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
         self._unsub_monitor = None
         self._last_service_call: dict[str, float] = {}
+        self._current_source: str | None = None
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
         self._manual_valve_open: dict[str, float | None] = {}
         # Reverse map: valve_entity_id → zone_name
@@ -214,6 +216,7 @@ class IrrigationController:
                 zone._zone_deficit,
                 threshold,
             )
+            self._current_source = "scheduled"
             self._irrigation_task = self._hass.async_create_task(
                 self._irrigate_zones([zone_name]),
             )
@@ -239,6 +242,7 @@ class IrrigationController:
                 zone._zone_deficit,
                 zone._threshold,
             )
+            self._current_source = "reactive"
             self._irrigation_task = self._hass.async_create_task(
                 self._irrigate_zones([zone_name]),
             )
@@ -277,7 +281,7 @@ class IrrigationController:
         self._dryness.reset()
         self._dryness.async_write_ha_state()
         for zs in self._zones.values():
-            zs.reset_deficit()
+            zs.reset_deficit("service_reset")
             zs.async_write_ha_state()
 
     async def _handle_irrigate_zone(self, call: ServiceCall) -> None:
@@ -297,6 +301,7 @@ class IrrigationController:
             _LOGGER.warning("Irrigation already in progress, ignoring request")
             return
 
+        self._current_source = "button"
         self._irrigation_task = self._hass.async_create_task(self._irrigate_zones([zone_name]))
 
     async def _handle_irrigate_all(self, call: ServiceCall) -> None:
@@ -307,6 +312,7 @@ class IrrigationController:
             _LOGGER.warning("Irrigation already in progress, ignoring request")
             return
 
+        self._current_source = "button"
         self._irrigation_task = self._hass.async_create_task(self._irrigate_zones(list(self._zones.keys())))
 
     async def _handle_stop(self, call: ServiceCall) -> None:
@@ -339,12 +345,12 @@ class IrrigationController:
                     list(self._zones.keys()),
                 )
                 return
-            self._zones[zone_name].reset_deficit()
+            self._zones[zone_name].reset_deficit("mark_irrigated")
             self._zones[zone_name].async_write_ha_state()
             _LOGGER.info("Zone '%s' marked as irrigated, deficit reset", zone_name)
         else:
             for zs in self._zones.values():
-                zs.reset_deficit()
+                zs.reset_deficit("mark_irrigated")
                 zs.async_write_ha_state()
             _LOGGER.info("All zones marked as irrigated, deficits reset")
 
@@ -423,7 +429,7 @@ class IrrigationController:
                     zone = self._zones[zone_name]
                     if delivered >= target:
                         # Full irrigation — reset deficit to zero
-                        zone.reset_deficit()
+                        zone.reset_deficit(self._current_source or "automatic")
                     else:
                         # Partial irrigation — reduce deficit proportionally
                         all_complete = False
@@ -811,6 +817,9 @@ class IrrigationController:
                 if delivered_liters > 0 and zone._area > 0:
                     delivered_mm = delivered_liters / zone._area
                     zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
+                    zone._last_irrigation_source = "manual"
+                    zone._last_irrigated = datetime.now()
+                    zone._last_volume_delivered = round(delivered_liters, 1)
                     _LOGGER.info(
                         "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
                         zone_name,
@@ -818,14 +827,14 @@ class IrrigationController:
                         zone._zone_deficit,
                     )
                 else:
-                    zone.reset_deficit()
+                    zone.reset_deficit("manual")
                     _LOGGER.info(
                         "Manual irrigation detected (flow meter reading zero): zone='%s', deficit reset",
                         zone_name,
                     )
             else:
                 # No flow meter — full deficit reset
-                zone.reset_deficit()
+                zone.reset_deficit("manual")
                 _LOGGER.info(
                     "Manual irrigation detected (no flow meter): zone='%s', deficit reset",
                     zone_name,
