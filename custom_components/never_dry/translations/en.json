@@ -39,7 +39,8 @@
           "flow_meter_sensor": "Flow meter sensor (flow_meter only)",
           "volume_entity": "Volume target entity (volume_preset only)",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         },
         "data_description": {
           "name": "Display name for this zone (e.g., Vegetable Garden, Lawn)",
@@ -51,10 +52,11 @@
           "plant_family": "Select the type of plants in this zone. Sets a seasonal crop coefficient (Kc) that adjusts water demand throughout the year",
           "kc": "Leave empty to use the plant family seasonal profile. Set to override with a fixed Kc value (0.1–2.0)",
           "flow_rate_lpm": "Water flow rate of the valve in liters per minute. Required for estimated_flow mode. Measure with a bucket and stopwatch",
-          "flow_meter_sensor": "Sensor entity that reports cumulative liters delivered. Required for flow_meter mode",
+          "flow_meter_sensor": "Sensor entity that reports cumulative liters delivered or flow rate (L/h, L/min). Required for flow_meter mode",
           "volume_entity": "Number entity on the smart valve that accepts a volume target in liters. Required for volume_preset mode",
           "delivery_timeout": "Maximum time to wait for flow_meter or volume_preset delivery before forcing valve close (safety limit)",
-          "threshold": "Deficit level that triggers Mode A irrigation for this zone"
+          "threshold": "Deficit level (mm) that triggers automatic irrigation for this zone",
+          "irrigation_time": "Time of day when NeverDry checks the deficit and irrigates if above threshold. Leave empty to disable automatic scheduling"
         }
       },
       "add_another": {
@@ -112,7 +114,8 @@
           "flow_meter_sensor": "Flow meter sensor",
           "volume_entity": "Volume target entity",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         }
       },
       "edit_zone": {
@@ -136,7 +139,8 @@
           "flow_meter_sensor": "Flow meter sensor",
           "volume_entity": "Volume target entity",
           "delivery_timeout": "Safety timeout",
-          "threshold": "Threshold for Mode A"
+          "threshold": "Irrigation threshold",
+          "irrigation_time": "Daily irrigation time"
         }
       },
       "remove_zone": {

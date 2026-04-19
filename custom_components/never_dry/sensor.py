@@ -46,6 +46,7 @@ from .const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_IRRIGATION_TIME,
     CONF_ZONE_KC,
     CONF_ZONE_NAME,
     CONF_ZONE_PLANT_FAMILY,
@@ -613,6 +614,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._flow_meter_sensor = zone_config.get(CONF_ZONE_FLOW_METER_SENSOR)
         self._delivery_timeout = zone_config.get(CONF_ZONE_DELIVERY_TIMEOUT, DEFAULT_DELIVERY_TIMEOUT_S)
         self._battery_sensor = zone_config.get(CONF_ZONE_BATTERY_SENSOR)
+        self._irrigation_time = zone_config.get(CONF_ZONE_IRRIGATION_TIME)
         self._irrigating = False
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
@@ -720,6 +722,11 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         return self._valve
 
     @property
+    def irrigation_time(self) -> str | None:
+        """Configured daily irrigation time (HH:MM) or None."""
+        return self._irrigation_time
+
+    @property
     def delivery_mode(self) -> str:
         """Configured delivery mode for this zone."""
         return self._delivery_mode
@@ -800,6 +807,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "zone_name": self._zone_name,
             "valve": self._valve,
             "delivery_mode": self._delivery_mode,
+            "irrigation_time": self._irrigation_time,
             "system_type": self._system_type,
             "plant_family": self._plant_family,
             "kc": round(kc, 3),
