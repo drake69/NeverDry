@@ -8,14 +8,15 @@
 4. [Installation](#4-installation)
 5. [Configuration (UI setup wizard)](#5-configuration-ui-setup-wizard)
 6. [Understanding the sensors](#6-understanding-the-sensors)
-7. [Setting up automations](#7-setting-up-automations)
-8. [Monitoring mode (no valves)](#8-monitoring-mode-no-valves)
-9. [Editing settings after setup](#9-editing-settings-after-setup)
-10. [Updating the integration](#10-updating-the-integration)
-11. [Calibration guide](#11-calibration-guide)
-12. [Dashboard examples](#12-dashboard-examples)
-13. [Troubleshooting](#13-troubleshooting)
-14. [FAQ](#14-faq)
+7. [Irrigation logic — how it all works](#7-irrigation-logic--how-it-all-works)
+8. [Setting up automations](#8-setting-up-automations)
+9. [Monitoring mode (no valves)](#9-monitoring-mode-no-valves)
+10. [Editing settings after setup](#10-editing-settings-after-setup)
+11. [Updating the integration](#11-updating-the-integration)
+12. [Calibration guide](#12-calibration-guide)
+13. [Dashboard examples](#13-dashboard-examples)
+14. [Troubleshooting](#14-troubleshooting)
+15. [FAQ](#15-faq)
 
 ---
 
@@ -246,7 +247,100 @@ Shows the volume of water needed for this specific zone in liters.
 | `threshold_mm` | Mode A trigger threshold |
 | `irrigating` | `true` if this zone is currently being irrigated |
 
-## 7. Setting up automations
+## 7. Irrigation logic — how it all works
+
+This diagram shows the complete irrigation decision flow, from weather data to valve control.
+
+```
+                    ┌─────────────────┐
+                    │  Weather Input  │
+                    │  (Temperature,  │
+                    │   Rain, Wind*)  │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │   ET Estimate   │
+                    │  ET_h = α(T-Tb) │
+                    │    / 24 [mm/h]  │
+                    └────────┬────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │    Dryness Index (global)    │
+              │  D(t) = D(t-1) + ET - Rain  │
+              │       [mm, Kc=1.0]          │
+              └──────────────┬──────────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │  Per-Zone Deficit (x Kc)    │
+              │  D_zone = D_zone + ET*Kc*Δt │
+              │          - Rain             │
+              └──────────────┬──────────────┘
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+  ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐
+  │  Scheduled  │    │   Button    │    │   Manual    │
+  │  (HH:MM)   │    │  "Irrigate" │    │ valve open  │
+  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘
+         │                  │                  │
+  ┌──────▼──────┐           │           ┌──────▼──────┐
+  │ Deficit >=  │           │           │  Detect via │
+  │ Threshold?  │           │           │ state_change│
+  │             │           │           │   listener  │
+  ├─── No ──┐   │           │           └──────┬──────┘
+  │  skip   │   │           │                  │
+  └─────────┘   │           │                  │
+         │ Yes  │           │                  │
+         └──────┼───────────┘                  │
+                │                              │
+     ┌──────────▼──────────┐                   │
+     │   Open Valve        │                   │
+     │   (switch.turn_on)  │                   │
+     └──────────┬──────────┘                   │
+                │                              │
+     ┌──────────▼──────────┐         ┌─────────▼─────────┐
+     │   Monitor Delivery  │         │  On valve close:  │
+     │                     │         │  Read flow meter  │
+     │  ┌─ estimated_flow  │         │  Compute volume   │
+     │  │  (timer-based)   │         │  Adjust deficit   │
+     │  │                  │         └───────────────────┘
+     │  ├─ flow_meter      │
+     │  │  (cumulative L)  │
+     │  │                  │
+     │  └─ flow_rate       │
+     │     (integrate L/h) │
+     └──────────┬──────────┘
+                │
+     ┌──────────▼──────────┐
+     │  Close Valve        │
+     │  (target reached    │
+     │   OR timeout)       │
+     └──────────┬──────────┘
+                │
+     ┌──────────▼──────────┐
+     │  Update Deficit     │
+     │                     │
+     │  Full:  D = 0       │
+     │  Partial: D -= vol  │
+     │    × η / area       │
+     └─────────────────────┘
+```
+
+### Key concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Dryness Index** | Global reference deficit (Kc=1.0). Only decreases with rain, never with irrigation. |
+| **Zone Deficit** | Per-zone deficit scaled by crop coefficient Kc. Decreases with rain AND irrigation. |
+| **Threshold** | Minimum deficit (mm) to trigger automatic irrigation. Below this, the zone is "wet enough". |
+| **Irrigation Time** | Daily time (HH:MM) when NeverDry checks each zone and irrigates if deficit >= threshold. |
+| **Delivery Mode** | How the valve delivers water: timer, flow meter (cumulative), or flow rate (L/h integration). |
+| **Partial Irrigation** | If timeout or stop, deficit is reduced proportionally to the volume actually delivered. |
+| **Manual Detection** | If someone opens the valve manually (app, button), NeverDry detects it and adjusts the deficit. |
+
+---
+
+## 8. Setting up automations
 
 ### Mode A: Threshold trigger
 
@@ -330,7 +424,7 @@ Use Mode B as the primary nightly scheduler and Mode A as a daytime safety net f
 | `never_dry.stop` | — | Emergency stop: close all valves immediately |
 | `never_dry.reset` | — | Manually reset deficit to zero |
 
-## 8. Monitoring mode (no valves)
+## 9. Monitoring mode (no valves)
 
 If you don't have smart valves, the integration works in **monitoring mode**. This mode activates automatically when no zones have a valve configured.
 
@@ -354,7 +448,7 @@ The notification looks like:
 > No irrigation valves are configured — please water manually or configure valves in the integration settings.
 
 
-## 9. Editing settings after setup
+## 10. Editing settings after setup
 
 You can modify the integration settings at any time without removing and re-adding it.
 
@@ -369,7 +463,7 @@ The options flow provides two actions:
 
 Changes take effect immediately — no restart required.
 
-## 10. Updating the integration
+## 11. Updating the integration
 
 NeverDry follows semantic versioning (e.g., `0.1.0` → `0.2.0`). Updates are safe — your configuration and sensor history are preserved automatically.
 
@@ -399,7 +493,7 @@ HACS checks for new releases automatically. You will see a notification in the H
 
 Check the [GitHub Releases](https://github.com/drake69/NeverDry/releases) page for detailed release notes, including new features, bug fixes, and any breaking changes.
 
-## 11. Calibration guide
+## 12. Calibration guide
 
 ### Week 1: Start with defaults
 
@@ -443,7 +537,7 @@ The model automatically adapts to seasons through temperature:
 
 No manual seasonal adjustment is needed. If you find the model significantly over- or under-estimates in a specific season, adjust `alpha` by ±0.05 via the options flow.
 
-## 12. Dashboard examples
+## 13. Dashboard examples
 
 ### Simple status card
 
@@ -490,7 +584,7 @@ card:
     Vegetables need {{ state_attr('sensor.irrigation_vegetable_garden', 'volume_liters') }} L.
 ```
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### Sensors show "unavailable"
 
@@ -534,7 +628,7 @@ card:
 - If state is lost, check that the entity's `unique_id` hasn't changed
 - Check HA logs for restore errors
 
-## 14. FAQ
+## 15. FAQ
 
 **Q: Does it work without a rain sensor?**
 A: Technically yes, but the deficit will only increase (never decrease from rain). You would need to manually call `never_dry.reset` after significant rain. A rain sensor is strongly recommended.
