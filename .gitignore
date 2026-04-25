@@ -10,3 +10,6 @@ coverage.xml
 htmlcov/
 .venv/
 .env
+secrets/
+*.db
+.code_reader/
