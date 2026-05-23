@@ -231,9 +231,16 @@ def zone_prato(hass_mock, di_sensor):
     return IrrigationZoneSensor(hass_mock, zone_config, di_sensor)
 
 
+@pytest.fixture(autouse=True)
+def _fast_auto_open_grace(monkeypatch):
+    """Shrink the volume_preset auto-open grace window for tests."""
+    import never_dry.controller as _ctrl_mod
+    monkeypatch.setattr(_ctrl_mod, "AUTO_OPEN_GRACE_S", 0.05)
+
+
 @pytest.fixture
 def controller(hass_mock, di_sensor, zone_orto, zone_prato):
-    """Create an IrrigationController with two zones."""
+    """Create an IrrigationController with two zones (fast grace for tests)."""
     return IrrigationController(hass_mock, di_sensor, [zone_orto, zone_prato], inter_zone_delay=0)
 
 

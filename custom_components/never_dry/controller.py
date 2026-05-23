@@ -43,8 +43,12 @@ from .const import (
     SERVICE_RESET,
     SERVICE_STOP,
 )
+from .valve_fsm import ValveState
+from .valve_notifier import ValveNotifier
+from .valve_operator import OperationStatus, ValveOperator
 
 MONITORING_INTERVAL = 6 * 3600  # 6 hours in seconds
+AUTO_OPEN_GRACE_S = 3.0  # volume_preset: wait this long for smart-valve auto-open
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,11 +66,25 @@ class IrrigationController:
         dryness_sensor,
         zone_sensors: list,
         inter_zone_delay: int = DEFAULT_INTER_ZONE_DELAY,
+        valve_operators: dict[str, ValveOperator] | None = None,
+        notifier: ValveNotifier | None = None,
     ) -> None:
+        """Build the irrigation controller.
+
+        ``valve_operators`` is a mapping from valve switch entity id to the
+        :class:`ValveOperator` that drives it. When ``None`` the controller
+        falls back to direct ``hass.services.async_call`` for switch
+        operations (used by the test harness and as a safety net for any
+        valve without a dedicated operator).
+        """
         self._hass = hass
         self._dryness = dryness_sensor
         self._zones = {zs.zone_name: zs for zs in zone_sensors}
         self._inter_zone_delay = inter_zone_delay
+        self._valve_operators: dict[str, ValveOperator] = valve_operators or {}
+        self._notifier = notifier
+        # Tunable from tests; default matches the production grace window.
+        self.auto_open_grace_s: float = AUTO_OPEN_GRACE_S
         self._running = False
         self._stop_requested = False
         self._active_valve: str | None = None
@@ -316,18 +334,16 @@ class IrrigationController:
         self._irrigation_task = self._hass.async_create_task(self._irrigate_zones(list(self._zones.keys())))
 
     async def _handle_stop(self, call: ServiceCall) -> None:
-        """Emergency stop: close all valves immediately."""
+        """Emergency stop: close every configured valve concurrently."""
         _LOGGER.info("Emergency stop requested")
         self._stop_requested = True
 
-        # Close the currently active valve
-        if self._active_valve:
-            await self._close_valve(self._active_valve)
-
-        # Safety: close all configured valves
-        for zs in self._zones.values():
-            if zs.valve:
-                await self._close_valve(zs.valve)
+        valves = [zs.valve for zs in self._zones.values() if zs.valve]
+        if valves:
+            await asyncio.gather(
+                *(self._close_valve(v) for v in valves),
+                return_exceptions=True,
+            )
 
         self._running = False
         self._active_valve = None
@@ -442,6 +458,8 @@ class IrrigationController:
                         zone._session_water_delivered = round(delivered, 1)
                         zone._total_water_delivered += delivered
                         zone._yearly_water_delivered += delivered
+                        zone._last_irrigated = datetime.now()
+                        zone._last_irrigation_source = self._current_source or "automatic"
                         _LOGGER.info(
                             "Partial irrigation: zone='%s', delivered=%.1fL/%.1fL, deficit reduced to %.2fmm",
                             zone_name,
@@ -494,7 +512,8 @@ class IrrigationController:
         if duration <= 0:
             return 0.0
 
-        await self._open_valve(zone.valve)
+        if not await self._open_valve(zone.valve):
+            return 0.0
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
@@ -507,7 +526,20 @@ class IrrigationController:
         return zone.volume_liters if not self._stop_requested else 0.0
 
     async def _deliver_volume_preset(self, zone) -> float:
-        """Send volume target to smart valve, wait for it to close itself."""
+        """Arm the smart-valve dose, ensure it opens, wait for self-close.
+
+        Sequence:
+          1. ``number.set_value`` arms the volume target on the smart valve.
+          2. Wait ``AUTO_OPEN_GRACE_S`` to see if the valve auto-opens.
+          3. If still closed after the grace window, send ``switch.turn_on``
+             (idempotent if the valve has just auto-opened in the gap).
+          4. Poll for self-close (existing behaviour); on stop or timeout
+             we force ``switch.turn_off``.
+
+        Note: this delivery mode bypasses :class:`ValveOperator` on purpose.
+        Smart valves with auto-close behaviour drive their own state and
+        do not fit the operator's "I command, you obey" semantics.
+        """
         volume = zone.volume_liters
         if volume <= 0:
             return 0.0
@@ -517,7 +549,7 @@ class IrrigationController:
             _LOGGER.error("Zone '%s' has no volume_entity configured", zone.zone_name)
             return 0.0
 
-        # Send volume target to the number entity
+        # 1) Arm the dose
         await self._hass.services.async_call(
             "number",
             "set_value",
@@ -526,12 +558,28 @@ class IrrigationController:
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
-        # Wait for the smart valve to finish (monitor switch state)
+        # 2-3) Grace window for auto-open; explicit turn_on as fallback
+        grace_s = self.auto_open_grace_s
+        auto_opened = await self._wait_for_auto_open(zone.valve, grace_s)
+        if not auto_opened:
+            _LOGGER.info(
+                "Zone '%s': smart valve did not auto-open within %.1fs, "
+                "sending switch.turn_on",
+                zone.zone_name,
+                grace_s,
+            )
+            await self._hass.services.async_call(
+                "switch", "turn_on", {"entity_id": zone.valve}
+            )
+
+        # 4) Wait for the smart valve to finish (monitor switch state)
         timeout = zone.delivery_timeout
         elapsed = 0
         while elapsed < timeout:
             if self._stop_requested:
-                await self._close_valve(zone.valve)
+                await self._hass.services.async_call(
+                    "switch", "turn_off", {"entity_id": zone.valve}
+                )
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
                 return 0.0
@@ -548,7 +596,9 @@ class IrrigationController:
                 zone.zone_name,
                 timeout,
             )
-            await self._close_valve(zone.valve)
+            await self._hass.services.async_call(
+                "switch", "turn_off", {"entity_id": zone.valve}
+            )
 
         zone.set_irrigating(False)
         zone.async_write_ha_state()
@@ -590,7 +640,8 @@ class IrrigationController:
             )
             return 0.0
 
-        await self._open_valve(zone.valve)
+        if not await self._open_valve(zone.valve):
+            return 0.0
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
@@ -648,7 +699,8 @@ class IrrigationController:
 
         Returns volume actually delivered in liters.
         """
-        await self._open_valve(zone.valve)
+        if not await self._open_valve(zone.valve):
+            return 0.0
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
@@ -739,26 +791,92 @@ class IrrigationController:
                 return
             await asyncio.sleep(1)
 
-    async def _open_valve(self, entity_id: str) -> None:
-        """Turn on a valve switch."""
-        self._active_valve = entity_id
-        await self._hass.services.async_call("switch", "turn_on", {"entity_id": entity_id})
+    async def _open_valve(self, entity_id: str) -> bool:
+        """Open a valve switch. Returns True on success, False on failure.
 
-    async def _close_valve(self, entity_id: str) -> None:
-        """Turn off a valve switch."""
-        await self._hass.services.async_call("switch", "turn_off", {"entity_id": entity_id})
+        Uses the :class:`ValveOperator` when one is registered for the
+        entity; otherwise falls back to a direct ``switch.turn_on`` call
+        (used for valves without an operator, including the test harness).
+        """
+        self._active_valve = entity_id
+        operator = self._valve_operators.get(entity_id)
+        if operator is None:
+            await self._hass.services.async_call(
+                "switch", "turn_on", {"entity_id": entity_id}
+            )
+            return True
+        result = await operator.open()
+        if result.status != OperationStatus.OK:
+            _LOGGER.error(
+                "Valve open failed for '%s': status=%s detail=%s",
+                entity_id,
+                result.status.value,
+                result.error_detail,
+            )
+            return False
+        return True
+
+    async def _close_valve(self, entity_id: str) -> bool:
+        """Close a valve switch. Returns True on success, False on failure."""
+        operator = self._valve_operators.get(entity_id)
+        if operator is None:
+            await self._hass.services.async_call(
+                "switch", "turn_off", {"entity_id": entity_id}
+            )
+            if self._active_valve == entity_id:
+                self._active_valve = None
+            return True
+        result = await operator.close()
         if self._active_valve == entity_id:
             self._active_valve = None
+        if result.status != OperationStatus.OK:
+            _LOGGER.error(
+                "Valve close failed for '%s': status=%s detail=%s",
+                entity_id,
+                result.status.value,
+                result.error_detail,
+            )
+            return False
+        return True
+
+    async def _wait_for_auto_open(self, entity_id: str, grace_s: float) -> bool:
+        """Poll the valve state for up to ``grace_s`` seconds, return True on auto-open.
+
+        Used by ``volume_preset`` to detect smart-valves that open
+        themselves after receiving the volume target. If the grace
+        window elapses without the switch reporting ``"on"``, the caller
+        is expected to send ``switch.turn_on`` explicitly.
+        """
+        waited = 0.0
+        step = min(0.5, max(0.01, grace_s / 6))
+        while waited < grace_s:
+            await asyncio.sleep(step)
+            waited += step
+            state = self._hass.states.get(entity_id)
+            if state and state.state == "on":
+                return True
+        return False
 
     # ── Manual valve detection ───────────────────────────
 
     @callback
     def _on_valve_state_change(self, event) -> None:
-        """Detect manual valve operation (not initiated by controller)."""
-        if self._running:
-            return  # controller is driving the valve, ignore
+        """Detect manual valve operation (not initiated by controller).
 
+        When an operator is registered for the valve we trust its FSM
+        state: anything other than ``IDLE`` means the controller is
+        actively driving the valve. Otherwise we fall back to the legacy
+        global ``_running`` flag for valves without an operator.
+        """
         entity_id = event.data.get("entity_id")
+        operator = self._valve_operators.get(entity_id) if entity_id else None
+        if operator is not None:
+            if operator.state != ValveState.IDLE:
+                return  # operator is driving this valve
+        elif self._running:
+            return  # legacy gate: controller is driving some valve
+
+
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")
 
