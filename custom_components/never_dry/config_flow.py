@@ -8,7 +8,6 @@ Provides a multi-step UI setup:
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import voluptuous as vol
@@ -67,8 +66,6 @@ from .const import (
     SYSTEM_TYPE_MICRO_SPRINKLER,
     SYSTEM_TYPE_SPRINKLER,
 )
-
-_LOGGER = logging.getLogger(__name__)
 
 STEP_SENSORS_SCHEMA = vol.Schema(
     {
