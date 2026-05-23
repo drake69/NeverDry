@@ -351,6 +351,56 @@ def test_no_flow_meter_ignores_timeout_flow_in_open(fsm_no_flow):
     assert r.actions == ()
 
 
+# ── Per-state no-op coverage (every handler's fall-through) ──────────
+
+
+def test_noop_branches_for_each_state(fsm_with_flow):
+    """Each state handler's fall-through path returns a no-op result."""
+    # IDLE + unexpected event (covered by other tests, sanity check)
+    r = fsm_with_flow.dispatch(ValveEvent.TIMEOUT_OPEN)
+    assert r.actions == ()
+
+    # REQ_OPEN + unexpected event (e.g. OBS_FLOW_POSITIVE before switch-on)
+    fsm_with_flow.dispatch(ValveEvent.CMD_OPEN)
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_FLOW_POSITIVE)
+    assert r.from_state == ValveState.REQ_OPEN
+    assert r.to_state == ValveState.REQ_OPEN
+    assert r.actions == ()
+
+    # OPEN (with flow meter) + unexpected event
+    fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_ON)
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_ON)
+    assert r.to_state == ValveState.OPEN
+    assert r.actions == ()
+
+    # OPEN_VERIFIED + unexpected event
+    fsm_with_flow.dispatch(ValveEvent.OBS_FLOW_POSITIVE)
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_FLOW_POSITIVE)
+    assert r.to_state == ValveState.OPEN_VERIFIED
+    assert r.actions == ()
+
+    # REQ_CLOSE + unexpected event
+    fsm_with_flow.dispatch(ValveEvent.CMD_CLOSE)
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_FLOW_POSITIVE)
+    assert r.to_state == ValveState.REQ_CLOSE
+    assert r.actions == ()
+
+    # CLOSED + unexpected event
+    fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_OFF)
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_ON)
+    assert r.to_state == ValveState.CLOSED
+    assert r.actions == ()
+
+
+def test_unreachable_ignores_non_available_events(fsm_no_flow):
+    """In UNREACHABLE every event other than OBS_AVAILABLE is a no-op."""
+    fsm_no_flow.dispatch(ValveEvent.OBS_UNAVAILABLE)
+    assert fsm_no_flow.state == ValveState.UNREACHABLE
+    r = fsm_no_flow.dispatch(ValveEvent.CMD_OPEN)
+    assert r.to_state == ValveState.UNREACHABLE
+    assert r.actions == ()
+
+
 def test_no_flow_meter_does_not_use_closed_state(fsm_no_flow):
     """ValveState.CLOSED must never be reached when ``has_flow_meter`` is False."""
     for _ in range(10):

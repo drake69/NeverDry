@@ -220,7 +220,7 @@ class ValveFsm:
             return self._noop(event)
 
         handler = self._HANDLERS.get(self._state)
-        if handler is None:
+        if handler is None:  # pragma: no cover — defensive; every active state has a handler
             return self._noop(event)
         return handler(self, event)
 
