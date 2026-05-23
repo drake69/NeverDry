@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from never_dry.valve_fsm import FailureKind, FsmConfig, ValveState
-from never_dry.valve_operator import OperationStatus, ValveOperator
+from never_dry.valve_operator import OperationResult, OperationStatus, ValveOperator
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -485,6 +485,206 @@ async def test_switch_service_exception_is_caught(hass, caplog):
     # The FSM still drives to OPEN_FAILED via the open timeout.
     assert result.status == OperationStatus.FAILED
     assert "boom" in caplog.text
+
+
+# ── Coverage of less-traveled branches ───────────────────────────────
+
+
+async def test_is_retryable_rejects_garbage_error_detail(hass):
+    """An unknown error_detail string is treated as non-transient."""
+    op = _make_operator(hass)
+    outcome = OperationResult(OperationStatus.FAILED, "not_a_real_failure_kind")
+    assert op._is_retryable(outcome) is False
+
+
+async def test_backoff_for_handles_empty_tuple(hass):
+    """An empty backoff tuple yields a zero sleep."""
+    op = _make_operator(hass, backoff_s=())
+    assert op._backoff_for(0) == 0.0
+
+
+def test_make_operator_uses_default_backoff_when_none(hass):
+    """Passing ``backoff_s=None`` activates the class default."""
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="z",
+        fsm_config=_fast_fsm_config(False),
+        backoff_s=None,
+    )
+    assert op._backoff_s == ValveOperator.DEFAULT_BACKOFF_S
+
+
+async def test_notifier_receives_command_failed_on_open_fail(hass):
+    """An OPEN_FAILED with a notifier configured produces a notification."""
+    from never_dry.valve_notifier import NotificationKind, Severity, ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="z1",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+    )
+    result = await op.open()
+    assert result.status == OperationStatus.FAILED
+    assert notifier.is_active("z1", NotificationKind.COMMAND_FAILED)
+    active = notifier._active[("z1", NotificationKind.COMMAND_FAILED)]
+    assert active.severity == Severity.WARNING
+
+
+async def test_notifier_receives_stuck_open_on_close_leak(hass):
+    """A CLOSE_LEAK with a notifier configured emits STUCK_OPEN CRITICAL."""
+    from never_dry.valve_notifier import NotificationKind, Severity, ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        flow_sensor_entity_id="sensor.flow",
+        zone_name="z2",
+        fsm_config=_fast_fsm_config(True),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+    )
+
+    def _state_for(entity_id):
+        if entity_id == "sensor.flow":
+            return MagicMock(state="0.5")
+        return MagicMock(state="off")
+
+    hass.states.get = MagicMock(side_effect=_state_for)
+    result, sim = await _drive_open_then_close_leak(op, hass)
+    await sim
+
+    assert result.status == OperationStatus.FAILED
+    assert notifier.is_active("z2", NotificationKind.STUCK_OPEN)
+    active = notifier._active[("z2", NotificationKind.STUCK_OPEN)]
+    assert active.severity == Severity.CRITICAL
+
+
+async def test_notifier_receives_zone_disabled_on_maintenance(hass):
+    """Three consecutive failures notify ZONE_DISABLED with CRITICAL severity."""
+    from never_dry.valve_notifier import NotificationKind, ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="z3",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+    )
+    for _ in range(3):
+        await op.open()
+    assert notifier.is_active("z3", NotificationKind.ZONE_DISABLED)
+
+
+async def test_leak_recovery_no_flow_meter_treats_as_unrecovered(hass):
+    """Without a flow meter, _attempt_leak_recovery returns False."""
+    op = _make_operator(hass, has_flow_meter=False)
+    op._flow_sensor_entity_id = None
+    recovered = await op._attempt_leak_recovery()
+    assert recovered is False
+
+
+async def test_leak_recovery_none_state_treats_as_unrecovered(hass):
+    """If hass.states.get returns None during recovery, treat as unrecovered."""
+    op = _make_operator(hass, has_flow_meter=True)
+    hass.states.get = MagicMock(return_value=None)
+    recovered = await op._attempt_leak_recovery()
+    assert recovered is False
+
+
+async def test_leak_recovery_unparseable_flow_treats_as_unrecovered(hass):
+    """If the flow sensor reports a non-numeric value, treat as unrecovered."""
+    op = _make_operator(hass, has_flow_meter=True)
+    hass.states.get = MagicMock(return_value=MagicMock(state="unavailable"))
+    recovered = await op._attempt_leak_recovery()
+    assert recovered is False
+
+
+async def test_escalate_stuck_open_handles_service_exception(hass, caplog):
+    """If never_dry.stop raises, _escalate_stuck_open logs and continues."""
+    op = _make_operator(hass, has_flow_meter=True)
+    hass.services.async_call = AsyncMock(side_effect=RuntimeError("boom"))
+    await op._escalate_stuck_open()
+    assert "Failed to trigger emergency stop" in caplog.text
+
+
+async def test_escalate_stuck_open_without_notifier(hass):
+    """``_escalate_stuck_open`` is safe when no notifier is configured."""
+    op = _make_operator(hass, has_flow_meter=True)
+    assert op._notifier is None
+    await op._escalate_stuck_open()
+
+
+async def test_sync_callback_schedules_async_handler(hass):
+    """The HA-facing sync callbacks must schedule the async handler."""
+    op = _make_operator(hass)
+    seen = []
+
+    async def fake_handler(event):
+        seen.append(event)
+
+    op._handle_switch_state = fake_handler  # type: ignore[assignment]
+    op._on_switch_state(_state_event("on"))
+    await asyncio.sleep(0)
+    assert seen
+
+
+async def test_flow_sync_callback_schedules_async_handler(hass):
+    """The flow sync callback also routes to the async handler."""
+    op = _make_operator(hass, has_flow_meter=True)
+    seen = []
+
+    async def fake_handler(event):
+        seen.append(event)
+
+    op._handle_flow_state = fake_handler  # type: ignore[assignment]
+    op._on_flow_state(_state_event("0.5"))
+    await asyncio.sleep(0)
+    assert seen
+
+
+async def test_handle_switch_state_ignores_none_new_state(hass):
+    """If the event has no new_state, the handler returns silently."""
+    op = _make_operator(hass)
+    event = MagicMock()
+    event.data = {"new_state": None}
+    await op._handle_switch_state(event)
+    assert op.state == ValveState.IDLE
+
+
+async def test_handle_switch_state_obs_available_on_recovery(hass):
+    """A switch reporting ``on`` after UNREACHABLE dispatches OBS_AVAILABLE first."""
+    op = _make_operator(hass)
+    await op._handle_switch_state(_state_event("unavailable"))
+    assert op.state == ValveState.UNREACHABLE
+    await op._handle_switch_state(_state_event("on"))
+    assert op.state == ValveState.IDLE
+
+
+async def test_handle_flow_state_ignores_none_new_state(hass):
+    """If the flow event has no new_state, the handler returns silently."""
+    op = _make_operator(hass, has_flow_meter=True)
+    event = MagicMock()
+    event.data = {"new_state": None}
+    await op._handle_flow_state(event)
+    assert op.state == ValveState.IDLE
+
+
+async def test_handle_flow_state_ignores_non_numeric(hass):
+    """A non-parseable flow reading is silently ignored."""
+    op = _make_operator(hass, has_flow_meter=True)
+    await op._handle_flow_state(_state_event("unavailable"))
+    assert op.state == ValveState.IDLE
 
 
 # ── Timing ───────────────────────────────────────────────────────────
