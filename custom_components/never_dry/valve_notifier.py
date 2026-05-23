@@ -82,7 +82,10 @@ _TEMPLATES: dict[NotificationKind, _Template] = {
     ),
     NotificationKind.UNREACHABLE_AT_IRRIGATION: _Template(
         title="Valve unreachable at irrigation time",
-        body="Could not start scheduled irrigation for zone '{zone}': valve unavailable.",
+        body=(
+            "Could not start irrigation for zone '{zone}': valve unavailable "
+            "({reason}). Check the valve battery / Zigbee mesh before retrying."
+        ),
     ),
     NotificationKind.FLOW_METER_DEAD: _Template(
         title="Flow meter unavailable",
