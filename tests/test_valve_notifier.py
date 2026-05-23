@@ -44,8 +44,7 @@ def _dismiss_calls(hass) -> list[dict]:
     return [
         call.args[2] if len(call.args) >= 3 else call.kwargs.get("service_data", {})
         for call in hass.services.async_call.call_args_list
-        if len(call.args) >= 2
-        and call.args[:2] == ("persistent_notification", "dismiss")
+        if len(call.args) >= 2 and call.args[:2] == ("persistent_notification", "dismiss")
     ]
 
 

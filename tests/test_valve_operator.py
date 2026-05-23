@@ -120,9 +120,7 @@ async def test_open_happy_path_no_flow_meter(hass):
     assert result.status == OperationStatus.OK
     assert result.retries_used == 0
     assert result.duration_ms > 0
-    hass.services.async_call.assert_any_call(
-        "switch", "turn_on", {"entity_id": "switch.valve"}, blocking=False
-    )
+    hass.services.async_call.assert_any_call("switch", "turn_on", {"entity_id": "switch.valve"}, blocking=False)
     assert op.state == ValveState.OPEN
 
 
@@ -166,9 +164,7 @@ async def test_close_happy_path_no_flow_meter(hass):
     await sim
 
     assert result.status == OperationStatus.OK
-    hass.services.async_call.assert_any_call(
-        "switch", "turn_off", {"entity_id": "switch.valve"}, blocking=False
-    )
+    hass.services.async_call.assert_any_call("switch", "turn_off", {"entity_id": "switch.valve"}, blocking=False)
     assert op.state == ValveState.IDLE
 
 
@@ -332,10 +328,7 @@ async def test_close_leak_recovery_fails_triggers_emergency_stop(hass):
     assert result.status == OperationStatus.FAILED
     assert result.error_detail == FailureKind.CLOSE_LEAK.value
 
-    stop_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("never_dry", "stop")
-    ]
+    stop_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("never_dry", "stop")]
     assert len(stop_calls) == 1
 
 
@@ -355,10 +348,7 @@ async def test_close_leak_recovery_attempted_once(hass):
 
     # Two turn_off calls: one from the FSM during REQ_CLOSE, one from
     # the recovery attempt. Never three.
-    turn_off_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("switch", "turn_off")
-    ]
+    turn_off_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
     assert 1 <= len(turn_off_calls) <= 2
     assert result.status == OperationStatus.FAILED
 
@@ -387,10 +377,7 @@ async def test_close_leak_recovery_resets_between_close_calls(hass):
     await sim2
 
     # Both attempts should have called never_dry.stop independently.
-    stop_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("never_dry", "stop")
-    ]
+    stop_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("never_dry", "stop")]
     assert len(stop_calls) >= 2
 
 

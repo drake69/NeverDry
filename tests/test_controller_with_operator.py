@@ -37,16 +37,8 @@ def _fake_operator(state: ValveState = ValveState.IDLE, **kwargs):
     op = MagicMock()
     op.state = state
     op.is_in_maintenance = state == ValveState.MAINTENANCE
-    op.open = AsyncMock(
-        return_value=kwargs.get(
-            "open_result", OperationResult(OperationStatus.OK)
-        )
-    )
-    op.close = AsyncMock(
-        return_value=kwargs.get(
-            "close_result", OperationResult(OperationStatus.OK)
-        )
-    )
+    op.open = AsyncMock(return_value=kwargs.get("open_result", OperationResult(OperationStatus.OK)))
+    op.close = AsyncMock(return_value=kwargs.get("close_result", OperationResult(OperationStatus.OK)))
     return op
 
 
@@ -124,10 +116,7 @@ async def test_close_uses_operator_when_present(hass_mock, di_sensor):
     assert ok is True
     op.close.assert_awaited_once()
     # No direct switch.turn_off should have been issued.
-    turn_off_calls = [
-        c for c in hass_mock.services.async_call.call_args_list
-        if c.args[:2] == ("switch", "turn_off")
-    ]
+    turn_off_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
     assert turn_off_calls == []
 
 
@@ -237,9 +226,9 @@ async def test_volume_preset_falls_back_to_turn_on(hass_mock, di_sensor):
     assert delivered == zone.volume_liters
 
     turn_on_calls = [
-        c for c in hass_mock.services.async_call.call_args_list
-        if c.args[:2] == ("switch", "turn_on")
-        and c.args[2].get("entity_id") == "switch.valve_orto"
+        c
+        for c in hass_mock.services.async_call.call_args_list
+        if c.args[:2] == ("switch", "turn_on") and c.args[2].get("entity_id") == "switch.valve_orto"
     ]
     assert len(turn_on_calls) == 1, "fallback turn_on must be issued exactly once"
 
@@ -260,11 +249,13 @@ async def test_volume_preset_no_turn_on_when_auto_opened(hass_mock, di_sensor):
     zone._zone_deficit = 5.0
 
     # First the valve is on (auto-opened) and then it closes itself.
-    states = iter([
-        MagicMock(state="on"),   # grace poll → auto-open detected
-        MagicMock(state="on"),   # main loop poll #1
-        MagicMock(state="off"),  # main loop poll #2 → done
-    ])
+    states = iter(
+        [
+            MagicMock(state="on"),  # grace poll → auto-open detected
+            MagicMock(state="on"),  # main loop poll #1
+            MagicMock(state="off"),  # main loop poll #2 → done
+        ]
+    )
 
     def _state_for(_entity_id):
         return next(states, MagicMock(state="off"))
@@ -277,10 +268,7 @@ async def test_volume_preset_no_turn_on_when_auto_opened(hass_mock, di_sensor):
     delivered = await ctrl._deliver_volume_preset(zone)
     assert delivered == zone.volume_liters
 
-    turn_on_calls = [
-        c for c in hass_mock.services.async_call.call_args_list
-        if c.args[:2] == ("switch", "turn_on")
-    ]
+    turn_on_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_on")]
     assert turn_on_calls == [], "no fallback turn_on when the valve auto-opened"
 
 
@@ -321,9 +309,7 @@ async def test_partial_irrigation_updates_last_irrigated(hass_mock, di_sensor):
 
     await ctrl._irrigate_zones(["Orto"])
 
-    assert zone._last_irrigated is not None, (
-        "partial irrigation must stamp _last_irrigated"
-    )
+    assert zone._last_irrigated is not None, "partial irrigation must stamp _last_irrigated"
     assert zone._last_irrigation_source in ("automatic", None)  # legacy or new
     assert zone._last_volume_delivered == round(partial, 1)
 
@@ -351,10 +337,5 @@ async def test_volume_preset_stop_during_run(hass_mock, di_sensor):
 
     delivered = await ctrl._deliver_volume_preset(zone)
     assert delivered == 0.0
-    turn_off_calls = [
-        c for c in hass_mock.services.async_call.call_args_list
-        if c.args[:2] == ("switch", "turn_off")
-    ]
-    assert any(
-        c.args[2].get("entity_id") == "switch.valve_orto" for c in turn_off_calls
-    )
+    turn_off_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
+    assert any(c.args[2].get("entity_id") == "switch.valve_orto" for c in turn_off_calls)

@@ -563,23 +563,18 @@ class IrrigationController:
         auto_opened = await self._wait_for_auto_open(zone.valve, grace_s)
         if not auto_opened:
             _LOGGER.info(
-                "Zone '%s': smart valve did not auto-open within %.1fs, "
-                "sending switch.turn_on",
+                "Zone '%s': smart valve did not auto-open within %.1fs, sending switch.turn_on",
                 zone.zone_name,
                 grace_s,
             )
-            await self._hass.services.async_call(
-                "switch", "turn_on", {"entity_id": zone.valve}
-            )
+            await self._hass.services.async_call("switch", "turn_on", {"entity_id": zone.valve})
 
         # 4) Wait for the smart valve to finish (monitor switch state)
         timeout = zone.delivery_timeout
         elapsed = 0
         while elapsed < timeout:
             if self._stop_requested:
-                await self._hass.services.async_call(
-                    "switch", "turn_off", {"entity_id": zone.valve}
-                )
+                await self._hass.services.async_call("switch", "turn_off", {"entity_id": zone.valve})
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
                 return 0.0
@@ -596,9 +591,7 @@ class IrrigationController:
                 zone.zone_name,
                 timeout,
             )
-            await self._hass.services.async_call(
-                "switch", "turn_off", {"entity_id": zone.valve}
-            )
+            await self._hass.services.async_call("switch", "turn_off", {"entity_id": zone.valve})
 
         zone.set_irrigating(False)
         zone.async_write_ha_state()
@@ -801,9 +794,7 @@ class IrrigationController:
         self._active_valve = entity_id
         operator = self._valve_operators.get(entity_id)
         if operator is None:
-            await self._hass.services.async_call(
-                "switch", "turn_on", {"entity_id": entity_id}
-            )
+            await self._hass.services.async_call("switch", "turn_on", {"entity_id": entity_id})
             return True
         result = await operator.open()
         if result.status != OperationStatus.OK:
@@ -820,9 +811,7 @@ class IrrigationController:
         """Close a valve switch. Returns True on success, False on failure."""
         operator = self._valve_operators.get(entity_id)
         if operator is None:
-            await self._hass.services.async_call(
-                "switch", "turn_off", {"entity_id": entity_id}
-            )
+            await self._hass.services.async_call("switch", "turn_off", {"entity_id": entity_id})
             if self._active_valve == entity_id:
                 self._active_valve = None
             return True
@@ -875,7 +864,6 @@ class IrrigationController:
                 return  # operator is driving this valve
         elif self._running:
             return  # legacy gate: controller is driving some valve
-
 
         new_state = event.data.get("new_state")
         old_state = event.data.get("old_state")

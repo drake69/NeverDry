@@ -235,6 +235,7 @@ def zone_prato(hass_mock, di_sensor):
 def _fast_auto_open_grace(monkeypatch):
     """Shrink the volume_preset auto-open grace window for tests."""
     import never_dry.controller as _ctrl_mod
+
     monkeypatch.setattr(_ctrl_mod, "AUTO_OPEN_GRACE_S", 0.05)
 
 

@@ -122,9 +122,7 @@ class ValveOperator:
         self._switch_entity_id = switch_entity_id
         self._flow_sensor_entity_id = flow_sensor_entity_id
         self._zone_name = zone_name or switch_entity_id
-        self._fsm_config = fsm_config or FsmConfig(
-            has_flow_meter=flow_sensor_entity_id is not None
-        )
+        self._fsm_config = fsm_config or FsmConfig(has_flow_meter=flow_sensor_entity_id is not None)
         self._fsm = ValveFsm(self._fsm_config)
         self._max_retries = max_retries
         self._backoff_s = backoff_s if backoff_s is not None else self.DEFAULT_BACKOFF_S
@@ -140,14 +138,10 @@ class ValveOperator:
         # every close() invocation.
         self._leak_recovery_attempted: bool = False
 
-        self._unsub_switch = async_track_state_change_event(
-            hass, [switch_entity_id], self._on_switch_state
-        )
+        self._unsub_switch = async_track_state_change_event(hass, [switch_entity_id], self._on_switch_state)
         self._unsub_flow = None
         if flow_sensor_entity_id:
-            self._unsub_flow = async_track_state_change_event(
-                hass, [flow_sensor_entity_id], self._on_flow_state
-            )
+            self._unsub_flow = async_track_state_change_event(hass, [flow_sensor_entity_id], self._on_flow_state)
 
     # ── Properties ───────────────────────────────────────────────────
 
@@ -177,9 +171,7 @@ class ValveOperator:
         immediately.
         """
         terminals: tuple[ValveState, ...] = (
-            (ValveState.OPEN_VERIFIED,)
-            if self._fsm_config.has_flow_meter
-            else (ValveState.OPEN,)
+            (ValveState.OPEN_VERIFIED,) if self._fsm_config.has_flow_meter else (ValveState.OPEN,)
         )
         return await self._run_command(cmd=ValveEvent.CMD_OPEN, terminals=terminals)
 
@@ -360,14 +352,10 @@ class ValveOperator:
             return
         if result.to_state == ValveState.MAINTENANCE:
             detail = result.failure.value if result.failure else "in_maintenance"
-            self._completion.set_result(
-                OperationResult(OperationStatus.MAINTENANCE, detail)
-            )
+            self._completion.set_result(OperationResult(OperationStatus.MAINTENANCE, detail))
             return
         if result.failure is not None:
-            self._completion.set_result(
-                OperationResult(OperationStatus.FAILED, result.failure.value)
-            )
+            self._completion.set_result(OperationResult(OperationStatus.FAILED, result.failure.value))
             return
         if result.to_state in self._expected_terminal:
             self._completion.set_result(OperationResult(OperationStatus.OK))
@@ -411,8 +399,7 @@ class ValveOperator:
         recovery succeeded, ``False`` otherwise.
         """
         _LOGGER.warning(
-            "Valve '%s' CLOSE_LEAK detected — attempting recovery "
-            "(direct switch.turn_off + recheck)",
+            "Valve '%s' CLOSE_LEAK detected — attempting recovery (direct switch.turn_off + recheck)",
             self._zone_name,
         )
         await self._call_switch("turn_off")
@@ -446,14 +433,11 @@ class ValveOperator:
     async def _escalate_stuck_open(self) -> None:
         """Trigger integration-wide emergency stop + CRITICAL notification."""
         _LOGGER.error(
-            "Valve '%s' stuck-open confirmed after recovery; "
-            "calling never_dry.stop and escalating notification",
+            "Valve '%s' stuck-open confirmed after recovery; calling never_dry.stop and escalating notification",
             self._zone_name,
         )
         try:
-            await self._hass.services.async_call(
-                "never_dry", "stop", {}, blocking=False
-            )
+            await self._hass.services.async_call("never_dry", "stop", {}, blocking=False)
         except Exception as exc:
             _LOGGER.error(
                 "Failed to trigger emergency stop for stuck-open valve '%s': %s",

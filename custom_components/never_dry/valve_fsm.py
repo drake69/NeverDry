@@ -119,15 +119,7 @@ class EnterMaintenance:
     """Action: marker emitted when the FSM crosses into ``MAINTENANCE``."""
 
 
-FsmAction = (
-    SendSwitchOn
-    | SendSwitchOff
-    | StartTimer
-    | CancelTimer
-    | CancelAllTimers
-    | NotifyFailure
-    | EnterMaintenance
-)
+FsmAction = SendSwitchOn | SendSwitchOff | StartTimer | CancelTimer | CancelAllTimers | NotifyFailure | EnterMaintenance
 
 
 # ── Config & transition result ────────────────────────────────────────
