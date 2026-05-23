@@ -278,6 +278,8 @@ class ETSensor(SensorEntity):
             t = float(new_state.state)
             self._value = max(0.0, self._alpha * (t - self._t_base) / 24)
         except (ValueError, TypeError):
+            # Temperature sensor not yet numeric (boot / unavailable):
+            # keep the previous self._value unchanged.
             pass
         self.async_write_ha_state()
 
@@ -398,6 +400,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             vwc = float(vwc_state.state)
             self._deficit = max(0.0, (self._field_cap - vwc) * self._root_depth * 1000)
         except (ValueError, TypeError):
+            # VWC sensor not yet numeric (boot / unavailable):
+            # keep the previous self._deficit unchanged.
             pass
 
     def _compute_rain_delta(self) -> float:
