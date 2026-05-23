@@ -669,6 +669,13 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
         self._last_irrigation_source: str | None = None
+        # Snapshot of zone_deficit captured by the controller at the start
+        # of an irrigation cycle. Used by flow-metered delivery modes for
+        # real-time deficit updates: every update is computed as
+        # ``max(0, snapshot - delivered_mm)`` so intermediate writes are
+        # idempotent and the end-of-cycle settle never double-counts.
+        # ``None`` outside an active cycle.
+        self._deficit_at_irrigation_start: float | None = None
         self._total_rain: float = 0.0
         self._total_water_delivered: float = 0.0
         self._yearly_water_delivered: float = 0.0

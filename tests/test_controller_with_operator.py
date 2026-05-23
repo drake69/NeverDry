@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from never_dry.const import (
     CONF_ZONE_AREA,
     CONF_ZONE_DELIVERY_MODE,
@@ -270,6 +271,111 @@ async def test_volume_preset_no_turn_on_when_auto_opened(hass_mock, di_sensor):
 
     turn_on_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_on")]
     assert turn_on_calls == [], "no fallback turn_on when the valve auto-opened"
+
+
+# ── Real-time deficit update (snapshot-based) ────────────────────────
+
+
+def test_update_deficit_realtime_is_idempotent(hass_mock, di_sensor):
+    """Multiple calls with growing delivered always recompute from the snapshot.
+
+    Regression: previously the partial-irrigation settle subtracted
+    delivered_mm from the *current* deficit, which double-counted any
+    intermediate update. The new path uses an absolute snapshot-based
+    formula so intermediate writes converge cleanly.
+    """
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 12.0
+    zone._deficit_at_irrigation_start = 12.0
+
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    # 5 L delivered → 5 * 0.9 / 20 = 0.225 mm consumed → 11.775 mm left.
+    ctrl._update_deficit_realtime(zone, 5.0)
+    assert zone._zone_deficit == pytest.approx(11.775, rel=1e-3)
+
+    # 50 L delivered → 50 * 0.9 / 20 = 2.25 mm consumed → 9.75 mm left.
+    ctrl._update_deficit_realtime(zone, 50.0)
+    assert zone._zone_deficit == pytest.approx(9.75, rel=1e-3)
+
+    # Over-shooting target clamps at 0.
+    ctrl._update_deficit_realtime(zone, 10_000.0)
+    assert zone._zone_deficit == 0.0
+
+
+def test_update_deficit_realtime_skipped_when_no_active_cycle(hass_mock, di_sensor):
+    """Without a snapshot the helper must leave the deficit untouched."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 7.5
+    zone._deficit_at_irrigation_start = None
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+    ctrl._update_deficit_realtime(zone, 100.0)
+    assert zone._zone_deficit == 7.5
+
+
+def test_update_deficit_realtime_skipped_for_zero_area(hass_mock, di_sensor):
+    """A misconfigured zone with area=0 must not divide by zero."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+    zone._deficit_at_irrigation_start = 5.0
+    zone._area = 0.0
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+    ctrl._update_deficit_realtime(zone, 10.0)
+    assert zone._zone_deficit == 5.0
+
+
+async def test_irrigate_zones_clears_snapshot_after_cycle(hass_mock, di_sensor):
+    """The snapshot attribute must be cleared at the end of a clean cycle."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    async def _fake_deliver(z):
+        # Intermediate real-time write to exercise the path.
+        ctrl._update_deficit_realtime(z, z.volume_liters / 2)
+        return z.volume_liters
+
+    ctrl._deliver_water = _fake_deliver  # type: ignore[assignment]
+    await ctrl._irrigate_zones(["Orto"])
+    assert zone._deficit_at_irrigation_start is None
+
+
+async def test_irrigate_zones_clears_snapshot_on_abort(hass_mock, di_sensor):
+    """Even when the cycle aborts mid-delivery, the snapshot is cleared."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    async def _exploding_deliver(_z):
+        raise RuntimeError("simulated crash")
+
+    ctrl._deliver_water = _exploding_deliver  # type: ignore[assignment]
+    await ctrl._irrigate_zones(["Orto"])
+    assert zone._deficit_at_irrigation_start is None
+
+
+async def test_settle_is_idempotent_with_realtime_updates(hass_mock, di_sensor):
+    """End-of-cycle settle yields the same deficit as the last real-time write."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 10.0  # mm
+
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    async def _fake_deliver(z):
+        # Snapshot was set by _irrigate_zones before this call. Simulate
+        # a flow-meter loop writing real-time updates per poll.
+        for litres in (5.0, 10.0, 25.0):
+            ctrl._update_deficit_realtime(z, litres)
+        # Return a partial delivery so the settle exercises the partial branch.
+        return 25.0
+
+    ctrl._deliver_water = _fake_deliver  # type: ignore[assignment]
+    await ctrl._irrigate_zones(["Orto"])
+
+    # 25 L * 0.9 / 20 m² = 1.125 mm consumed → 10 - 1.125 = 8.875 mm.
+    assert zone._zone_deficit == pytest.approx(8.875, rel=1e-3)
 
 
 # ── _last_irrigated regression coverage ──────────────────────────────
