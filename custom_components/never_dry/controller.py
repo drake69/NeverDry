@@ -44,7 +44,7 @@ from .const import (
     SERVICE_STOP,
 )
 from .valve_fsm import ValveState
-from .valve_notifier import ValveNotifier
+from .valve_notifier import NotificationKind, Severity, ValveNotifier
 from .valve_operator import OperationStatus, ValveOperator
 
 MONITORING_INTERVAL = 6 * 3600  # 6 hours in seconds
@@ -562,6 +562,22 @@ class IrrigationController:
             _LOGGER.error("Zone '%s' has no volume_entity configured", zone.zone_name)
             return 0.0
 
+        # Pre-check the switch entity. volume_preset bypasses ValveOperator,
+        # so it also bypasses the operator's pre-check. Do our own here so
+        # the user gets the same "unreachable at irrigation time"
+        # notification when the smart valve is offline.
+        switch_state = self._hass.states.get(zone.valve)
+        if switch_state is None or switch_state.state in ("unavailable", "unknown"):
+            reason = "switch_entity_not_found" if switch_state is None else "switch_unavailable"
+            _LOGGER.error(
+                "Zone '%s' valve '%s' %s, skipping volume_preset",
+                zone.zone_name,
+                zone.valve,
+                reason,
+            )
+            await self._notify_unreachable_at_irrigation(zone.valve, reason)
+            return 0.0
+
         # 1) Arm the dose
         await self._hass.services.async_call(
             "number",
@@ -817,6 +833,25 @@ class IrrigationController:
 
     # ── Valve helpers ─────────────────────────────────────
 
+    async def _notify_unreachable_at_irrigation(self, entity_id: str, reason: str) -> None:
+        """Surface a UNREACHABLE_AT_IRRIGATION notification.
+
+        Fired when the user (or scheduler) asked the integration to open a
+        valve but the pre-check failed: the switch entity is missing,
+        ``unavailable`` or ``unknown``. The notifier dedups on
+        ``(zone, kind, context)`` so repeated presses do not stack
+        identical notifications.
+        """
+        if self._notifier is None:
+            return
+        zone_name = self._valve_to_zone.get(entity_id, entity_id)
+        await self._notifier.notify(
+            zone_name,
+            NotificationKind.UNREACHABLE_AT_IRRIGATION,
+            Severity.WARNING,
+            context={"entity_id": entity_id, "reason": reason},
+        )
+
     async def _wait_with_stop_check(self, duration_s: int) -> None:
         """Wait for duration, checking for stop requests every second."""
         for _ in range(duration_s):
@@ -844,6 +879,8 @@ class IrrigationController:
                 result.status.value,
                 result.error_detail,
             )
+            if result.status == OperationStatus.PRECHECK_FAILED:
+                await self._notify_unreachable_at_irrigation(entity_id, result.error_detail or "unavailable")
             return False
         return True
 

@@ -420,6 +420,153 @@ async def test_partial_irrigation_updates_last_irrigated(hass_mock, di_sensor):
     assert zone._last_volume_delivered == round(partial, 1)
 
 
+# ── Unreachable-at-irrigation notification ───────────────────────────
+
+
+async def test_open_precheck_failed_fires_unreachable_notification(hass_mock, di_sensor):
+    """A PRECHECK_FAILED open result fires UNREACHABLE_AT_IRRIGATION."""
+    from never_dry.valve_notifier import NotificationKind, ValveNotifier
+
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+    notifier = ValveNotifier(hass_mock)
+    op = _fake_operator(
+        open_result=OperationResult(OperationStatus.PRECHECK_FAILED, "switch_unavailable"),
+    )
+    ctrl = IrrigationController(
+        hass_mock,
+        di_sensor,
+        [zone],
+        inter_zone_delay=0,
+        valve_operators={zone.valve: op},
+        notifier=notifier,
+    )
+
+    delivered = await ctrl._deliver_estimated_flow(zone)
+    assert delivered == 0.0
+    assert notifier.is_active("Orto", NotificationKind.UNREACHABLE_AT_IRRIGATION)
+
+
+async def test_open_failed_does_not_fire_unreachable_notification(hass_mock, di_sensor):
+    """A FAILED (not PRECHECK_FAILED) open does *not* fire the unreachable kind.
+
+    The operator already raises COMMAND_FAILED in that case; we must not
+    double-notify with UNREACHABLE_AT_IRRIGATION.
+    """
+    from never_dry.valve_notifier import NotificationKind, ValveNotifier
+
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+    notifier = ValveNotifier(hass_mock)
+    op = _fake_operator(
+        open_result=OperationResult(OperationStatus.FAILED, "open_failed"),
+    )
+    ctrl = IrrigationController(
+        hass_mock,
+        di_sensor,
+        [zone],
+        inter_zone_delay=0,
+        valve_operators={zone.valve: op},
+        notifier=notifier,
+    )
+
+    await ctrl._deliver_estimated_flow(zone)
+    assert not notifier.is_active("Orto", NotificationKind.UNREACHABLE_AT_IRRIGATION)
+
+
+async def test_volume_preset_unavailable_valve_notifies_and_aborts(hass_mock, di_sensor):
+    """volume_preset pre-checks the switch and notifies if unavailable."""
+    from never_dry.valve_notifier import NotificationKind, ValveNotifier
+
+    cfg = {
+        CONF_ZONE_NAME: "Orto",
+        CONF_ZONE_VALVE: "switch.valve_orto",
+        CONF_ZONE_AREA: 20.0,
+        CONF_ZONE_EFFICIENCY: 0.90,
+        CONF_ZONE_FLOW_RATE: 8.0,
+        CONF_ZONE_THRESHOLD: 15.0,
+        CONF_ZONE_DELIVERY_MODE: "volume_preset",
+        CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
+    }
+    zone = IrrigationZoneSensor(hass_mock, cfg, di_sensor)
+    zone._zone_deficit = 5.0
+
+    # Switch reports unavailable.
+    hass_mock.states.get = MagicMock(return_value=MagicMock(state="unavailable"))
+
+    notifier = ValveNotifier(hass_mock)
+    ctrl = IrrigationController(
+        hass_mock,
+        di_sensor,
+        [zone],
+        inter_zone_delay=0,
+        notifier=notifier,
+    )
+
+    delivered = await ctrl._deliver_volume_preset(zone)
+    assert delivered == 0.0
+    assert notifier.is_active("Orto", NotificationKind.UNREACHABLE_AT_IRRIGATION)
+    # No number.set_value should have been sent.
+    set_value_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
+    assert set_value_calls == []
+
+
+async def test_volume_preset_missing_switch_entity_notifies(hass_mock, di_sensor):
+    """volume_preset reports switch_entity_not_found when state is None."""
+    from never_dry.valve_notifier import NotificationKind, ValveNotifier
+
+    cfg = {
+        CONF_ZONE_NAME: "Orto",
+        CONF_ZONE_VALVE: "switch.valve_orto",
+        CONF_ZONE_AREA: 20.0,
+        CONF_ZONE_EFFICIENCY: 0.90,
+        CONF_ZONE_FLOW_RATE: 8.0,
+        CONF_ZONE_THRESHOLD: 15.0,
+        CONF_ZONE_DELIVERY_MODE: "volume_preset",
+        CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
+    }
+    zone = IrrigationZoneSensor(hass_mock, cfg, di_sensor)
+    zone._zone_deficit = 5.0
+    hass_mock.states.get = MagicMock(return_value=None)
+
+    notifier = ValveNotifier(hass_mock)
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0, notifier=notifier)
+
+    delivered = await ctrl._deliver_volume_preset(zone)
+    assert delivered == 0.0
+    assert notifier.is_active("Orto", NotificationKind.UNREACHABLE_AT_IRRIGATION)
+    active = notifier._active[("Orto", NotificationKind.UNREACHABLE_AT_IRRIGATION)]
+    assert active.context["reason"] == "switch_entity_not_found"
+
+
+async def test_unreachable_notification_dedupes_across_retries(hass_mock, di_sensor):
+    """Multiple consecutive presses on an unavailable valve produce one notification."""
+    from never_dry.valve_notifier import ValveNotifier
+
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 5.0
+    notifier = ValveNotifier(hass_mock)
+    op = _fake_operator(
+        open_result=OperationResult(OperationStatus.PRECHECK_FAILED, "switch_unavailable"),
+    )
+    ctrl = IrrigationController(
+        hass_mock,
+        di_sensor,
+        [zone],
+        inter_zone_delay=0,
+        valve_operators={zone.valve: op},
+        notifier=notifier,
+    )
+
+    for _ in range(3):
+        await ctrl._deliver_estimated_flow(zone)
+
+    create_calls = [
+        c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("persistent_notification", "create")
+    ]
+    assert len(create_calls) == 1
+
+
 async def test_volume_preset_stop_during_run(hass_mock, di_sensor):
     """A stop signal during volume_preset issues switch.turn_off and returns 0."""
     cfg = {
