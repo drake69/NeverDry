@@ -407,6 +407,13 @@ class IrrigationController:
                 )
 
                 volume_target = zone.volume_liters
+                # Snapshot the deficit BEFORE delivery starts. Flow-metered
+                # delivery modes use this snapshot for real-time deficit
+                # updates so that partial progress is preserved on crashes
+                # mid-cycle (a network glitch in the flow sensor used to
+                # lose every mm we had already delivered).
+                deficit_at_start = zone._zone_deficit
+                zone._deficit_at_irrigation_start = deficit_at_start
                 delivered = await self._deliver_water(zone)
 
                 if self._stop_requested:
@@ -414,7 +421,7 @@ class IrrigationController:
 
                 if delivered > 0:
                     irrigated_zones.append(
-                        (zone_name, delivered, volume_target),
+                        (zone_name, delivered, volume_target, deficit_at_start),
                     )
                     self._hass.bus.async_fire(
                         EVENT_IRRIGATION_COMPLETE,
@@ -438,22 +445,22 @@ class IrrigationController:
                     _LOGGER.debug("Inter-zone delay: %ds", self._inter_zone_delay)
                     await asyncio.sleep(self._inter_zone_delay)
 
-            # Adjust deficits for irrigated zones
+            # Adjust deficits for irrigated zones using the snapshot taken
+            # before each delivery. The settle here is **idempotent** with
+            # any real-time updates that ran inside the delivery modes:
+            # both write ``max(0, deficit_at_start - delivered_mm)``.
             if irrigated_zones and not self._stop_requested:
                 all_complete = True
-                for zone_name, delivered, target in irrigated_zones:
+                for zone_name, delivered, target, deficit_at_start in irrigated_zones:
                     zone = self._zones[zone_name]
                     if delivered >= target:
                         # Full irrigation — reset deficit to zero
                         zone.reset_deficit(self._current_source or "automatic")
                     else:
-                        # Partial irrigation — reduce deficit proportionally
+                        # Partial irrigation — authoritative recompute from snapshot
                         all_complete = False
                         delivered_mm = delivered * zone._efficiency / zone._area if zone._area > 0 else 0.0
-                        zone._zone_deficit = max(
-                            0.0,
-                            zone._zone_deficit - delivered_mm,
-                        )
+                        zone._zone_deficit = max(0.0, deficit_at_start - delivered_mm)
                         zone._last_volume_delivered = round(delivered, 1)
                         zone._session_water_delivered = round(delivered, 1)
                         zone._total_water_delivered += delivered
@@ -467,6 +474,7 @@ class IrrigationController:
                             target,
                             zone._zone_deficit,
                         )
+                    zone._deficit_at_irrigation_start = None
                     zone.async_write_ha_state()
                 # Reset reference sensor only if ALL zones fully irrigated
                 zone_names_irrigated = {z[0] for z in irrigated_zones}
@@ -488,6 +496,11 @@ class IrrigationController:
         finally:
             self._running = False
             self._active_valve = None
+            # Clear any leftover irrigation-start snapshot so a subsequent
+            # cycle does not see stale state if this one was aborted before
+            # the settle step ran.
+            for zs in self._zones.values():
+                zs._deficit_at_irrigation_start = None
 
     # ── Delivery mode dispatch ────────────────────────────
 
@@ -666,6 +679,9 @@ class IrrigationController:
                 initial_reading = 0.0
                 delivered = current_reading
 
+            # Real-time deficit update (snapshot-based — idempotent with settle).
+            self._update_deficit_realtime(zone, delivered)
+
             if delivered >= volume_target:
                 break
         else:
@@ -732,6 +748,9 @@ class IrrigationController:
                 # L/h or default
                 delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
 
+            # Real-time deficit update (snapshot-based — idempotent with settle).
+            self._update_deficit_realtime(zone, delivered)
+
             if delivered >= volume_target:
                 _LOGGER.info(
                     "Zone '%s' target reached: delivered=%.1fL",
@@ -774,6 +793,27 @@ class IrrigationController:
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+    # ── Deficit live-update helper ────────────────────────
+
+    def _update_deficit_realtime(self, zone, delivered_liters: float) -> None:
+        """Apply a snapshot-based incremental deficit update.
+
+        Writes ``zone._zone_deficit = max(0, deficit_at_start -
+        delivered_liters * efficiency / area)`` and pushes the new state
+        to Home Assistant. Skipped when ``_deficit_at_irrigation_start``
+        is ``None`` (no active cycle) or the zone has no area.
+
+        Idempotency: every call writes an absolute value derived from the
+        snapshot, so multiple intermediate calls plus the end-of-cycle
+        settle never double-count.
+        """
+        snapshot = zone._deficit_at_irrigation_start
+        if snapshot is None or zone._area <= 0:
+            return
+        delivered_mm = delivered_liters * zone._efficiency / zone._area
+        zone._zone_deficit = max(0.0, snapshot - delivered_mm)
+        zone.async_write_ha_state()
 
     # ── Valve helpers ─────────────────────────────────────
 
