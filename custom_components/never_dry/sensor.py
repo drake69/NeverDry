@@ -206,9 +206,42 @@ def _setup_controller(
     di_sensor: DrynessIndexSensor,
     zone_sensors: list[IrrigationZoneSensor],
 ) -> IrrigationController:
-    """Create the irrigation controller and register all services."""
+    """Create the irrigation controller and register all services.
+
+    Also builds one :class:`ValveOperator` per zone with a valve and a
+    shared :class:`ValveNotifier`. Smart valves controlled in
+    ``volume_preset`` mode bypass the operator: their entry is omitted
+    from the dict.
+    """
+    from .valve_notifier import ValveNotifier  # local import: optional path
+    from .valve_operator import ValveOperator
+
     inter_zone_delay = config.get(CONF_INTER_ZONE_DELAY, DEFAULT_INTER_ZONE_DELAY)
-    controller = IrrigationController(hass, di_sensor, zone_sensors, inter_zone_delay)
+
+    notifier = ValveNotifier(hass)
+    valve_operators: dict = {}
+    for zs in zone_sensors:
+        if not zs.valve:
+            continue
+        # volume_preset relies on smart-valve self-control; bypass operator.
+        if getattr(zs, "delivery_mode", None) == "volume_preset":
+            continue
+        valve_operators[zs.valve] = ValveOperator(
+            hass=hass,
+            switch_entity_id=zs.valve,
+            flow_sensor_entity_id=zs.flow_meter_sensor,
+            zone_name=zs.zone_name,
+            notifier=notifier,
+        )
+
+    controller = IrrigationController(
+        hass,
+        di_sensor,
+        zone_sensors,
+        inter_zone_delay,
+        valve_operators=valve_operators,
+        notifier=notifier,
+    )
     controller.register_services()
     return controller
 
