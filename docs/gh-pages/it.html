@@ -84,7 +84,7 @@
 <section class="hero">
     <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
     <h1>NeverDry</h1>
-    <p class="tagline">Irrigazione intelligente per Home Assistant. Un modello scientifico di bilancio idrico che sa quando e quanto irrigare il tuo giardino.</p>
+    <p class="tagline">Irrigazione intelligente per Home Assistant. Un modello scientifico di bilancio idrico che decide quando e quanto irrigare in base al fabbisogno reale del giardino.</p>
     <div class="badges">
         <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
         <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
@@ -101,38 +101,48 @@
         <div class="feature-grid">
             <div class="feature-card">
                 <div class="icon">🌡️</div>
-                <h3>Modello ET Scientifico</h3>
-                <p>Bilancio idrico FAO-56 semplificato. Stima l'evapotraspirazione dalla temperatura con due parametri calibrabili.</p>
+                <h3>Modello ET scientifico</h3>
+                <p>Bilancio idrico ispirato allo standard FAO-56 in forma semplificata. L'evapotraspirazione &egrave; stimata a partire dalla temperatura con due parametri calibrabili.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🌱</div>
-                <h3>10 Famiglie di Piante</h3>
-                <p>Coefficiente colturale (Kc) per zona con variazione stagionale. Prato, ortaggi, succulente, alberi da frutto e altro. Adattamento automatico all'emisfero.</p>
+                <h3>Dieci famiglie di piante</h3>
+                <p>Coefficiente colturale (K<sub>c</sub>) per zona con variazione stagionale: prato, ortaggi, succulente, alberi da frutto e altri profili predefiniti. L'andamento si adatta automaticamente all'emisfero di installazione.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🚿</div>
-                <h3>Controllo Diretto Valvole</h3>
-                <p>Apre e chiude le valvole automaticamente. Irrigazione multi-zona sequenziale con arresto d'emergenza.</p>
+                <h3>Controllo diretto delle valvole</h3>
+                <p>Apertura e chiusura automatica delle valvole, irrigazione multi-zona in sequenza per evitare cali di pressione e arresto di emergenza disponibile in qualsiasi momento.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">📊</div>
-                <h3>Deficit per Zona</h3>
-                <p>Ogni zona traccia il proprio deficit idrico del suolo. Piante diverse si asciugano a velocit&agrave; diverse — com'&egrave; giusto che sia.</p>
+                <h3>Deficit per zona</h3>
+                <p>Ogni zona mantiene il proprio deficit idrico del suolo. Piante diverse si asciugano a ritmi diversi e ricevono acqua di conseguenza.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🌧️</div>
-                <h3>Sensibile alla Pioggia</h3>
-                <p>Salta automaticamente l'irrigazione nei giorni di pioggia. Il deficit diminuisce ad ogni evento piovoso.</p>
+                <h3>Sensibile alla pioggia</h3>
+                <p>L'irrigazione viene omessa quando le precipitazioni hanno gi&agrave; ricostituito la riserva idrica. Il deficit diminuisce a ogni evento piovoso rilevato dal sensore.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">⚙️</div>
-                <h3>Configurazione da UI</h3>
-                <p>Configurazione completa dall'interfaccia di Home Assistant. Nessuna modifica YAML necessaria.</p>
+                <h3>Configurazione da interfaccia</h3>
+                <p>Tutta la configurazione avviene dall'interfaccia di Home Assistant, senza modifiche a file YAML.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🔄</div>
-                <h3>Aggiornamenti Trasparenti</h3>
-                <p>Release automatiche tramite GitHub Actions. La migrazione della configurazione preserva le impostazioni tra le versioni. Aggiornamento con un click in HACS.</p>
+                <h3>Aggiornamenti senza interruzioni</h3>
+                <p>Le release sono pubblicate automaticamente tramite GitHub Actions e la migrazione di configurazione preserva le impostazioni tra una versione e l'altra. L'aggiornamento avviene con un clic da HACS.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🖐️</div>
+                <h3>Apertura manuale riconosciuta</h3>
+                <p>Quando la valvola viene aperta dal pulsante fisico, dall'applicazione Zigbee o dallo switch di Home Assistant, NeverDry rileva la sessione, aggiorna il deficit e chiude la valvola al minore fra il volume necessario e il timeout di sicurezza.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">💧</div>
+                <h3>Tutte le modalit&agrave; di innesco</h3>
+                <p>Irrigazione programmata, pulsante &laquo;Irriga&raquo; sulla scheda della zona, automazioni di Home Assistant, pulsante a bordo valvola e registrazione di un'irrigazione effettuata con mezzi esterni (ad esempio canna o tubo): in tutti i casi il deficit resta coerente con la realt&agrave; del giardino.</p>
             </div>
         </div>
     </div>
@@ -140,33 +150,33 @@
 
 <section class="how-it-works">
     <div class="container">
-        <h2>Come Funziona</h2>
-        <p>NeverDry traccia un semplice bilancio idrico per ogni zona di irrigazione:</p>
+        <h2>Come funziona</h2>
+        <p>NeverDry mantiene un bilancio idrico per ciascuna zona di irrigazione secondo la relazione:</p>
         <div class="formula">
-            D<sub>zona</sub>(t) = D<sub>zona</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; pioggia
+            D<sub>zona</sub>(t) = D<sub>zona</sub>(t-1) + ET<sub>h</sub> &times; K<sub>c</sub> &times; &Delta;t &minus; pioggia
         </div>
-        <p>Quando il deficit &egrave; alto, il suolo &egrave; secco e ha bisogno d'acqua. Quando piove, il deficit cala. Dopo l'irrigazione, si azzera. <strong>1 mm di deficit = 1 litro per metro quadro necessario.</strong></p>
+        <p>Quando il deficit &egrave; elevato il suolo &egrave; asciutto e richiede acqua; quando piove il deficit diminuisce; dopo un'irrigazione si riporta a zero (o si riduce in proporzione al volume effettivamente erogato). <strong>Un millimetro di deficit corrisponde a un litro di acqua per ogni metro quadrato da reintegrare.</strong></p>
     </div>
 </section>
 
 <section class="families">
     <div class="container">
-        <h2>Famiglie di Piante</h2>
+        <h2>Famiglie di piante</h2>
         <table>
             <thead>
                 <tr><th>Famiglia</th><th>Inverno</th><th>Primavera</th><th>Estate</th><th>Autunno</th></tr>
             </thead>
             <tbody>
-                <tr><td>Prato / Tappeto erboso</td><td>0.45</td><td>0.85</td><td>1.00</td><td>0.70</td></tr>
-                <tr><td>Ortaggi (stagionali)</td><td>0.30</td><td>0.70</td><td>1.10</td><td>0.50</td></tr>
-                <tr><td>Alberi da frutto (decidui)</td><td>0.35</td><td>0.70</td><td>0.95</td><td>0.55</td></tr>
-                <tr><td>Arbusti ornamentali</td><td>0.40</td><td>0.65</td><td>0.80</td><td>0.55</td></tr>
-                <tr><td>Erbe aromatiche (mediterranee)</td><td>0.30</td><td>0.55</td><td>0.70</td><td>0.40</td></tr>
-                <tr><td>Agrumi / Sempreverdi da frutto</td><td>0.60</td><td>0.65</td><td>0.70</td><td>0.65</td></tr>
-                <tr><td>Rose</td><td>0.35</td><td>0.75</td><td>0.95</td><td>0.55</td></tr>
-                <tr><td>Succulente / Cactacee</td><td>0.15</td><td>0.25</td><td>0.35</td><td>0.20</td></tr>
-                <tr><td>Tappezzanti autoctone</td><td>0.25</td><td>0.45</td><td>0.55</td><td>0.35</td></tr>
-                <tr><td>Giardino misto</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
+                <tr><td>Prato / tappeto erboso</td><td>0,45</td><td>0,85</td><td>1,00</td><td>0,70</td></tr>
+                <tr><td>Ortaggi (stagionali)</td><td>0,30</td><td>0,70</td><td>1,10</td><td>0,50</td></tr>
+                <tr><td>Alberi da frutto (decidui)</td><td>0,35</td><td>0,70</td><td>0,95</td><td>0,55</td></tr>
+                <tr><td>Arbusti ornamentali</td><td>0,40</td><td>0,65</td><td>0,80</td><td>0,55</td></tr>
+                <tr><td>Erbe aromatiche (mediterranee)</td><td>0,30</td><td>0,55</td><td>0,70</td><td>0,40</td></tr>
+                <tr><td>Agrumi e sempreverdi da frutto</td><td>0,60</td><td>0,65</td><td>0,70</td><td>0,65</td></tr>
+                <tr><td>Rose</td><td>0,35</td><td>0,75</td><td>0,95</td><td>0,55</td></tr>
+                <tr><td>Succulente e cactacee</td><td>0,15</td><td>0,25</td><td>0,35</td><td>0,20</td></tr>
+                <tr><td>Tappezzanti autoctone</td><td>0,25</td><td>0,45</td><td>0,55</td><td>0,35</td></tr>
+                <tr><td>Giardino misto</td><td>0,40</td><td>0,70</td><td>0,90</td><td>0,55</td></tr>
             </tbody>
         </table>
     </div>
@@ -176,39 +186,39 @@
     <div class="container">
         <h2>Installazione</h2>
         <div class="install-steps">
-            <h3>Tramite HACS (consigliato)</h3>
+            <h3>Tramite HACS (consigliata)</h3>
             <ol>
-                <li>Apri HACS &rarr; Integrazioni &rarr; <strong>Repository personalizzati</strong></li>
-                <li>Aggiungi <code>https://github.com/drake69/NeverDry</code> come <strong>Integrazione</strong></li>
-                <li>Cerca <strong>NeverDry</strong> e installa</li>
-                <li>Riavvia Home Assistant</li>
-                <li>Vai su Impostazioni &rarr; Dispositivi e Servizi &rarr; <strong>Aggiungi Integrazione</strong> &rarr; NeverDry</li>
+                <li>Apri HACS &rarr; Integrazioni &rarr; <strong>Repository personalizzati</strong>.</li>
+                <li>Aggiungi <code>https://github.com/drake69/NeverDry</code> come <strong>integrazione</strong>.</li>
+                <li>Cerca <strong>NeverDry</strong> e procedi con l'installazione.</li>
+                <li>Riavvia Home Assistant.</li>
+                <li>Apri Impostazioni &rarr; Dispositivi e servizi &rarr; <strong>Aggiungi integrazione</strong> &rarr; NeverDry.</li>
             </ol>
-            <h3 style="margin-top: 1.5em;">Manuale</h3>
+            <h3 style="margin-top: 1.5em;">Installazione manuale</h3>
             <ol>
-                <li>Copia <code>custom_components/never_dry/</code> nella directory config di HA</li>
-                <li>Riavvia Home Assistant</li>
-                <li>Aggiungi l'integrazione dall'interfaccia</li>
+                <li>Copia la cartella <code>custom_components/never_dry/</code> nella directory di configurazione di Home Assistant.</li>
+                <li>Riavvia Home Assistant.</li>
+                <li>Aggiungi l'integrazione dall'interfaccia.</li>
             </ol>
         </div>
     </div>
 </section>
 
 <section class="support">
-    <h2>Supporta il Progetto</h2>
-    <p>Se NeverDry salva il tuo giardino e la bolletta dell'acqua, considera una donazione:</p>
-    <a class="kofi-btn" href="https://ko-fi.com/drake69">☕ Supporta su Ko-fi</a>
+    <h2>Sostieni il progetto</h2>
+    <p>Se NeverDry ti aiuta a curare il giardino e a ridurre la bolletta dell'acqua, valuta una piccola donazione.</p>
+    <a class="kofi-btn" href="https://ko-fi.com/drake69">☕ Sostieni su Ko-fi</a>
 </section>
 
 <section class="support" style="background: #f0f0f0; padding: 40px 0;">
     <div class="container" style="text-align: left; max-width: 700px;">
         <h2 style="text-align: center;">Avvertenze</h2>
-        <p style="font-size: 0.9em; color: #555;">NeverDry &egrave; un progetto hobbistico per uso residenziale. Non &egrave; certificato per applicazioni agricole, commerciali o critiche per la sicurezza. Il modello ET &egrave; una semplificazione dello standard FAO-56 e non sostituisce la consulenza agronomica professionale. Monitora sempre il tuo impianto di irrigazione. Gli autori declinano ogni responsabilit&agrave; per danni o perdite.</p>
+        <p style="font-size: 0.9em; color: #555;">NeverDry &egrave; un progetto amatoriale destinato a un uso residenziale. Non &egrave; certificato per applicazioni agricole, commerciali o di sicurezza. Il modello di evapotraspirazione &egrave; una semplificazione dello standard FAO-56 e non sostituisce la consulenza agronomica professionale. Si raccomanda di monitorare regolarmente l'impianto di irrigazione. Gli autori declinano ogni responsabilit&agrave; per eventuali danni o perdite.</p>
 
         <h2 style="text-align: center; margin-top: 2em;">Ringraziamenti</h2>
-        <p style="font-size: 0.9em; color: #555;">Sviluppato con l'assistenza di <a href="https://claude.ai">Claude</a> di <a href="https://anthropic.com">Anthropic</a>.</p>
+        <p style="font-size: 0.9em; color: #555;">Sviluppato con il supporto di <a href="https://claude.ai">Claude</a> di <a href="https://anthropic.com">Anthropic</a>.</p>
 
-        <h2 style="text-align: center; margin-top: 2em;">Riferimenti Scientifici</h2>
+        <h2 style="text-align: center; margin-top: 2em;">Riferimenti scientifici</h2>
         <ul style="font-size: 0.85em; color: #555; line-height: 1.8;">
             <li>Allen, R.G. et al. (1998). <em>Crop evapotranspiration.</em> <a href="https://www.fao.org/4/x0490e/x0490e00.htm">FAO Irrigation and Drainage Paper 56</a>.</li>
             <li>Hargreaves, G.H. &amp; Samani, Z.A. (1985). Reference crop evapotranspiration from temperature. <em>Applied Eng. in Agriculture.</em> <a href="https://doi.org/10.13031/2013.26773">DOI: 10.13031/2013.26773</a></li>
@@ -221,13 +231,13 @@
 
 <section style="background: var(--accent-light); padding: 16px 20px; text-align: center; font-size: 0.85em; color: #555;">
     <div class="container">
-        Questa traduzione &egrave; stata generata automaticamente. Ogni contributo per migliorarla &egrave; benvenuto —
-        <a href="https://github.com/drake69/NeverDry/issues" style="color: var(--accent);">apri una issue</a> o invia una pull request.
+        Questa pagina &egrave; tradotta in italiano. Per segnalazioni o miglioramenti puoi
+        <a href="https://github.com/drake69/NeverDry/issues" style="color: var(--accent);">aprire una issue</a> o inviare una pull request.
     </div>
 </section>
 
 <footer>
-    <p>NeverDry &mdash; Licenza MIT &mdash; Fatto con 🌱 da <a href="https://github.com/drake69">drake69</a></p>
+    <p>NeverDry &mdash; Licenza MIT &mdash; Sviluppato da <a href="https://github.com/drake69">drake69</a></p>
 </footer>
 
 </body>
