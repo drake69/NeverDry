@@ -280,7 +280,9 @@ self._hass.bus.async_fire(
     EVENT_IRRIGATION_COMPLETE,      # "never_dry_irrigation_complete"
     {
         "zone": zone_name,
-        "source": "automatic",      # or "manual"
+        "source": self._current_source or "automatic",
+        # "button" | "scheduled" | "reactive" | "manual"
+        # (fallback "automatic" only if no caller set _current_source)
         "volume_liters": 45.2,
         "duration_s": 340,
         "deficit_mm": 5.0,

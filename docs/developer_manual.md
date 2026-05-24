@@ -235,14 +235,14 @@ All configuration keys (`CONF_*`), service names (`SERVICE_*`), system types, pl
 
 `IrrigationZoneSensor.is_irrigating`, `_last_irrigated`, `_last_volume_delivered`, and `_zone_deficit` can be mutated through **four** entry points. Three of them share the commanded path (`_irrigate_zones` → `_deliver_water`); the fourth (manual valve open) goes through a dedicated reactive monitor.
 
-| # | Trigger | Entry point | Zone `last_irrigation_source` | `never_dry_irrigation_complete` event `source` | `is_irrigating` toggled | Flow meter integrated |
-|---|---|---|---|---|---|---|
-| 1 | External switch open (physical button on the valve, ZHA, HA switch) | `_on_valve_state_change` (callback on `switch` state changes) + `_external_session_monitor` (asyncio task) | `"manual"` | `"manual"` | yes (on open / on close) | yes (cumulative or rate) |
-| 2 | "Irrigate" button / `irrigate_zone` service / `irrigate_all` service | `_handle_irrigate_zone` / `_handle_irrigate_all` → `_irrigate_zones` → `_deliver_water` | `"button"` | `"automatic"` | yes (inside `_deliver_*` modes) | yes (in `flow_meter` and `flow_rate` modes) |
-| 3 | Scheduler (Mode A reactive, Mode B scheduled) | `_make_reactive_handler` / `_make_scheduled_handler` → `_irrigate_zones` → `_deliver_water` | `"reactive"` / `"scheduled"` | `"automatic"` | yes | yes |
-| 4 | `mark_irrigated` service / "Mark irrigated" button | `_handle_mark_irrigated` → `reset_deficit("mark_irrigated")` | `"mark_irrigated"` | *(no event fired)* | **no** (no physical irrigation through the tracked valve) | no |
+| # | Trigger | Entry point | Source string | `is_irrigating` toggled | Flow meter integrated |
+|---|---|---|---|---|---|
+| 1 | External switch open (physical button on the valve, ZHA, HA switch) | `_on_valve_state_change` (callback on `switch` state changes) + `_external_session_monitor` (asyncio task) | `"manual"` | yes (on open / on close) | yes (cumulative or rate) |
+| 2 | "Irrigate" button / `irrigate_zone` service / `irrigate_all` service | `_handle_irrigate_zone` / `_handle_irrigate_all` → `_irrigate_zones` → `_deliver_water` | `"button"` | yes (inside `_deliver_*` modes) | yes (in `flow_meter` and `flow_rate` modes) |
+| 3 | Scheduler (Mode A reactive, Mode B scheduled) | `_make_reactive_handler` / `_make_scheduled_handler` → `_irrigate_zones` → `_deliver_water` | `"reactive"` / `"scheduled"` | yes | yes |
+| 4 | `mark_irrigated` service / "Mark irrigated" button | `_handle_mark_irrigated` → `reset_deficit("mark_irrigated")` | `"mark_irrigated"` | **no** (no physical irrigation through the tracked valve) | no |
 
-> **Two different "source" fields.** The zone's `last_irrigation_source` attribute carries the *specific* origin (`"button"`, `"reactive"`, `"scheduled"`, `"manual"`, `"mark_irrigated"`). The `never_dry_irrigation_complete` HA event collapses commanded cycles into a single `"automatic"` value and uses `"manual"` only for external-open sessions; trigger 4 emits no event at all. When writing automations that need to distinguish reactive from scheduled, listen for the event and then read the zone's `last_irrigation_source` attribute.
+The source string column applies to both the zone's `last_irrigation_source` attribute and the `source` field of the `never_dry_irrigation_complete` HA event — they are kept in sync so an automation can filter on either. Trigger 4 sets the attribute but emits no event. The legacy fallback string `"automatic"` is only used if `_irrigate_zones` is called without a preceding `_current_source` assignment (defensive default; not reachable from production paths).
 
 **External-vs-commanded discrimination** lives in `_on_valve_state_change`. The callback fires for every state change on a tracked valve entity; the gating is:
 

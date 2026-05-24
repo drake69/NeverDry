@@ -807,6 +807,21 @@ class TestIrrigationEvent:
         assert call_args.args[1]["source"] == "automatic"
         assert call_args.args[1]["zone"] == "Orto"
 
+    @pytest.mark.parametrize("source", ["button", "scheduled", "reactive"])
+    @pytest.mark.asyncio
+    async def test_event_propagates_specific_source(self, controller, hass_mock, zone_orto, source):
+        """The bus event must carry the specific trigger source set by
+        the caller (button, scheduled, reactive) rather than collapsing
+        every commanded cycle into the generic 'automatic'."""
+        zone_orto._zone_deficit = 5.0
+        controller._wait_with_stop_check = AsyncMock()
+        controller._current_source = source
+
+        await controller._irrigate_zones(["Orto"])
+
+        hass_mock.bus.async_fire.assert_called()
+        assert hass_mock.bus.async_fire.call_args.args[1]["source"] == source
+
     @pytest.mark.asyncio
     async def test_no_event_on_stop(self, controller, hass_mock, zone_orto, zone_prato):
         """No event should fire if irrigation is stopped."""

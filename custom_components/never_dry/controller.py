@@ -422,7 +422,7 @@ class IrrigationController:
                         EVENT_IRRIGATION_COMPLETE,
                         {
                             "zone": zone_name,
-                            "source": "automatic",
+                            "source": self._current_source or "automatic",
                             "volume_liters": round(delivered, 1),
                             "volume_target": round(volume_target, 1),
                             "deficit_mm": round(zone._zone_deficit, 2),

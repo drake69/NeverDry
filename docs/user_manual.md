@@ -321,8 +321,8 @@ This diagram shows the complete irrigation decision flow, from weather data to v
 │    scheduled / reactive / manual     │
 │  deficit: full reset OR -mm × η      │
 │  fire never_dry_irrigation_complete  │
-│  (event source = automatic for       │
-│   commanded, manual for external)    │
+│  (event source = same string as      │
+│   last_irrigation_source)            │
 └──────────────────────────────────────┘
 ```
 
@@ -404,7 +404,7 @@ Its purpose is to keep NeverDry from over-watering on top of irrigation it has n
 | **On open** | Detected via switch state change. `is_irrigating=True`, flow meter baseline saved, auto-close monitor started. | NeverDry commands `switch.turn_on` via ValveOperator. FSM verifies the open. `is_irrigating=True`. | Nothing — no valve is opened. |
 | **During delivery** | Monitor polls the flow meter (or sleeps for the estimated duration) tracking how much water has flowed. | `_deliver_water` runs the chosen delivery mode (`estimated_flow`, `flow_meter`, `volume_preset`). | Nothing. |
 | **On close** | Whichever of (volume target reached, estimated duration elapsed, safety timeout) fires first → NeverDry calls `switch.turn_off`. The user can also close manually at any time. | Target reached, user pressed Stop, or `delivery_timeout` fires → NeverDry calls `switch.turn_off`. | Nothing. |
-| **After close** | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source="manual"`, deficit adjusted by measured volume (or fully reset without measurement), `never_dry_irrigation_complete` event fired with `source: "manual"`. | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source` set to `"button"`/`"reactive"`/`"scheduled"` depending on the trigger, deficit reset (full delivery) or reduced (partial), `never_dry_irrigation_complete` event fired with `source: "automatic"`. | Deficit reset to zero, `last_irrigated=now`, `last_irrigation_source="mark_irrigated"`. No event. |
+| **After close** | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source="manual"`, deficit adjusted by measured volume (or fully reset without measurement), `never_dry_irrigation_complete` event fired with `source: "manual"`. | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source` and the event `source` both set to `"button"`/`"reactive"`/`"scheduled"` depending on the trigger, deficit reset (full delivery) or reduced (partial). | Deficit reset to zero, `last_irrigated=now`, `last_irrigation_source="mark_irrigated"`. No event. |
 
 ### 7.3 Why the auto-close on manual open?
 
