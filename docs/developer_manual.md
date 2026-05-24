@@ -231,6 +231,46 @@ All configuration keys (`CONF_*`), service names (`SERVICE_*`), system types, pl
 - Monitoring mode: 6-hour periodic check with per-zone deficit thresholds
 - Error safety: all valves closed on any exception
 
+#### Irrigation triggers and the External Session Monitor
+
+`IrrigationZoneSensor.is_irrigating`, `_last_irrigated`, `_last_volume_delivered`, and `_zone_deficit` can be mutated through **four** entry points. Three of them share the commanded path (`_irrigate_zones` → `_deliver_water`); the fourth (manual valve open) goes through a dedicated reactive monitor.
+
+| # | Trigger | Entry point | Source string | `is_irrigating` toggled | Flow meter integrated |
+|---|---|---|---|---|---|
+| 1 | External switch open (physical button on the valve, ZHA, HA switch) | `_on_valve_state_change` (callback on `switch` state changes) + `_external_session_monitor` (asyncio task) | `"manual"` | yes (on open / on close) | yes (cumulative or rate) |
+| 2 | "Irrigate" button / `irrigate_zone` service / `irrigate_all` service | `_handle_irrigate_zone` / `_handle_irrigate_all` → `_irrigate_zones` → `_deliver_water` | `"button"` | yes (inside `_deliver_*` modes) | yes (in `flow_meter` and `flow_rate` modes) |
+| 3 | Scheduler (Mode A reactive, Mode B scheduled) | `_make_reactive_handler` / `_make_scheduled_handler` → `_irrigate_zones` → `_deliver_water` | `"reactive"` / `"scheduled"` | yes | yes |
+| 4 | `mark_irrigated` service / "Mark irrigated" button | `_handle_mark_irrigated` → `reset_deficit("mark_irrigated")` | `"mark_irrigated"` | **no** (no physical irrigation through the tracked valve) | no |
+
+The source string column applies to both the zone's `last_irrigation_source` attribute and the `source` field of the `never_dry_irrigation_complete` HA event — they are kept in sync so an automation can filter on either. Trigger 4 sets the attribute but emits no event. The legacy fallback string `"automatic"` is only used if `_irrigate_zones` is called without a preceding `_current_source` assignment (defensive default; not reachable from production paths).
+
+**External-vs-commanded discrimination** lives in `_on_valve_state_change`. The callback fires for every state change on a tracked valve entity; the gating is:
+
+1. If a `ValveOperator` is registered for the valve and its FSM state is **not** `IDLE`, the controller is driving the valve — return.
+2. Otherwise, if there is no operator and the legacy `_running` flag is `True`, another commanded cycle is in progress — return.
+3. Otherwise, the transition is external.
+
+For an external `off → on` transition:
+- Record the flow meter baseline (cumulative reading or `time.monotonic()` for rate sensors) in `_manual_valve_open`.
+- Call `zone.set_irrigating(True)` and `zone.async_write_ha_state()` so UI and automations see the same "currently irrigating" attribute they would during a commanded cycle.
+- Schedule the auto-close monitor task and store it in `_manual_safety_tasks`.
+
+For an external `on → off` transition:
+- Cancel the monitor task (the OFF transition is either the user closing or the monitor's own `switch.turn_off` completing).
+- Call `zone.set_irrigating(False)`.
+- Compute the delivered volume from the flow meter (cumulative diff or rate × duration). Reduce the deficit proportionally; if no flow meter is present, the deficit is fully reset (same semantics as `mark_irrigated`, since the user did open the valve and we have no evidence to estimate otherwise).
+- Stamp `_last_irrigated`, `_last_volume_delivered`, `_last_irrigation_source = "manual"`, and fire `never_dry_irrigation_complete` with `source: "manual"`.
+
+**`_external_session_monitor(entity_id, zone_name)`** is the auto-close brain. Started from the open detection, it must terminate the manual session at the **minimum** of:
+
+1. **Volume target reached.** When the zone has a `flow_meter_sensor`, the monitor polls every `FLOW_METER_POLL_INTERVAL_S` seconds. For cumulative sensors it tracks `current - initial`; for rate sensors it integrates `rate × dt` (units L/min, L/h, m³/h handled explicitly). It exits as soon as `delivered >= volume_target`.
+2. **Estimated duration elapsed.** Without a flow meter but with a configured `flow_rate` (L/min), the monitor sleeps for `min(volume_liters / flow_rate × 60, delivery_timeout)`.
+3. **Safety timeout.** `delivery_timeout` is always honoured as the upper bound. No measurement, no estimate, no target → fall back to a pure sleep.
+
+After waking up, the monitor checks the switch is still `"on"` and sends `switch.turn_off`. The resulting `on → off` state change is picked up by `_on_valve_state_change`, which finalises the session. If the user closes the valve first the monitor task is cancelled and never sends the service call.
+
+**Why two layers instead of one.** Keeping detection (`_on_valve_state_change`, a sync `@callback`) separate from the auto-close (an async task) avoids re-entrancy: the callback returns immediately so HA's event loop is not blocked, and the monitor can `await asyncio.sleep` safely. The same shape is used by `_deliver_flow_meter` / `_deliver_flow_rate` for commanded cycles.
+
 ### config_flow.py
 
 | Class | Purpose |
@@ -248,6 +288,7 @@ Services are registered in `IrrigationController.register_services()`.
 | `never_dry.irrigate_zone` | `_handle_irrigate_zone` | Single zone: open → wait → close → reset zone deficit |
 | `never_dry.irrigate_all` | `_handle_irrigate_all` | All zones sequentially, then reset all deficits |
 | `never_dry.stop` | `_handle_stop` | Close all valves, abort cycle (no deficit reset) |
+| `never_dry.mark_irrigated` | `_handle_mark_irrigated` | Resets deficit without opening any valve (used when the user watered with a different tool — hose, separate sprinkler, unmetered rain) |
 
 ## 6. Config flow
 

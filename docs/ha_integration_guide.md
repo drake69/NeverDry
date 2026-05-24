@@ -280,7 +280,9 @@ self._hass.bus.async_fire(
     EVENT_IRRIGATION_COMPLETE,      # "never_dry_irrigation_complete"
     {
         "zone": zone_name,
-        "source": "automatic",      # or "manual"
+        "source": self._current_source or "automatic",
+        # "button" | "scheduled" | "reactive" | "manual"
+        # (fallback "automatic" only if no caller set _current_source)
         "volume_liters": 45.2,
         "duration_s": 340,
         "deficit_mm": 5.0,
@@ -328,35 +330,55 @@ def register_services(self) -> None:
         )
 ```
 
-**The problem**: if the user opens a valve manually (from HA dashboard, or physically), NeverDry doesn't know water was delivered. The deficit stays high and NeverDry will irrigate again unnecessarily.
+**The problem**: if the user opens a valve manually (physical button on the Sonoff SWV, Zigbee app, HA switch toggled by hand), NeverDry doesn't know water was delivered. The deficit stays high and NeverDry will irrigate again unnecessarily — *and* the valve could stay open indefinitely.
 
-**The solution**: listen to valve state changes. If the valve goes `off → on → off` and the controller is NOT running (`self._running is False`), it was manual irrigation.
+**The solution**: listen to valve state changes and treat the external open as a tracked session — same state attribute (`is_irrigating`), same flow-meter accounting, plus an auto-close that mirrors `delivery_timeout`.
 
 ```python
 @callback
 def _on_valve_state_change(self, event) -> None:
-    if self._running:
-        return  # we're driving the valve, ignore
+    operator = self._valve_operators.get(entity_id)
+    if operator is not None and operator.state != ValveState.IDLE:
+        return  # commanded cycle in progress — ignore
+    elif self._running:
+        return  # legacy: another commanded cycle in progress
 
-    # ... extract entity_id, old_state, new_state ...
+    # ... extract entity_id, old_state, new_state, look up zone ...
 
     if old_state.state == "off" and new_state.state == "on":
         # Record flow meter baseline if available
         self._manual_valve_open[entity_id] = flow_start
+        zone.set_irrigating(True)
+        zone.async_write_ha_state()
+        # Start the auto-close monitor (min of volume target and timeout)
+        self._manual_safety_tasks[entity_id] = self._hass.async_create_task(
+            self._external_session_monitor(entity_id, zone_name),
+        )
 
     elif old_state.state == "on" and new_state.state == "off":
-        # Valve closed — compensate deficit
-        if zone.flow_meter_sensor and flow_start is not None:
-            delivered_liters = flow_end - flow_start
-            delivered_mm = delivered_liters / zone._area
-            zone._zone_deficit -= delivered_mm * zone._efficiency
-        else:
-            zone.reset_deficit()  # no meter → assume fully irrigated
+        # Cancel the monitor: either the user closed first, or the
+        # monitor's switch.turn_off just landed.
+        task = self._manual_safety_tasks.pop(entity_id, None)
+        if task and not task.done():
+            task.cancel()
+        zone.set_irrigating(False)
+        # ... flow-meter compensation / deficit reset ...
 ```
 
-**With flow meter**: we measure exactly how much water was delivered and subtract the equivalent mm from the deficit. Formula: `mm = liters / area_m² × efficiency`.
+**Distinguishing commanded vs external** uses the `ValveOperator` FSM state. If the operator is *not* in `IDLE`, NeverDry is currently driving the valve (OPENING, OPEN_VERIFIED, CLOSING, …) and the state-change is the natural consequence of a commanded cycle — we ignore it. The same state-change has already been routed into the FSM via `OBS_SWITCH_ON`/`OBS_SWITCH_OFF` to confirm the open/close. So one switch transition can mean two different things depending on FSM state: confirmation of a commanded action, or evidence of an external action.
 
-**Without flow meter**: we can't know how much water was delivered, so we reset the deficit to zero (conservative assumption: enough water was delivered).
+**The auto-close monitor** (`_external_session_monitor`) is an async task that closes the valve at the minimum of:
+
+1. **Volume target reached** — if the zone has a flow meter, poll it (cumulative diff or rate integration depending on `unit_of_measurement`) until `delivered >= zone.volume_liters`.
+2. **Estimated duration** — without a flow meter but with a configured `flow_rate`, sleep for `volume / flow_rate × 60` seconds.
+3. **Safety timeout** — `delivery_timeout` always caps the wait, so a forgotten-open valve cannot run forever.
+
+When the monitor wakes up it sends `switch.turn_off`. The resulting `on → off` transition re-enters `_on_valve_state_change`, which finalises the session (deficit, `last_irrigated`, `last_volume_delivered`, `is_irrigating=False`, `never_dry_irrigation_complete` event with `source: "manual"`). If the user closes manually first, the monitor is cancelled and never sends the service call — manual close always wins.
+
+**With flow meter**: deficit is reduced by `liters / area_m² × efficiency` mm.
+**Without flow meter, no valid baseline**: deficit is fully reset (same semantics as `mark_irrigated`), because the user did irrigate and we have no measurement to do better.
+
+**Why the auto-close?** Without it, pressing the physical button on the valve would drain the line for as long as the user forgets — typically days, until the SWV battery runs out. Reusing the existing `delivery_timeout` keeps the configuration surface small: the same number the user picks for commanded cycles also bounds manual ones.
 
 ### Battery monitoring
 

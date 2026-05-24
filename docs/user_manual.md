@@ -276,54 +276,54 @@ This diagram shows the complete irrigation decision flow, from weather data to v
               │          - Rain             │
               └──────────────┬──────────────┘
                              │
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-  ┌──────▼──────┐    ┌──────▼──────┐    ┌──────▼──────┐
-  │  Scheduled  │    │   Button    │    │   Manual    │
-  │  (HH:MM)   │    │  "Irrigate" │    │ valve open  │
-  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘
-         │                  │                  │
-  ┌──────▼──────┐           │           ┌──────▼──────┐
-  │ Deficit >=  │           │           │  Detect via │
-  │ Threshold?  │           │           │ state_change│
-  │             │           │           │   listener  │
-  ├─── No ──┐   │           │           └──────┬──────┘
-  │  skip   │   │           │                  │
-  └─────────┘   │           │                  │
-         │ Yes  │           │                  │
-         └──────┼───────────┘                  │
-                │                              │
-     ┌──────────▼──────────┐                   │
-     │   Open Valve        │                   │
-     │   (switch.turn_on)  │                   │
-     └──────────┬──────────┘                   │
-                │                              │
-     ┌──────────▼──────────┐         ┌─────────▼─────────┐
-     │   Monitor Delivery  │         │  On valve close:  │
-     │                     │         │  Read flow meter  │
-     │  ┌─ estimated_flow  │         │  Compute volume   │
-     │  │  (timer-based)   │         │  Adjust deficit   │
-     │  │                  │         └───────────────────┘
-     │  ├─ flow_meter      │
-     │  │  (cumulative L)  │
-     │  │                  │
-     │  └─ flow_rate       │
-     │     (integrate L/h) │
-     └──────────┬──────────┘
-                │
-     ┌──────────▼──────────┐
-     │  Close Valve        │
-     │  (target reached    │
-     │   OR timeout)       │
-     └──────────┬──────────┘
-                │
-     ┌──────────▼──────────┐
-     │  Update Deficit     │
-     │                     │
-     │  Full:  D = 0       │
-     │  Partial: D -= vol  │
-     │    × η / area       │
-     └─────────────────────┘
+    ┌──────────┬──────────┬──────────┬──────────────┐
+    │          │          │          │              │
+┌───▼───┐ ┌────▼────┐ ┌───▼────┐ ┌───▼──────┐ ┌─────▼──────┐
+│Schedul│ │ Button  │ │External│ │ Mark     │ │ Reactive   │
+│ (HH:MM│ │"Irrigate│ │ open   │ │irrigated │ │ (Mode A)   │
+│  )    │ │   "     │ │(physic)│ │(no valve)│ │            │
+└───┬───┘ └────┬────┘ └───┬────┘ └────┬─────┘ └─────┬──────┘
+    │ deficit  │           │           │             │ deficit
+    │ ≥ thr?   │           │           │             │ ≥ thr?
+    │          │           │           │             │
+    │   ┌──────┼───────────┼───────────┼─────────────┘
+    │   │      │           │           │
+┌───▼───▼──────▼──┐  ┌─────▼─────┐  ┌──▼─────────────┐
+│ Open valve via  │  │ External  │  │ Reset deficit  │
+│ ValveOperator   │  │ session   │  │ (no valve)     │
+│ (FSM verified)  │  │ monitor   │  │ source=mark_   │
+│                 │  │ starts    │  │ irrigated      │
+│ set_irrigating  │  │           │  └────────────────┘
+│ = True          │  │ is_irrig= │
+└────────┬────────┘  │ True      │
+         │           │ baseline= │
+┌────────▼────────┐  │ flow read │
+│ Monitor deliver │  └─────┬─────┘
+│  • estimated    │        │
+│  • flow_meter   │  ┌─────▼──────────────────────┐
+│  • flow_rate    │  │ Wait for min(              │
+│  • volume_preset│  │  volume_target reached,    │
+└────────┬────────┘  │  estimated duration,       │
+         │           │  delivery_timeout          │
+┌────────▼────────┐  │ )                          │
+│ Close valve     │  │ → switch.turn_off          │
+│ (target reached │  └─────┬──────────────────────┘
+│  / stop /       │        │
+│  timeout)       │        │ OR user closes manually
+└────────┬────────┘        │
+         │                 │
+┌────────▼─────────────────▼───────────┐
+│ on→off detected → finalise session   │
+│  set_irrigating = False              │
+│  last_irrigated = now                │
+│  last_volume_delivered = measured    │
+│  last_irrigation_source = button /   │
+│    scheduled / reactive / manual     │
+│  deficit: full reset OR -mm × η      │
+│  fire never_dry_irrigation_complete  │
+│  (event source = same string as      │
+│   last_irrigation_source)            │
+└──────────────────────────────────────┘
 ```
 
 ### Key concepts
@@ -337,6 +337,82 @@ This diagram shows the complete irrigation decision flow, from weather data to v
 | **Delivery Mode** | How the valve delivers water: timer, flow meter (cumulative), or flow rate (L/h integration). |
 | **Partial Irrigation** | If timeout or stop, deficit is reduced proportionally to the volume actually delivered. |
 | **Manual Detection** | If someone opens the valve manually (app, button), NeverDry detects it and adjusts the deficit. |
+
+### 7.1 The four irrigation triggers
+
+A zone's irrigated state (`is_irrigating`, `last_irrigated`, `last_volume_delivered`, deficit) can be modified in exactly four ways. NeverDry handles **all four** with the same final accounting — the only thing that changes is *who* opens and closes the valve.
+
+| # | Trigger | Who opens the valve | Who closes the valve | NeverDry valve involved? | Flow meter used (if configured)? |
+|---|---|---|---|---|---|
+| 1 | **Physical button on the valve** / Zigbee remote / HA switch toggled by hand | The user (outside NeverDry) | NeverDry (auto-close) or the user, whichever happens first | Yes | Yes |
+| 2 | **"Irrigate" button** on the zone device in HA | NeverDry (via `irrigate_zone` service) | NeverDry | Yes | Yes |
+| 3 | **Automation / scheduler** (Mode A reactive, Mode B scheduled, manual `irrigate_zone`/`irrigate_all` service from an automation) | NeverDry | NeverDry | Yes | Yes |
+| 4 | **"Mark irrigated" button** / `mark_irrigated` service | Nobody — the user has already watered with a *different* tool (a hose, a separate sprinkler, rain not detected by the sensor) | Nobody | **No** — the water did not pass through NeverDry's valve | **No** — the flow meter would not have seen anything anyway |
+
+#### Trigger 1 — Physical button on the valve (or any external open)
+
+This covers any case where the valve switch turns **on** without NeverDry having asked for it: pressing the button on the Sonoff SWV, opening the valve from the Zigbee app, flipping the HA switch directly, an automation that bypasses NeverDry and calls `switch.turn_on` on the valve entity.
+
+What happens:
+
+1. NeverDry sees the switch transition `off → on`. If a NeverDry cycle is already running on that valve it is ignored (the FSM is not idle); otherwise the manual session starts.
+2. `is_irrigating` is set to `True` on the zone, so the UI and any automation listening on the attribute reacts as if a commanded cycle were running.
+3. A baseline is recorded for the flow meter (current cumulative reading, or open timestamp for rate sensors).
+4. An **auto-close monitor** starts in the background. It will close the valve via `switch.turn_off` at the **minimum** of:
+   - **Volume needed** — if the zone has a flow meter, the monitor polls it and closes as soon as the delivered volume covers the current deficit-driven target (`volume_liters`). Without a flow meter but with a configured `flow_rate`, the monitor sleeps for the estimated duration `volume / flow_rate`.
+   - **Safety timeout** (`delivery_timeout`, default 1 hour) — always honoured as the upper bound, so a forgotten-open valve cannot run indefinitely.
+5. When the switch goes `on → off` (either because the user closed it, or because the monitor closed it):
+   - `is_irrigating` flips back to `False`.
+   - `last_irrigated` is stamped with the current time.
+   - `last_irrigation_source` is set to `"manual"`.
+   - The deficit is reduced by the delivered volume. With a flow meter the reduction is exact; without one (or with a zero reading) the deficit is fully reset.
+   - `last_volume_delivered` is updated and `never_dry_irrigation_complete` is fired on the HA event bus with `source: manual`.
+
+> **No deficit → manual open still works.** If you open the valve when the zone has no deficit, NeverDry still tracks the session and updates `last_irrigated`; the deficit just cannot go below zero. The monitor falls back to the safety timeout because there is no volume target to aim for.
+
+#### Trigger 2 — "Irrigate" button on the device page
+
+The per-zone **Irrigate** button calls the `never_dry.irrigate_zone` service. NeverDry computes the target from the current deficit, opens the valve through the ValveOperator (with its OPEN/CLOSE verification FSM and retry policy), monitors delivery according to the configured `delivery_mode`, and closes the valve when the target is reached, the user presses **Stop**, or the timeout fires.
+
+`is_irrigating` is `True` for the duration of the cycle, `last_irrigation_source` is `"button"`, and the deficit is fully reset on success or proportionally reduced on partial delivery. `last_volume_delivered` reflects the measured (flow meter) or estimated (timer) volume.
+
+#### Trigger 3 — Automation / scheduler
+
+Same code path as trigger 2, only the source differs:
+
+- **Mode A (reactive)** — fires when the deficit crosses the threshold. `last_irrigation_source = "reactive"`.
+- **Mode B (scheduled)** — fires at the configured daily time if the deficit is above threshold. `last_irrigation_source = "scheduled"`.
+- **Custom automation** — your own automation calling `never_dry.irrigate_zone` or `never_dry.irrigate_all`. Source = `"button"` (same as the manual button — the service entry point is shared).
+
+All of them go through `ValveOperator` and `_deliver_water`. Volume tracking, partial irrigation, and the `never_dry_irrigation_complete` event behave identically to trigger 2.
+
+#### Trigger 4 — "Mark irrigated" button
+
+Use this **only** when you watered the zone *without* using NeverDry's valve: a hand-held hose, a separate non-integrated sprinkler, an unmetered rain event, your neighbour helping out. The button calls the `never_dry.mark_irrigated` service, which:
+
+- Does **not** open or close any valve.
+- Does **not** read any flow meter.
+- Resets the zone deficit to zero and stamps `last_irrigated` with `source = "mark_irrigated"`.
+- Does **not** touch `is_irrigating` (no actual NeverDry-tracked irrigation is happening).
+
+Its purpose is to keep NeverDry from over-watering on top of irrigation it has no other way of knowing about.
+
+### 7.2 Open and close — what NeverDry does in each case
+
+| Step | Trigger 1 (manual) | Trigger 2/3 (button / automation) | Trigger 4 (mark_irrigated) |
+|---|---|---|---|
+| **On open** | Detected via switch state change. `is_irrigating=True`, flow meter baseline saved, auto-close monitor started. | NeverDry commands `switch.turn_on` via ValveOperator. FSM verifies the open. `is_irrigating=True`. | Nothing — no valve is opened. |
+| **During delivery** | Monitor polls the flow meter (or sleeps for the estimated duration) tracking how much water has flowed. | `_deliver_water` runs the chosen delivery mode (`estimated_flow`, `flow_meter`, `volume_preset`). | Nothing. |
+| **On close** | Whichever of (volume target reached, estimated duration elapsed, safety timeout) fires first → NeverDry calls `switch.turn_off`. The user can also close manually at any time. | Target reached, user pressed Stop, or `delivery_timeout` fires → NeverDry calls `switch.turn_off`. | Nothing. |
+| **After close** | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source="manual"`, deficit adjusted by measured volume (or fully reset without measurement), `never_dry_irrigation_complete` event fired with `source: "manual"`. | `is_irrigating=False`, `last_irrigated=now`, `last_irrigation_source` and the event `source` both set to `"button"`/`"reactive"`/`"scheduled"` depending on the trigger, deficit reset (full delivery) or reduced (partial). | Deficit reset to zero, `last_irrigated=now`, `last_irrigation_source="mark_irrigated"`. No event. |
+
+### 7.3 Why the auto-close on manual open?
+
+Imagine pressing the button on the valve and then forgetting about it. Without an auto-close, the valve stays open until the battery dies — which on a Sonoff SWV is days of continuous flow.
+
+NeverDry's auto-close uses the *same* `delivery_timeout` you already configured for commanded cycles (default 1 hour, editable per zone in the options flow). On top of that, if the zone has a flow meter or a calibrated `flow_rate`, NeverDry will close the valve *earlier* — as soon as the deficit-driven volume is reached — saving water exactly like a scheduled cycle would. The user-initiated open still benefits from the same closed-loop control.
+
+If you want to bypass the auto-close (for example to flush a line at the start of the season), close the valve from the same physical button before the timeout. Manual close always wins over the monitor.
 
 ---
 

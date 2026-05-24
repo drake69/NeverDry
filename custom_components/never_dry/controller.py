@@ -95,6 +95,8 @@ class IrrigationController:
         self._current_source: str | None = None
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
         self._manual_valve_open: dict[str, float | None] = {}
+        # Per-valve safety-close watchdog for external (non-commanded) opens
+        self._manual_safety_tasks: dict[str, asyncio.Task] = {}
         # Reverse map: valve_entity_id → zone_name
         self._valve_to_zone: dict[str, str] = {zs.valve: zs.zone_name for zs in zone_sensors if zs.valve}
         # Battery sensor → zone_name map
@@ -427,7 +429,7 @@ class IrrigationController:
                         EVENT_IRRIGATION_COMPLETE,
                         {
                             "zone": zone_name,
-                            "source": "automatic",
+                            "source": self._current_source or "automatic",
                             "volume_liters": round(delivered, 1),
                             "volume_target": round(volume_target, 1),
                             "deficit_mm": round(zone._zone_deficit, 2),
@@ -967,14 +969,32 @@ class IrrigationController:
                     self._manual_valve_open[entity_id] = self._read_flow_meter(zone.flow_meter_sensor)
             else:
                 self._manual_valve_open[entity_id] = None
+            # Reflect "currently irrigating" in zone state so UI/automations
+            # see the same flag they would during a commanded cycle.
+            zone.set_irrigating(True)
+            zone.async_write_ha_state()
+            # Active monitor: closes the valve at the minimum between
+            # volume-needed (if we can measure or estimate it) and the
+            # safety delivery_timeout.
+            self._manual_safety_tasks[entity_id] = self._hass.async_create_task(
+                self._external_session_monitor(entity_id, zone_name),
+            )
             _LOGGER.info(
-                "Manual valve open detected: zone='%s'",
+                "Manual valve open detected: zone='%s' (target=%.1fL, timeout=%ds)",
                 zone_name,
+                zone.volume_liters,
+                zone.delivery_timeout,
             )
 
         elif old_state.state == "on" and new_state.state == "off":
+            # Cancel the safety watchdog: the user (or the watchdog itself)
+            # already closed the valve.
+            task = self._manual_safety_tasks.pop(entity_id, None)
+            if task and not task.done():
+                task.cancel()
             # Valve closed — compensate deficit
             baseline = self._manual_valve_open.pop(entity_id, None)
+            zone.set_irrigating(False)
 
             if zone.flow_meter_sensor and baseline is not None:
                 is_rate = self._is_flow_rate_sensor(zone.flow_meter_sensor)
@@ -1032,6 +1052,170 @@ class IrrigationController:
                     "deficit_mm": round(zone._zone_deficit, 2),
                 },
             )
+
+    async def _external_session_monitor(self, entity_id: str, zone_name: str) -> None:
+        """Auto-close a manually-opened valve at min(volume_needed, timeout).
+
+        Started when the user opens the valve from the physical button on
+        the device, the Zigbee app, or the HA switch UI (i.e. anything
+        outside NeverDry's commanded path). Three exit conditions:
+
+        1. **Volume target reached** — if the zone has a flow meter we
+           poll it and close as soon as the delivered amount covers the
+           current ``volume_liters`` (deficit-driven target).
+        2. **Estimated duration elapsed** — without a flow meter but
+           with a configured ``flow_rate``, we sleep for
+           ``volume_liters / flow_rate`` and close.
+        3. **Safety timeout** — ``delivery_timeout`` is always honoured
+           as the upper bound, so a forgotten-open valve cannot run
+           indefinitely.
+
+        The final ``switch.turn_off`` triggers the OFF transition that
+        :meth:`_on_valve_state_change` uses to finalise the session
+        (deficit, ``last_irrigated``, ``is_irrigating``). If the user
+        closes the valve first, the OFF transition cancels this task
+        before it gets a chance to send the service call.
+        """
+        zone = self._zones.get(zone_name)
+        if zone is None:
+            return
+        timeout_s = max(1, zone.delivery_timeout)
+        volume_target = zone.volume_liters
+
+        try:
+            if volume_target > 0 and zone.flow_meter_sensor:
+                await self._monitor_via_flow_meter(
+                    entity_id,
+                    zone_name,
+                    zone,
+                    volume_target,
+                    timeout_s,
+                )
+            elif volume_target > 0 and zone._flow_rate > 0:
+                # Estimated duration: volume / flow_rate (L/min) → seconds
+                estimated_s = int(volume_target / zone._flow_rate * 60)
+                wait_s = min(estimated_s, timeout_s)
+                _LOGGER.info(
+                    "Manual valve '%s': estimated %ds for %.1fL (timeout=%ds, waiting %ds)",
+                    zone_name,
+                    estimated_s,
+                    volume_target,
+                    timeout_s,
+                    wait_s,
+                )
+                await asyncio.sleep(wait_s)
+            else:
+                # No way to measure or estimate — fall back to safety
+                # timeout only. The valve will be force-closed when the
+                # timeout expires.
+                _LOGGER.info(
+                    "Manual valve '%s': no measurable target, safety timeout=%ds",
+                    zone_name,
+                    timeout_s,
+                )
+                await asyncio.sleep(timeout_s)
+        except asyncio.CancelledError:
+            return
+
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state != "on":
+            return
+        _LOGGER.info(
+            "Manual valve '%s' auto-close: target reached or timeout — sending switch.turn_off",
+            zone_name,
+        )
+        await self._hass.services.async_call(
+            "switch",
+            "turn_off",
+            {"entity_id": entity_id},
+            blocking=False,
+        )
+
+    async def _monitor_via_flow_meter(
+        self,
+        entity_id: str,
+        zone_name: str,
+        zone,
+        volume_target: float,
+        timeout_s: int,
+    ) -> None:
+        """Poll the flow meter until ``volume_target`` is delivered or timeout.
+
+        Supports both cumulative-volume sensors (L) and rate sensors
+        (L/h, L/min, m³/h) — mirroring the logic used by the commanded
+        delivery paths in :meth:`_deliver_flow_meter` /
+        :meth:`_deliver_flow_rate`.
+        """
+        meter = zone.flow_meter_sensor
+        is_rate = self._is_flow_rate_sensor(meter)
+        elapsed = 0
+        delivered = 0.0
+
+        if is_rate:
+            unit = self._get_flow_meter_unit(meter)
+            while elapsed < timeout_s:
+                await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
+                elapsed += FLOW_METER_POLL_INTERVAL_S
+                rate = self._read_flow_meter(meter)
+                if rate is None or rate < 0:
+                    continue
+                if unit in ("L/min", "l/min"):
+                    delivered += rate / 60 * FLOW_METER_POLL_INTERVAL_S
+                elif unit in ("m³/h",):
+                    delivered += rate * 1000 / 3600 * FLOW_METER_POLL_INTERVAL_S
+                else:
+                    delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
+                if delivered >= volume_target:
+                    _LOGGER.info(
+                        "Manual valve '%s' reached target (%.1fL of %.1fL) via flow rate",
+                        zone_name,
+                        delivered,
+                        volume_target,
+                    )
+                    return
+            _LOGGER.warning(
+                "Manual valve '%s' rate-monitor timeout (%ds): %.1fL of %.1fL target",
+                zone_name,
+                timeout_s,
+                delivered,
+                volume_target,
+            )
+            return
+
+        initial = self._read_flow_meter(meter)
+        if initial is None:
+            _LOGGER.warning(
+                "Manual valve '%s': flow meter unavailable at open, falling back to timeout=%ds",
+                zone_name,
+                timeout_s,
+            )
+            await asyncio.sleep(timeout_s)
+            return
+        while elapsed < timeout_s:
+            await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
+            elapsed += FLOW_METER_POLL_INTERVAL_S
+            current = self._read_flow_meter(meter)
+            if current is None:
+                continue
+            delivered = current - initial
+            if delivered < 0:
+                initial = 0.0
+                delivered = current
+            if delivered >= volume_target:
+                _LOGGER.info(
+                    "Manual valve '%s' reached target (%.1fL of %.1fL) via cumulative meter",
+                    zone_name,
+                    delivered,
+                    volume_target,
+                )
+                return
+        _LOGGER.warning(
+            "Manual valve '%s' meter-monitor timeout (%ds): %.1fL of %.1fL target",
+            zone_name,
+            timeout_s,
+            delivered,
+            volume_target,
+        )
 
     # ── Battery monitoring ────────────────────────────────
 

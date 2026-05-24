@@ -623,6 +623,103 @@ class TestManualValveDetection:
         controller._on_valve_state_change(event)
         assert "switch.unknown" not in controller._manual_valve_open
 
+    def test_manual_open_sets_is_irrigating(self, controller, zone_orto):
+        """Manual valve open should flip is_irrigating to True so the
+        UI and automations see the zone as currently irrigating, the
+        same way a commanded cycle does."""
+        zone_orto._zone_deficit = 10.0
+        assert zone_orto.is_irrigating is False
+        event = self._make_valve_event("switch.valve_orto", "off", "on")
+        controller._on_valve_state_change(event)
+        assert zone_orto.is_irrigating is True
+
+    def test_manual_close_clears_is_irrigating(self, controller, zone_orto):
+        """Manual valve close must clear is_irrigating regardless of
+        whether the flow meter is configured."""
+        zone_orto._zone_deficit = 10.0
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        assert zone_orto.is_irrigating is True
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+        assert zone_orto.is_irrigating is False
+
+    def test_manual_open_starts_monitor_task(self, controller, zone_orto):
+        """Opening the valve manually must start the auto-close monitor."""
+        zone_orto._zone_deficit = 10.0
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        assert "switch.valve_orto" in controller._manual_safety_tasks
+        task = controller._manual_safety_tasks["switch.valve_orto"]
+        assert not task.done() or task.cancelled()
+        task.cancel()
+
+    def test_manual_close_cancels_monitor_task(self, controller, zone_orto):
+        """If the user closes the valve before the monitor fires, the
+        monitor task must be cancelled to avoid a spurious turn_off
+        after the fact."""
+        zone_orto._zone_deficit = 10.0
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        task = controller._manual_safety_tasks.get("switch.valve_orto")
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+        assert "switch.valve_orto" not in controller._manual_safety_tasks
+        # The task may not yet be observed as cancelled() (the loop hasn't
+        # processed the CancelledError), but a cancel request must have
+        # been issued.
+        assert task is not None
+        assert task._must_cancel or task.cancelled() or task.done()
+
+
+class TestExternalSessionMonitor:
+    """Auto-close behaviour for manually-opened valves."""
+
+    @pytest.mark.asyncio
+    async def test_no_target_falls_back_to_timeout(self, controller, zone_orto, hass_mock, monkeypatch):
+        """With no deficit and no flow info, the monitor sleeps until
+        delivery_timeout, then turns the valve off if still open."""
+        zone_orto._zone_deficit = 0.0
+        zone_orto._delivery_timeout = 1
+        sleeps = []
+
+        async def fake_sleep(s):
+            sleeps.append(s)
+
+        monkeypatch.setattr("never_dry.controller.asyncio.sleep", fake_sleep)
+        # Simulate valve still ON when monitor wakes up.
+        on_state = MagicMock()
+        on_state.state = "on"
+        hass_mock.states.get = MagicMock(return_value=on_state)
+        hass_mock.services.async_call.reset_mock()
+
+        await controller._external_session_monitor("switch.valve_orto", "Orto")
+
+        assert sleeps == [1]
+        hass_mock.services.async_call.assert_called_with(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.valve_orto"},
+            blocking=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_estimated_duration_caps_at_timeout(self, controller, zone_orto, hass_mock, monkeypatch):
+        """When estimated duration exceeds the safety timeout, the
+        timeout wins (min of the two)."""
+        # Big deficit → long estimated duration.
+        zone_orto._zone_deficit = 1000.0
+        zone_orto._delivery_timeout = 30
+        zone_orto._flow_rate = 1.0  # L/min — irrelevant magnitude here
+
+        sleeps = []
+
+        async def fake_sleep(s):
+            sleeps.append(s)
+
+        monkeypatch.setattr("never_dry.controller.asyncio.sleep", fake_sleep)
+        on_state = MagicMock(state="on")
+        hass_mock.states.get = MagicMock(return_value=on_state)
+
+        await controller._external_session_monitor("switch.valve_orto", "Orto")
+
+        assert sleeps == [30]
+
 
 class TestBatteryMonitoring:
     """Test low-battery alert for valve sensors."""
@@ -709,6 +806,21 @@ class TestIrrigationEvent:
         assert call_args.args[0] == "never_dry_irrigation_complete"
         assert call_args.args[1]["source"] == "automatic"
         assert call_args.args[1]["zone"] == "Orto"
+
+    @pytest.mark.parametrize("source", ["button", "scheduled", "reactive"])
+    @pytest.mark.asyncio
+    async def test_event_propagates_specific_source(self, controller, hass_mock, zone_orto, source):
+        """The bus event must carry the specific trigger source set by
+        the caller (button, scheduled, reactive) rather than collapsing
+        every commanded cycle into the generic 'automatic'."""
+        zone_orto._zone_deficit = 5.0
+        controller._wait_with_stop_check = AsyncMock()
+        controller._current_source = source
+
+        await controller._irrigate_zones(["Orto"])
+
+        hass_mock.bus.async_fire.assert_called()
+        assert hass_mock.bus.async_fire.call_args.args[1]["source"] == source
 
     @pytest.mark.asyncio
     async def test_no_event_on_stop(self, controller, hass_mock, zone_orto, zone_prato):
