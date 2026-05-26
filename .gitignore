@@ -13,3 +13,4 @@ htmlcov/
 secrets/
 *.db
 .code_reader/
+.DS_Store
