@@ -98,6 +98,11 @@ def _create_ha_stubs():
 
     device_registry_mod.DeviceInfo = DeviceInfo
 
+    # homeassistant.helpers.entity_registry
+    entity_registry_mod = ModuleType("homeassistant.helpers.entity_registry")
+    entity_registry_mod.async_get = MagicMock(return_value=MagicMock())
+    entity_registry_mod.async_entries_for_device = MagicMock(return_value=[])
+
     # homeassistant.const
     const_mod = ModuleType("homeassistant.const")
 
@@ -111,6 +116,7 @@ def _create_ha_stubs():
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
     helpers_mod.device_registry = device_registry_mod
+    helpers_mod.entity_registry = entity_registry_mod
     mods = {
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
@@ -122,6 +128,7 @@ def _create_ha_stubs():
         "homeassistant.helpers": helpers_mod,
         "homeassistant.helpers.config_validation": cv_mod,
         "homeassistant.helpers.entity_platform": entity_platform_mod,
+        "homeassistant.helpers.entity_registry": entity_registry_mod,
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
         "homeassistant.helpers.device_registry": device_registry_mod,

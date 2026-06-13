@@ -877,10 +877,7 @@ async def test_hw_max_duration_called_on_open(hass):
     await bg
     await _yield_loop(5)
 
-    set_value_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("number", "set_value")
-    ]
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
     assert len(set_value_calls) == 1
     assert set_value_calls[0].args[2]["entity_id"] == "number.hw_timer"
     assert set_value_calls[0].args[2]["value"] == pytest.approx(120.0)
@@ -893,10 +890,7 @@ async def test_hw_max_duration_not_called_on_failed_open(hass):
     assert result.status == OperationStatus.FAILED
     await _yield_loop(5)
 
-    set_value_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("number", "set_value")
-    ]
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
     assert len(set_value_calls) == 0
 
 
@@ -928,10 +922,7 @@ async def test_hw_max_duration_called_again_after_close_reopen(hass):
     await bg2
     await _yield_loop(5)
 
-    set_value_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("number", "set_value")
-    ]
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
     assert len(set_value_calls) == 1
 
 
@@ -966,10 +957,7 @@ async def test_hw_max_duration_called_once_per_open(hass):
     await _yield_loop(5)
 
     assert op.state == ValveState.OPEN_VERIFIED
-    set_value_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("number", "set_value")
-    ]
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
     assert len(set_value_calls) == 1
 
 
@@ -996,10 +984,7 @@ async def test_hw_max_duration_with_minute_multiplier(hass):
     await bg
     await _yield_loop(5)
 
-    set_value_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("number", "set_value")
-    ]
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
     assert len(set_value_calls) == 1
     assert set_value_calls[0].args[2]["value"] == pytest.approx(2.0, rel=1e-3)
 
@@ -1028,10 +1013,7 @@ async def test_hw_max_duration_mqtt_fallback_when_no_entity(hass):
     await bg
     await _yield_loop(5)
 
-    mqtt_calls = [
-        c for c in hass.services.async_call.call_args_list
-        if c.args[:2] == ("mqtt", "publish")
-    ]
+    mqtt_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("mqtt", "publish")]
     assert len(mqtt_calls) == 1
     assert mqtt_calls[0].args[2]["topic"] == "zigbee2mqtt/valve/set"
     assert mqtt_calls[0].args[2]["payload"] == '{"irrigation_duration": 60.0}'
@@ -1104,3 +1086,64 @@ async def test_hw_max_duration_exception_is_swallowed(hass, caplog):
 
     assert result.status == OperationStatus.OK
     assert "failed to set hardware max_duration" in caplog.text
+
+
+async def test_hw_max_duration_idempotency_guard_direct(hass):
+    """Calling _set_hw_max_duration twice only runs the entity call once (line 546)."""
+    op = _make_operator_with_hw_interlock(hass, max_open_duration_s=60.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    hass.services.async_call.reset_mock()
+    # Call directly a second time — must hit the _hw_duration_set guard (line 546)
+    await op._set_hw_max_duration()
+
+    set_value_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("number", "set_value")]
+    assert len(set_value_calls) == 0
+
+
+async def test_hw_max_duration_mqtt_exception_is_logged(hass, caplog):
+    """MQTT publish failure is logged as WARNING but does not raise (lines 593-594)."""
+    original_call = hass.services.async_call
+    mqtt_calls = []
+
+    async def side_effect(*args, **kwargs):
+        if args[:2] == ("mqtt", "publish"):
+            mqtt_calls.append(True)
+            raise RuntimeError("mqtt broker unavailable")
+        return await original_call(*args, **kwargs)
+
+    hass.services.async_call = side_effect
+
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="mqttfailzone",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        max_open_duration_s=30.0,
+        hw_max_duration_entity=None,
+        hw_max_duration_topic="mqtt/fail/set",
+        hw_max_duration_payload_template="{value}",
+    )
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    result = await op.open()
+    await bg
+    await _yield_loop(5)
+
+    assert result.status == OperationStatus.OK
+    assert mqtt_calls, "MQTT publish was never attempted"
+    assert "failed to set hardware max_duration via MQTT" in caplog.text
