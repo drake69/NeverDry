@@ -773,7 +773,7 @@ async def test_watchdog_fires_critical_notification(hass):
 
 async def test_watchdog_cancelled_on_normal_close(hass):
     """After a normal close, the watchdog task is cancelled and not pending."""
-    op, notifier = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)
 
     async def open_sim():
         await _yield_loop()

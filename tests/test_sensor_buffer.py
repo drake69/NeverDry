@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-
 
 # ── SensorBuffer unit tests ───────────────────────────────────────────
 

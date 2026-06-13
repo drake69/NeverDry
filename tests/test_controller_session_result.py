@@ -15,9 +15,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from never_dry.controller import IrrigationController
-
-
 SESSION_RE = re.compile(r"SESSION_RESULT\s+(?P<kv>.+)$")
 
 
@@ -81,7 +78,7 @@ class TestLogSessionResultFormat:
                 deficit_mm_post=0.3,
             )
         kv = parse_session_line(
-            [r.getMessage() for r in caplog.records if "SESSION_RESULT" in r.getMessage()][0],
+            next(r.getMessage() for r in caplog.records if "SESSION_RESULT" in r.getMessage()),
         )
         assert kv["volume_target_L"] == "null"
         assert kv["duration_s"] == "30.0"
@@ -101,7 +98,7 @@ class TestLogSessionResultFormat:
                 deficit_mm_post=0.0,
             )
         kv = parse_session_line(
-            [r.getMessage() for r in caplog.records if "SESSION_RESULT" in r.getMessage()][0],
+            next(r.getMessage() for r in caplog.records if "SESSION_RESULT" in r.getMessage()),
         )
         assert kv["duration_s"] == "0.0"
 

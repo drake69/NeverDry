@@ -176,7 +176,15 @@ def base_config():
 
 @pytest.fixture
 def hass_mock():
-    """Mock HomeAssistant instance with async services."""
+    """Mock HomeAssistant instance with async services.
+
+    Provides a real event loop for the fixture lifetime so that both sync
+    and async test paths can create tasks without hitting the Python 3.12
+    deprecation of implicit event-loop creation.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     hass = MagicMock()
     hass.states = MagicMock()
     hass.services = MagicMock()
@@ -184,12 +192,23 @@ def hass_mock():
     hass.services.async_register = MagicMock()
     hass.bus = MagicMock()
     hass.bus.async_fire = MagicMock()
-    # async_create_task runs the coroutine directly for testing
-    hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
+
+    def _create_task(coro):
+        try:
+            running = asyncio.get_running_loop()
+            return running.create_task(coro)
+        except RuntimeError:
+            return loop.create_task(coro)
+
+    hass.async_create_task = _create_task
     # Mock HA config with latitude (northern hemisphere)
     hass.config = MagicMock()
     hass.config.latitude = 45.0
-    return hass
+
+    yield hass
+
+    loop.close()
+    asyncio.set_event_loop(None)
 
 
 @pytest.fixture
