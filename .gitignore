@@ -13,3 +13,7 @@ htmlcov/
 secrets/
 *.db
 .code_reader/
+.DS_Store
+
+# .sestante/ — backlog locale, mai committato
+.sestante/

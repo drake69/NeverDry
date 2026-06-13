@@ -50,6 +50,7 @@ class NotificationKind(StrEnum):
     IRRIGATION_INEFFECTIVE = "irrigation_ineffective"
     MODEL_DRIFT = "model_drift"
     WATER_ME_NOW = "water_me_now"
+    WATCHDOG_TRIGGERED = "watchdog_triggered"
 
 
 class Severity(StrEnum):
@@ -124,6 +125,14 @@ _TEMPLATES: dict[NotificationKind, _Template] = {
     NotificationKind.WATER_ME_NOW: _Template(
         title="Manual irrigation suggested",
         body="Zone '{zone}': deficit {deficit} above threshold; water by hand.",
+    ),
+    NotificationKind.WATCHDOG_TRIGGERED: _Template(
+        title="Valve force-closed by safety watchdog",
+        body=(
+            "Zone '{zone}' valve was open for more than {duration_min} min with no "
+            "close command received. NeverDry forced it closed as a safety measure. "
+            "Check that the automation or delivery logic is working correctly."
+        ),
     ),
 }
 

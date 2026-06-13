@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timedelta
 
@@ -46,6 +48,8 @@ from .const import (
     CONF_ZONE_EFFICIENCY,
     CONF_ZONE_FLOW_METER_SENSOR,
     CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_HW_MAX_DURATION_PAYLOAD,
+    CONF_ZONE_HW_MAX_DURATION_TOPIC,
     CONF_ZONE_IRRIGATION_MODE,
     CONF_ZONE_IRRIGATION_TIME,
     CONF_ZONE_KC,
@@ -71,6 +75,9 @@ from .const import (
     DEFAULT_THRESHOLD,
     DELIVERY_MODE_ESTIMATED_FLOW,
     DOMAIN,
+    ET_BUFFER_MIN_READINGS,
+    ET_BUFFER_SIZE,
+    ET_TEMP_VALID_RANGE,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
     RAIN_TYPE_EVENT,
@@ -79,6 +86,58 @@ from .const import (
 from .controller import IrrigationController
 
 _LOGGER = logging.getLogger(__name__)
+
+
+# ══════════════════════════════════════════════════════════
+#  SensorBuffer — rolling median for ET input robustness
+# ══════════════════════════════════════════════════════════
+
+
+class SensorBuffer:
+    """Rolling FIFO buffer of valid numeric sensor readings.
+
+    Rejects ``None``, ``'unavailable'``, ``'unknown'``, NaN, ±inf, and
+    values outside ``valid_range``. Returns the median of buffered readings
+    as a robust estimate; returns ``None`` when fewer than
+    ``min_readings`` valid samples are available.
+    """
+
+    def __init__(
+        self,
+        size: int,
+        valid_range: tuple[float, float] = (-math.inf, math.inf),
+    ) -> None:
+        self._size = size
+        self._lo, self._hi = valid_range
+        self._buf: deque[float] = deque(maxlen=size)
+
+    def push(self, raw) -> bool:
+        """Parse and push ``raw`` if it is a valid in-range finite number.
+
+        Returns ``True`` when the value was accepted.
+        """
+        if raw in (None, "unavailable", "unknown"):
+            return False
+        try:
+            v = float(raw)
+        except (ValueError, TypeError):
+            return False
+        if not math.isfinite(v) or v < self._lo or v > self._hi:
+            return False
+        self._buf.append(v)
+        return True
+
+    def median(self, min_readings: int = 1) -> float | None:
+        """Return the median, or ``None`` if fewer than ``min_readings`` samples."""
+        if len(self._buf) < min_readings:
+            return None
+        s = sorted(self._buf)
+        n = len(s)
+        mid = n // 2
+        return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2.0
+
+    def __len__(self) -> int:
+        return len(self._buf)
 
 
 # ══════════════════════════════════════════════════════════
@@ -200,6 +259,53 @@ def _create_entities(
     return entities, di_sensor, zone_sensors
 
 
+_HW_DURATION_KEYWORDS = frozenset({"max", "duration", "time", "irrigation", "timer", "delay"})
+_HW_MINUTE_KEYWORDS = frozenset({"min", "minute", "minutes"})
+
+
+def _discover_hw_max_duration(
+    hass: HomeAssistant,
+    switch_entity_id: str,
+) -> tuple[str | None, float]:
+    """Look for a hardware max-duration ``number`` entity on the same HA device.
+
+    Searches the entity registry for ``number.*`` entities sharing the same
+    device as ``switch_entity_id`` whose name contains irrigation/duration
+    keywords. Returns ``(entity_id, multiplier)`` where multiplier converts
+    seconds to the entity's native unit (1.0 for seconds, 1/60 for minutes),
+    or ``(None, 1.0)`` when nothing suitable is found.
+    """
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.entity_registry import async_entries_for_device
+
+    ent_reg = er.async_get(hass)
+    switch_entry = ent_reg.async_get(switch_entity_id)
+    if switch_entry is None or switch_entry.device_id is None:
+        return None, 1.0
+
+    device_id = switch_entry.device_id
+    candidates = [
+        entry
+        for entry in async_entries_for_device(ent_reg, device_id, include_disabled_entities=False)
+        if entry.domain == "number"
+        and any(kw in (entry.entity_id + " " + (entry.original_name or "")).lower() for kw in _HW_DURATION_KEYWORDS)
+    ]
+    if not candidates:
+        return None, 1.0
+
+    best = candidates[0]
+    state = hass.states.get(best.entity_id)
+    unit = (state.attributes.get("unit_of_measurement", "") if state else "").lower()
+    multiplier = 1.0 / 60.0 if any(kw in unit for kw in _HW_MINUTE_KEYWORDS) else 1.0
+    _LOGGER.debug(
+        "Valve '%s' hw_max_duration entity discovered: %s (multiplier=%.4f)",
+        switch_entity_id,
+        best.entity_id,
+        multiplier,
+    )
+    return best.entity_id, multiplier
+
+
 def _setup_controller(
     hass: HomeAssistant,
     config: dict,
@@ -226,12 +332,18 @@ def _setup_controller(
         # volume_preset relies on smart-valve self-control; bypass operator.
         if getattr(zs, "delivery_mode", None) == "volume_preset":
             continue
+        hw_entity, hw_mult = _discover_hw_max_duration(hass, zs.valve)
         valve_operators[zs.valve] = ValveOperator(
             hass=hass,
             switch_entity_id=zs.valve,
             flow_sensor_entity_id=zs.flow_meter_sensor,
             zone_name=zs.zone_name,
             notifier=notifier,
+            max_open_duration_s=zs.delivery_timeout,
+            hw_max_duration_entity=hw_entity,
+            hw_max_duration_multiplier=hw_mult,
+            hw_max_duration_topic=zs.hw_max_duration_topic,
+            hw_max_duration_payload_template=zs.hw_max_duration_payload,
         )
 
     controller = IrrigationController(
@@ -355,9 +467,10 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._rain_type = config.get(CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE)
         self._backfill_days = config.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS)
         self._deficit = 0.0
-        self._last_rain = 0.0  # tracks last rain reading for delta computation
+        self._last_rain = 0.0
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
+        self._temp_buffer = SensorBuffer(ET_BUFFER_SIZE, valid_range=ET_TEMP_VALID_RANGE)
         if device_info:
             self._attr_device_info = device_info
 
@@ -400,21 +513,22 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             # In VWC mode, broadcast zeros — zones use VWC deficit * Kc
             self._broadcast_to_zones(0.0, 0.0, 0.0)
         else:
-            # Compute rain delta BEFORE _update_from_model (which also calls it)
-            # We need to capture it for broadcasting to zones.
             rain_delta = self._compute_rain_delta()
-            try:
-                t = float(self._hass.states.get(self._temp_sensor).state)
-                et_h = max(0.0, self._alpha * (t - self._t_base) / 24)
-            except (TypeError, ValueError, AttributeError):
-                et_h = 0.0
-                rain_delta = 0.0
 
-            # Update reference deficit
+            # Push raw temp into the buffer; invalid/unavailable readings are
+            # rejected by the buffer (not zeroed), so the median stays stable.
+            raw_state = self._hass.states.get(self._temp_sensor)
+            self._temp_buffer.push(raw_state.state if raw_state is not None else None)
+
+            t_median = self._temp_buffer.median(ET_BUFFER_MIN_READINGS)
+            if t_median is None:
+                # Buffer not ready yet (startup); keep deficit frozen.
+                self.async_write_ha_state()
+                return
+
+            et_h = max(0.0, self._alpha * (t_median - self._t_base) / 24)
             et_dt = et_h * dt_h
             self._deficit = max(0.0, min(self._deficit + et_dt - rain_delta, self._d_max))
-
-            # Broadcast delta to zone listeners
             self._broadcast_to_zones(dt_h, et_h, rain_delta)
 
         self.async_write_ha_state()
@@ -471,13 +585,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         Used by unit tests.  The event-driven path in _on_sensor_change
         computes the same logic inline to capture rain_delta for broadcast.
         """
-        try:
-            t = float(self._hass.states.get(self._temp_sensor).state)
-        except (TypeError, ValueError, AttributeError):
+        raw_state = self._hass.states.get(self._temp_sensor)
+        self._temp_buffer.push(raw_state.state if raw_state is not None else None)
+        t_median = self._temp_buffer.median(ET_BUFFER_MIN_READINGS)
+        if t_median is None:
             return
 
         rain_delta = self._compute_rain_delta()
-        et_dt = max(0.0, self._alpha * (t - self._t_base) / 24) * dt_h
+        et_dt = max(0.0, self._alpha * (t_median - self._t_base) / 24) * dt_h
         self._deficit = max(0.0, min(self._deficit + et_dt - rain_delta, self._d_max))
 
     async def _backfill_from_recorder(self) -> None:
@@ -665,6 +780,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._battery_sensor = zone_config.get(CONF_ZONE_BATTERY_SENSOR)
         self._irrigation_mode = zone_config.get(CONF_ZONE_IRRIGATION_MODE, "manual")
         self._irrigation_time = zone_config.get(CONF_ZONE_IRRIGATION_TIME)
+        self._hw_max_duration_topic: str | None = zone_config.get(CONF_ZONE_HW_MAX_DURATION_TOPIC)
+        self._hw_max_duration_payload: str = zone_config.get(CONF_ZONE_HW_MAX_DURATION_PAYLOAD, "{value}")
         self._irrigating = False
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
@@ -814,6 +931,16 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     def delivery_timeout(self) -> int:
         """Safety timeout in seconds for flow_meter and volume_preset modes."""
         return self._delivery_timeout
+
+    @property
+    def hw_max_duration_topic(self) -> str | None:
+        """Optional raw MQTT topic for writing the on-device hardware max-duration."""
+        return self._hw_max_duration_topic
+
+    @property
+    def hw_max_duration_payload(self) -> str:
+        """Payload template for the hw_max_duration MQTT publish (``{value}`` placeholder)."""
+        return self._hw_max_duration_payload
 
     @property
     def is_irrigating(self) -> bool:
