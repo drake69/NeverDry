@@ -95,6 +95,9 @@ class IrrigationController:
         self._current_source: str | None = None
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
         self._manual_valve_open: dict[str, float | None] = {}
+        # Per manual session: valve_entity_id → (ts_start_wallclock, deficit_mm_pre).
+        # Consumed at manual close to emit the SESSION_RESULT structured log line.
+        self._manual_session_meta: dict[str, tuple[datetime, float]] = {}
         # Per-valve safety-close watchdog for external (non-commanded) opens
         self._manual_safety_tasks: dict[str, asyncio.Task] = {}
         # Reverse map: valve_entity_id → zone_name
@@ -374,6 +377,42 @@ class IrrigationController:
 
     # ── Core irrigation logic ────────────────────────────
 
+    def _log_session_result(
+        self,
+        *,
+        zone_name: str,
+        zone,
+        source: str,
+        ts_start: datetime,
+        ts_end: datetime,
+        volume_target_L: float | None,
+        volume_delivered_L: float,
+        deficit_mm_pre: float,
+        deficit_mm_post: float,
+    ) -> None:
+        # Single-line INFO log marker for post-hoc field-test analysis.
+        # Format is intentionally stable: a leading SESSION_RESULT token
+        # followed by space-separated key=value pairs. External tools grep
+        # for the marker and parse the pairs; do not reorder casually.
+        duration_s = max(0.0, (ts_end - ts_start).total_seconds())
+        vol_target = "null" if volume_target_L is None else f"{volume_target_L:.1f}"
+        _LOGGER.info(
+            "SESSION_RESULT zone=%s source=%s delivery_mode=%s "
+            "duration_s=%.1f volume_target_L=%s volume_delivered_L=%.1f "
+            "deficit_mm_pre=%.2f deficit_mm_post=%.2f "
+            "ts_start=%s ts_end=%s",
+            zone_name,
+            source,
+            zone.delivery_mode,
+            duration_s,
+            vol_target,
+            volume_delivered_L,
+            deficit_mm_pre,
+            deficit_mm_post,
+            ts_start.isoformat(),
+            ts_end.isoformat(),
+        )
+
     async def _irrigate_zones(self, zone_names: list[str]) -> None:
         """Run irrigation cycle for the given zones sequentially."""
         self._running = True
@@ -416,14 +455,16 @@ class IrrigationController:
                 # lose every mm we had already delivered).
                 deficit_at_start = zone._zone_deficit
                 zone._deficit_at_irrigation_start = deficit_at_start
+                ts_start = datetime.now()
                 delivered = await self._deliver_water(zone)
+                ts_end = datetime.now()
 
                 if self._stop_requested:
                     break
 
                 if delivered > 0:
                     irrigated_zones.append(
-                        (zone_name, delivered, volume_target, deficit_at_start),
+                        (zone_name, delivered, volume_target, deficit_at_start, ts_start, ts_end),
                     )
                     self._hass.bus.async_fire(
                         EVENT_IRRIGATION_COMPLETE,
@@ -453,7 +494,7 @@ class IrrigationController:
             # both write ``max(0, deficit_at_start - delivered_mm)``.
             if irrigated_zones and not self._stop_requested:
                 all_complete = True
-                for zone_name, delivered, target, deficit_at_start in irrigated_zones:
+                for zone_name, delivered, target, deficit_at_start, ts_start, ts_end in irrigated_zones:
                     zone = self._zones[zone_name]
                     if delivered >= target:
                         # Full irrigation — reset deficit to zero
@@ -478,6 +519,17 @@ class IrrigationController:
                         )
                     zone._deficit_at_irrigation_start = None
                     zone.async_write_ha_state()
+                    self._log_session_result(
+                        zone_name=zone_name,
+                        zone=zone,
+                        source=self._current_source or "automatic",
+                        ts_start=ts_start,
+                        ts_end=ts_end,
+                        volume_target_L=target,
+                        volume_delivered_L=delivered,
+                        deficit_mm_pre=deficit_at_start,
+                        deficit_mm_post=zone._zone_deficit,
+                    )
                 # Reset reference sensor only if ALL zones fully irrigated
                 zone_names_irrigated = {z[0] for z in irrigated_zones}
                 if all_complete and zone_names_irrigated == set(self._zones.keys()):
@@ -969,6 +1021,8 @@ class IrrigationController:
                     self._manual_valve_open[entity_id] = self._read_flow_meter(zone.flow_meter_sensor)
             else:
                 self._manual_valve_open[entity_id] = None
+            # Snapshot for the SESSION_RESULT log emitted at manual close.
+            self._manual_session_meta[entity_id] = (datetime.now(), zone._zone_deficit)
             # Reflect "currently irrigating" in zone state so UI/automations
             # see the same flag they would during a commanded cycle.
             zone.set_irrigating(True)
@@ -996,6 +1050,7 @@ class IrrigationController:
             baseline = self._manual_valve_open.pop(entity_id, None)
             zone.set_irrigating(False)
 
+            delivered_for_log: float = 0.0
             if zone.flow_meter_sensor and baseline is not None:
                 is_rate = self._is_flow_rate_sensor(zone.flow_meter_sensor)
                 if is_rate:
@@ -1023,6 +1078,7 @@ class IrrigationController:
                     zone._last_irrigation_source = "manual"
                     zone._last_irrigated = datetime.now()
                     zone._last_volume_delivered = round(delivered_liters, 1)
+                    delivered_for_log = delivered_liters
                     _LOGGER.info(
                         "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
                         zone_name,
@@ -1052,6 +1108,20 @@ class IrrigationController:
                     "deficit_mm": round(zone._zone_deficit, 2),
                 },
             )
+            session_meta = self._manual_session_meta.pop(entity_id, None)
+            if session_meta is not None:
+                ts_start, deficit_pre = session_meta
+                self._log_session_result(
+                    zone_name=zone_name,
+                    zone=zone,
+                    source="manual",
+                    ts_start=ts_start,
+                    ts_end=datetime.now(),
+                    volume_target_L=None,
+                    volume_delivered_L=delivered_for_log,
+                    deficit_mm_pre=deficit_pre,
+                    deficit_mm_post=zone._zone_deficit,
+                )
 
     async def _external_session_monitor(self, entity_id: str, zone_name: str) -> None:
         """Auto-close a manually-opened valve at min(volume_needed, timeout).

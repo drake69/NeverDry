@@ -98,6 +98,11 @@ def _create_ha_stubs():
 
     device_registry_mod.DeviceInfo = DeviceInfo
 
+    # homeassistant.helpers.entity_registry
+    entity_registry_mod = ModuleType("homeassistant.helpers.entity_registry")
+    entity_registry_mod.async_get = MagicMock(return_value=MagicMock())
+    entity_registry_mod.async_entries_for_device = MagicMock(return_value=[])
+
     # homeassistant.const
     const_mod = ModuleType("homeassistant.const")
 
@@ -111,6 +116,7 @@ def _create_ha_stubs():
     helpers_mod = ModuleType("homeassistant.helpers")
     helpers_mod.config_validation = cv_mod
     helpers_mod.device_registry = device_registry_mod
+    helpers_mod.entity_registry = entity_registry_mod
     mods = {
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
@@ -122,6 +128,7 @@ def _create_ha_stubs():
         "homeassistant.helpers": helpers_mod,
         "homeassistant.helpers.config_validation": cv_mod,
         "homeassistant.helpers.entity_platform": entity_platform_mod,
+        "homeassistant.helpers.entity_registry": entity_registry_mod,
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
         "homeassistant.helpers.device_registry": device_registry_mod,
@@ -176,7 +183,15 @@ def base_config():
 
 @pytest.fixture
 def hass_mock():
-    """Mock HomeAssistant instance with async services."""
+    """Mock HomeAssistant instance with async services.
+
+    Provides a real event loop for the fixture lifetime so that both sync
+    and async test paths can create tasks without hitting the Python 3.12
+    deprecation of implicit event-loop creation.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     hass = MagicMock()
     hass.states = MagicMock()
     hass.services = MagicMock()
@@ -184,12 +199,23 @@ def hass_mock():
     hass.services.async_register = MagicMock()
     hass.bus = MagicMock()
     hass.bus.async_fire = MagicMock()
-    # async_create_task runs the coroutine directly for testing
-    hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
+
+    def _create_task(coro):
+        try:
+            running = asyncio.get_running_loop()
+            return running.create_task(coro)
+        except RuntimeError:
+            return loop.create_task(coro)
+
+    hass.async_create_task = _create_task
     # Mock HA config with latitude (northern hemisphere)
     hass.config = MagicMock()
     hass.config.latitude = 45.0
-    return hass
+
+    yield hass
+
+    loop.close()
+    asyncio.set_event_loop(None)
 
 
 @pytest.fixture
