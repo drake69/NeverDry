@@ -89,6 +89,8 @@ _TRANSIENT_FAILURES: frozenset[FailureKind] = frozenset(
     {FailureKind.OPEN_FAILED, FailureKind.CLOSE_VERIFICATION_FAILED}
 )
 
+_OPEN_STATES: frozenset[ValveState] = frozenset({ValveState.OPEN, ValveState.OPEN_VERIFIED})
+
 _OPERATION_FOR_FAILURE: dict[FailureKind, str] = {
     FailureKind.OPEN_FAILED: "open",
     FailureKind.ACTUATION_FAILED: "open",
@@ -116,6 +118,11 @@ class ValveOperator:
         backoff_s: tuple[float, ...] | None = None,
         flow_zero_threshold: float = 0.05,
         notifier: ValveNotifier | None = None,
+        max_open_duration_s: float = 3600.0,
+        hw_max_duration_entity: str | None = None,
+        hw_max_duration_multiplier: float = 1.0,
+        hw_max_duration_topic: str | None = None,
+        hw_max_duration_payload_template: str = "{value}",
     ) -> None:
         """Wire the operator to HA, subscribe to state changes and build the FSM."""
         self._hass = hass
@@ -128,15 +135,19 @@ class ValveOperator:
         self._backoff_s = backoff_s if backoff_s is not None else self.DEFAULT_BACKOFF_S
         self._flow_zero_threshold = flow_zero_threshold
         self._notifier = notifier
+        self._max_open_duration_s = max_open_duration_s
+        self._hw_max_duration_entity = hw_max_duration_entity
+        self._hw_max_duration_multiplier = hw_max_duration_multiplier
+        self._hw_max_duration_topic = hw_max_duration_topic
+        self._hw_max_duration_payload_template = hw_max_duration_payload_template
 
         self._lock = asyncio.Lock()
         self._timers: dict[TimerName, asyncio.Task] = {}
         self._completion: asyncio.Future[OperationResult] | None = None
         self._expected_terminal: tuple[ValveState, ...] = ()
-        # AI-032: tracks whether we have already attempted the last-resort
-        # leak recovery for the current close() call. Reset at the start of
-        # every close() invocation.
         self._leak_recovery_attempted: bool = False
+        self._watchdog_task: asyncio.Task | None = None
+        self._hw_duration_set: bool = False
 
         self._unsub_switch = async_track_state_change_event(hass, [switch_entity_id], self._on_switch_state)
         self._unsub_flow = None
@@ -226,6 +237,7 @@ class ValveOperator:
         if self._unsub_flow:
             self._unsub_flow()
         self._cancel_all_timers()
+        self._cancel_watchdog()
 
     # ── Command driver ───────────────────────────────────────────────
 
@@ -323,6 +335,7 @@ class ValveOperator:
         result = self._fsm.dispatch(event)
         await self._execute_actions(result.actions)
         self._check_terminal(result)
+        self._manage_watchdog()
 
     async def _execute_actions(self, actions: tuple[FsmAction, ...]) -> None:
         """Run every action returned by the FSM, in order."""
@@ -486,6 +499,123 @@ class ValveOperator:
                 self._zone_name,
                 service,
                 exc,
+            )
+
+    # ── Watchdog ─────────────────────────────────────────────────────
+
+    def _manage_watchdog(self) -> None:
+        """Start the absolute watchdog when the valve is open; cancel it otherwise.
+
+        On the first transition into an open state also schedules the
+        hardware max-duration write (if a hw entity is configured), so the
+        on-device timer is set even if HA later loses communication.
+        """
+        if self._fsm.state in _OPEN_STATES:
+            if self._watchdog_task is None or self._watchdog_task.done():
+                self._watchdog_task = self._hass.async_create_task(self._watchdog())
+                self._hass.async_create_task(self._set_hw_max_duration())
+        else:
+            self._cancel_watchdog()
+
+    def _cancel_watchdog(self) -> None:
+        """Cancel the watchdog task and reset the hw-duration sentinel."""
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+        self._watchdog_task = None
+        self._hw_duration_set = False
+
+    async def _set_hw_max_duration(self) -> None:
+        """Write max_open_duration to the valve's on-device hardware timer.
+
+        Called once per open cycle (idempotent via ``_hw_duration_set``).
+        Two paths, in order of preference:
+
+        1. **HA entity** (``hw_max_duration_entity``): calls ``number.set_value``
+           — works for ZHA, Z2M with MQTT discovery, Matter, any integration
+           that surfaces the timer as a HA ``number`` entity.
+
+        2. **Raw MQTT** (``hw_max_duration_topic``): calls ``mqtt.publish``
+           with a configurable payload template — fallback for Z2M without HA
+           discovery or other raw-MQTT setups. The template string is rendered
+           with ``{value}`` replaced by the computed duration value (e.g.
+           ``'{{"irrigation_duration": {value}}}'`` → ``'{"irrigation_duration": 60}'``).
+
+        Failures in either path are logged as WARNING but never raise.
+        """
+        if self._hw_duration_set:
+            return
+        has_entity = self._hw_max_duration_entity is not None
+        has_topic = self._hw_max_duration_topic is not None
+        if not has_entity and not has_topic:
+            return
+        self._hw_duration_set = True
+        value = round(self._max_open_duration_s * self._hw_max_duration_multiplier, 1)
+
+        if has_entity:
+            try:
+                await self._hass.services.async_call(
+                    "number",
+                    "set_value",
+                    {"entity_id": self._hw_max_duration_entity, "value": value},
+                    blocking=False,
+                )
+                _LOGGER.debug(
+                    "Valve '%s' hardware max_duration set to %.1f via entity %s",
+                    self._zone_name,
+                    value,
+                    self._hw_max_duration_entity,
+                )
+                return
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Valve '%s' failed to set hardware max_duration via entity %s: %s; "
+                    "falling back to MQTT topic if configured",
+                    self._zone_name,
+                    self._hw_max_duration_entity,
+                    exc,
+                )
+
+        if has_topic:
+            try:
+                payload = self._hw_max_duration_payload_template.format(value=value)
+                await self._hass.services.async_call(
+                    "mqtt",
+                    "publish",
+                    {"topic": self._hw_max_duration_topic, "payload": payload},
+                    blocking=False,
+                )
+                _LOGGER.debug(
+                    "Valve '%s' hardware max_duration set to %.1f via MQTT topic %s",
+                    self._zone_name,
+                    value,
+                    self._hw_max_duration_topic,
+                )
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Valve '%s' failed to set hardware max_duration via MQTT topic %s: %s",
+                    self._zone_name,
+                    self._hw_max_duration_topic,
+                    exc,
+                )
+
+    async def _watchdog(self) -> None:
+        """Absolute safety timer: force-close the valve if it stays open too long."""
+        try:
+            await asyncio.sleep(self._max_open_duration_s)
+        except asyncio.CancelledError:
+            return
+        _LOGGER.error(
+            "Valve '%s' watchdog triggered after %.0f s open — forcing turn_off",
+            self._zone_name,
+            self._max_open_duration_s,
+        )
+        await self._call_switch("turn_off")
+        if self._notifier is not None:
+            await self._notifier.notify(
+                self._zone_name,
+                NotificationKind.WATCHDOG_TRIGGERED,
+                Severity.CRITICAL,
+                context={"duration_min": int(self._max_open_duration_s / 60)},
             )
 
     # ── Timer plumbing ───────────────────────────────────────────────

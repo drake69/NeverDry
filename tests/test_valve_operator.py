@@ -703,3 +703,404 @@ async def test_duration_ms_is_populated(hass):
     await sim
 
     assert result.duration_ms > 0.0
+
+
+# ── AI-033: Absolute watchdog timer ──────────────────────────────────
+
+
+def _make_operator_with_watchdog(
+    hass,
+    *,
+    max_open_duration_s: float = 0.05,
+    has_flow_meter: bool = False,
+) -> ValveOperator:
+    """Build a ValveOperator with a very short watchdog timeout for testing."""
+    from never_dry.valve_notifier import ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    return ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        flow_sensor_entity_id="sensor.flow" if has_flow_meter else None,
+        zone_name="watchzone",
+        fsm_config=_fast_fsm_config(has_flow_meter),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+        max_open_duration_s=max_open_duration_s,
+    ), notifier
+
+
+async def test_watchdog_fires_and_calls_turn_off(hass):
+    """Watchdog triggers turn_off when valve stays open past max_open_duration_s."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=0.05)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    assert op.state == ValveState.OPEN
+    hass.services.async_call.reset_mock()
+
+    await asyncio.sleep(0.1)
+
+    turn_off_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
+    assert len(turn_off_calls) >= 1
+
+
+async def test_watchdog_fires_critical_notification(hass):
+    """Watchdog emits a WATCHDOG_TRIGGERED CRITICAL notification."""
+    from never_dry.valve_notifier import NotificationKind
+
+    op, notifier = _make_operator_with_watchdog(hass, max_open_duration_s=0.05)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    await asyncio.sleep(0.1)
+
+    assert notifier.is_active("watchzone", NotificationKind.WATCHDOG_TRIGGERED)
+
+
+async def test_watchdog_cancelled_on_normal_close(hass):
+    """After a normal close, the watchdog task is cancelled and not pending."""
+    op, notifier = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    assert op._watchdog_task is not None
+
+    async def close_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("off"))
+
+    sim = asyncio.create_task(close_sim())
+    result = await op.close()
+    await sim
+
+    assert result.status == OperationStatus.OK
+    assert op._watchdog_task is None
+
+
+async def test_watchdog_not_restarted_on_open_to_open_verified(hass):
+    """OPEN → OPEN_VERIFIED transition does not create a second watchdog task."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=5.0, has_flow_meter=True)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+        await _yield_loop()
+        await op._handle_flow_state(_state_event("0.5"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    assert op.state == ValveState.OPEN_VERIFIED
+    task_after_verified = op._watchdog_task
+    assert task_after_verified is not None
+    assert not task_after_verified.done()
+
+
+async def test_watchdog_cancelled_on_unload(hass):
+    """async_unload cancels a pending watchdog task."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    assert op._watchdog_task is not None
+    op.async_unload()
+    assert op._watchdog_task is None
+
+
+async def test_watchdog_not_started_when_valve_not_open(hass):
+    """No watchdog is started if the open attempt fails."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)
+    result = await op.open()
+    assert result.status == OperationStatus.FAILED
+    assert op._watchdog_task is None
+
+
+# ── Hardware max-duration interlock ──────────────────────────────────
+
+
+def _make_operator_with_hw_interlock(hass, *, max_open_duration_s: float = 5.0) -> ValveOperator:
+    """Build an operator with both software watchdog and hw_max_duration_entity."""
+    from never_dry.valve_notifier import ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    return ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="hwzone",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+        max_open_duration_s=max_open_duration_s,
+        hw_max_duration_entity="number.hw_timer",
+        hw_max_duration_multiplier=1.0,
+    )
+
+
+async def test_hw_max_duration_called_on_open(hass):
+    """number.set_value is called on the hw entity when the valve opens."""
+    op = _make_operator_with_hw_interlock(hass, max_open_duration_s=120.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    set_value_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("number", "set_value")
+    ]
+    assert len(set_value_calls) == 1
+    assert set_value_calls[0].args[2]["entity_id"] == "number.hw_timer"
+    assert set_value_calls[0].args[2]["value"] == pytest.approx(120.0)
+
+
+async def test_hw_max_duration_not_called_on_failed_open(hass):
+    """number.set_value is NOT called when the open attempt fails."""
+    op = _make_operator_with_hw_interlock(hass, max_open_duration_s=120.0)
+    result = await op.open()
+    assert result.status == OperationStatus.FAILED
+    await _yield_loop(5)
+
+    set_value_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("number", "set_value")
+    ]
+    assert len(set_value_calls) == 0
+
+
+async def test_hw_max_duration_called_again_after_close_reopen(hass):
+    """number.set_value is called again after a close+reopen cycle."""
+    op = _make_operator_with_hw_interlock(hass, max_open_duration_s=60.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    async def close_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("off"))
+
+    sim = asyncio.create_task(close_sim())
+    await op.close()
+    await sim
+
+    hass.services.async_call.reset_mock()
+
+    bg2 = asyncio.create_task(open_sim())
+    await op.open()
+    await bg2
+    await _yield_loop(5)
+
+    set_value_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("number", "set_value")
+    ]
+    assert len(set_value_calls) == 1
+
+
+async def test_hw_max_duration_called_once_per_open(hass):
+    """OPEN → OPEN_VERIFIED transition does not call number.set_value a second time."""
+    from never_dry.valve_notifier import ValveNotifier
+
+    notifier = ValveNotifier(hass)
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        flow_sensor_entity_id="sensor.flow",
+        zone_name="hwzone2",
+        fsm_config=_fast_fsm_config(True),
+        max_retries=0,
+        backoff_s=(0.0,),
+        notifier=notifier,
+        max_open_duration_s=60.0,
+        hw_max_duration_entity="number.hw_timer",
+        hw_max_duration_multiplier=1.0,
+    )
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+        await _yield_loop()
+        await op._handle_flow_state(_state_event("0.5"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    assert op.state == ValveState.OPEN_VERIFIED
+    set_value_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("number", "set_value")
+    ]
+    assert len(set_value_calls) == 1
+
+
+async def test_hw_max_duration_with_minute_multiplier(hass):
+    """Multiplier is applied: 120s * (1/60) = 2.0 minutes written to entity."""
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="hwzone3",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        max_open_duration_s=120.0,
+        hw_max_duration_entity="number.hw_timer_min",
+        hw_max_duration_multiplier=1.0 / 60.0,
+    )
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    set_value_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("number", "set_value")
+    ]
+    assert len(set_value_calls) == 1
+    assert set_value_calls[0].args[2]["value"] == pytest.approx(2.0, rel=1e-3)
+
+
+async def test_hw_max_duration_mqtt_fallback_when_no_entity(hass):
+    """When no entity is configured but a topic is, mqtt.publish is called."""
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="mqttzone",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        max_open_duration_s=60.0,
+        hw_max_duration_entity=None,
+        hw_max_duration_topic="zigbee2mqtt/valve/set",
+        hw_max_duration_payload_template='{{"irrigation_duration": {value}}}',
+    )
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    mqtt_calls = [
+        c for c in hass.services.async_call.call_args_list
+        if c.args[:2] == ("mqtt", "publish")
+    ]
+    assert len(mqtt_calls) == 1
+    assert mqtt_calls[0].args[2]["topic"] == "zigbee2mqtt/valve/set"
+    assert mqtt_calls[0].args[2]["payload"] == '{"irrigation_duration": 60.0}'
+
+
+async def test_hw_max_duration_entity_tried_before_mqtt(hass):
+    """Entity path is tried first; MQTT is only used if entity call fails."""
+    original_call = hass.services.async_call
+    entity_attempted = []
+    mqtt_calls = []
+
+    async def tracking_call(*args, **kwargs):
+        if args[:2] == ("number", "set_value"):
+            entity_attempted.append(True)
+            raise RuntimeError("entity unavailable")
+        if args[:2] == ("mqtt", "publish"):
+            mqtt_calls.append(args[2])
+        return await original_call(*args, **kwargs)
+
+    hass.services.async_call = tracking_call
+
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="fallbackzone",
+        fsm_config=_fast_fsm_config(False),
+        max_retries=0,
+        backoff_s=(0.0,),
+        max_open_duration_s=30.0,
+        hw_max_duration_entity="number.hw_timer",
+        hw_max_duration_topic="mqtt/valve/set",
+        hw_max_duration_payload_template="{value}",
+    )
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+    await _yield_loop(5)
+
+    assert entity_attempted, "entity path was never tried"
+    assert len(mqtt_calls) == 1
+    assert mqtt_calls[0]["payload"] == "30.0"
+
+
+async def test_hw_max_duration_exception_is_swallowed(hass, caplog):
+    """A failing number.set_value call is logged as WARNING but never raises."""
+    original_call = hass.services.async_call
+
+    async def side_effect(*args, **kwargs):
+        if args[:2] == ("number", "set_value"):
+            raise RuntimeError("entity not found")
+        return await original_call(*args, **kwargs)
+
+    hass.services.async_call = side_effect
+
+    op = _make_operator_with_hw_interlock(hass, max_open_duration_s=60.0)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    result = await op.open()
+    await bg
+    await _yield_loop(5)
+
+    assert result.status == OperationStatus.OK
+    assert "failed to set hardware max_duration" in caplog.text
