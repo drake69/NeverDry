@@ -288,10 +288,7 @@ def _discover_hw_max_duration(
         entry
         for entry in async_entries_for_device(ent_reg, device_id, include_disabled_entities=False)
         if entry.domain == "number"
-        and any(
-            kw in (entry.entity_id + " " + (entry.original_name or "")).lower()
-            for kw in _HW_DURATION_KEYWORDS
-        )
+        and any(kw in (entry.entity_id + " " + (entry.original_name or "")).lower() for kw in _HW_DURATION_KEYWORDS)
     ]
     if not candidates:
         return None, 1.0

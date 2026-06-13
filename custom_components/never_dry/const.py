@@ -127,8 +127,8 @@ ANOMALY_DEFICIT_MULTIPLIER = 2  # alert when deficit > threshold * this
 CONF_BACKFILL_DAYS = "backfill_days"
 
 # ── ET sensor robustness buffer ──────────────────────────
-ET_BUFFER_SIZE = 10          # rolling window of valid readings
-ET_BUFFER_MIN_READINGS = 1   # minimum readings before median is trusted
+ET_BUFFER_SIZE = 10  # rolling window of valid readings
+ET_BUFFER_MIN_READINGS = 1  # minimum readings before median is trusted
 ET_TEMP_VALID_RANGE = (-50.0, 70.0)  # °C physical bounds
 
 # ── Runtime safety limits ────────────────────────────────
