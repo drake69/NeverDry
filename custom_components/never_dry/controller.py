@@ -219,9 +219,15 @@ class IrrigationController:
                 "threshold_mm",
                 DEFAULT_THRESHOLD,
             )
+            _LOGGER.info(
+                "Scheduled check fired: zone='%s', deficit=%.1fmm, threshold=%.1fmm",
+                zone_name,
+                zone._zone_deficit,
+                threshold,
+            )
             if zone._zone_deficit < threshold:
-                _LOGGER.debug(
-                    "Scheduled check: zone='%s' deficit=%.1fmm < threshold=%.1fmm, skipping",
+                _LOGGER.info(
+                    "Scheduled check: zone='%s' deficit=%.1fmm < threshold=%.1fmm — no irrigation needed",
                     zone_name,
                     zone._zone_deficit,
                     threshold,
@@ -256,6 +262,13 @@ class IrrigationController:
             if zone._zone_deficit < zone._threshold:
                 return
             if self._running:
+                _LOGGER.info(
+                    "Reactive check: zone='%s' deficit=%.1fmm >= threshold=%.1fmm"
+                    " — skipping, irrigation already running",
+                    zone_name,
+                    zone._zone_deficit,
+                    zone._threshold,
+                )
                 return
             if self._is_throttled("reactive", zone_name):
                 return
@@ -433,18 +446,21 @@ class IrrigationController:
 
                 if zone.volume_liters <= 0:
                     _LOGGER.info(
-                        "Zone '%s' needs 0L irrigation (deficit=%.1fmm), skipping",
+                        "Zone '%s' needs 0L irrigation — skipping (deficit=%.1fmm, area=%.1fm², efficiency=%.2f)",
                         zone_name,
                         zone._zone_deficit,
+                        zone._area,
+                        zone._efficiency,
                     )
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm",
+                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm, timeout=%ds",
                     zone_name,
                     zone.delivery_mode,
                     zone.volume_liters,
                     zone._zone_deficit,
+                    zone.delivery_timeout,
                 )
 
                 volume_target = zone.volume_liters
@@ -921,6 +937,7 @@ class IrrigationController:
         (used for valves without an operator, including the test harness).
         """
         self._active_valve = entity_id
+        _LOGGER.info("Attempting valve open: '%s'", entity_id)
         operator = self._valve_operators.get(entity_id)
         if operator is None:
             await self._hass.services.async_call("switch", "turn_on", {"entity_id": entity_id})

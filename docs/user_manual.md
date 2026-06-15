@@ -662,6 +662,41 @@ card:
 
 ## 14. Troubleshooting
 
+### Reading the NeverDry activity log
+
+NeverDry writes a dedicated log file to your HA configuration directory:
+
+```
+<ha_config_dir>/never_dry_activity.log
+```
+
+Every decision the integration makes — whether the threshold was met, whether the
+valve was told to open, how long the timeout was, why a cycle was skipped — is
+recorded there at INFO level. The file rotates at 5 MB and keeps 2 backups, so you
+always have the recent history available.
+
+**Quickest way to read it:** use the **Download diagnostics** button in the
+integration card (**Settings → Devices & Services → NeverDry → ⋮ → Download
+diagnostics**). The downloaded JSON includes the last 500 log lines plus a state
+snapshot of all NeverDry entities — ready to attach to a bug report or share with
+the community.
+
+### Irrigation did not fire today
+
+If you expected irrigation but nothing happened, open the activity log and search
+for the scheduled time. You will find one of these outcomes:
+
+| What you see | Meaning |
+|---|---|
+| No `Scheduled check fired:` entry | The time trigger never ran — check the zone's `irrigation_time` setting and reload the integration |
+| `no irrigation needed` | The deficit was below the threshold at trigger time — check `deficit_mm` and `threshold_mm` in the log line |
+| `Scheduled irrigation for '…' skipped` | Another zone was still irrigating — check the previous cycle's `SESSION_RESULT` for its duration |
+| `needs 0L irrigation — skipping` | `volume_liters` computed to 0 — log line shows `deficit`, `area`, `efficiency`; check zone configuration |
+| `Attempting valve open:` present, no `Completed irrigation:` | Valve failed to open — look for `ERROR` lines immediately after |
+
+For reactive mode, search for `Reactive check:` to see if a skip due to a
+concurrent cycle is logged, or `Reactive irrigation triggered:` to confirm it fired.
+
 ### Sensors show "unavailable"
 
 - Check that the temperature and rain sensor entity IDs are correct in the integration settings
