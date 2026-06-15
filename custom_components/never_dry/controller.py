@@ -446,8 +446,7 @@ class IrrigationController:
 
                 if zone.volume_liters <= 0:
                     _LOGGER.info(
-                        "Zone '%s' needs 0L irrigation — skipping"
-                        " (deficit=%.1fmm, area=%.1fm², efficiency=%.2f)",
+                        "Zone '%s' needs 0L irrigation — skipping (deficit=%.1fmm, area=%.1fm², efficiency=%.2f)",
                         zone_name,
                         zone._zone_deficit,
                         zone._area,
@@ -456,8 +455,7 @@ class IrrigationController:
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL,"
-                    " deficit=%.1fmm, timeout=%ds",
+                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm, timeout=%ds",
                     zone_name,
                     zone.delivery_mode,
                     zone.volume_liters,

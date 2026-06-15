@@ -61,6 +61,7 @@ def _teardown_file_logger(handler: logging.Handler) -> None:
     logging.getLogger("custom_components.never_dry").removeHandler(handler)
     handler.close()
 
+
 PLATFORMS = ["sensor", "button"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
