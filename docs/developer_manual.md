@@ -13,6 +13,7 @@
 9. [Versioning and releases](#9-versioning-and-releases)
 10. [Config entry migration](#10-config-entry-migration)
 11. [Security CI](#11-security-ci)
+12. [Activity log and diagnostics](#12-activity-log-and-diagnostics)
 
 ---
 
@@ -493,3 +494,93 @@ bandit -r custom_components/never_dry/ --severity-level medium --confidence-leve
 grep -rn 'eval\|exec\|subprocess\|os\.system\|pickle\|__import__' custom_components/never_dry/ --include='*.py'
 # Should return nothing
 ```
+
+---
+
+## 12. Activity log and diagnostics
+
+### 12.1 Dedicated activity log file
+
+When the integration loads, `async_setup_entry` in `__init__.py` attaches a
+`RotatingFileHandler` to the `custom_components.never_dry` Python logger namespace.
+Every `_LOGGER.*()` call in every module — `controller.py`, `sensor.py`,
+`valve_operator.py`, `valve_fsm.py` — flows there automatically because all modules
+use `logging.getLogger(__name__)`, which inherits from the namespace.
+
+**File location:** `<ha_config_dir>/never_dry_activity.log`
+**Rotation:** 5 MB per file, 2 backups (up to ~15 MB total)
+**Level:** `DEBUG` — captures everything, including decision-point traces
+
+The handler is torn down cleanly in `async_unload_entry` so it does not accumulate
+on reload.
+
+### 12.2 Key log markers
+
+The following structured tokens appear in the activity log and are easy to grep for:
+
+| Token | Level | When |
+|---|---|---|
+| `Scheduled check fired:` | INFO | Scheduled handler triggered by `async_track_time_change` |
+| `no irrigation needed` | INFO | Threshold not met at scheduled time |
+| `Scheduled irrigation triggered:` | INFO | Threshold met, cycle starting |
+| `Scheduled irrigation for '…' skipped` | WARNING | Cycle already running at trigger time |
+| `Reactive check:` | INFO | Reactive handler saw deficit ≥ threshold but skipped (running) |
+| `Reactive irrigation triggered:` | INFO | Reactive handler launched a cycle |
+| `Attempting valve open:` | INFO | `_open_valve` about to send the service call |
+| `Starting irrigation:` | INFO | Cycle begun — includes `mode`, `volume`, `deficit`, `timeout` |
+| `needs 0L irrigation — skipping` | INFO | Volume is 0 — includes `deficit`, `area`, `efficiency` |
+| `SESSION_RESULT` | INFO | End-of-session structured line (stable format, grep-friendly) |
+| `flow_meter timeout` / `flow_rate timeout` | WARNING | Delivery timed out before target volume reached |
+
+**Useful one-liners for field diagnosis:**
+
+```bash
+# All events for today
+grep "$(date +%Y-%m-%d)" /config/never_dry_activity.log
+
+# Why did it fire (or not fire)?
+grep -E "Scheduled check|triggered|skipped|no irrigation" /config/never_dry_activity.log
+
+# All completed irrigation sessions
+grep "SESSION_RESULT" /config/never_dry_activity.log
+
+# Valve open/close events
+grep -E "Attempting valve|Valve open failed|Valve close" /config/never_dry_activity.log
+
+# Timeouts and errors
+grep -E "timeout|ERROR|WARNING" /config/never_dry_activity.log
+```
+
+### 12.3 HA diagnostics download
+
+`diagnostics.py` implements the standard HA diagnostics platform. A
+**Download diagnostics** button appears automatically in the integration UI under
+**Settings → Devices & Services → NeverDry → ⋮**.
+
+The downloaded JSON bundle contains:
+
+| Field | Content |
+|---|---|
+| `config_data` | Config entry data (secrets redacted) |
+| `entity_states` | Snapshot of all NeverDry entity states and attributes |
+| `activity_log.tail` | Last 500 lines of `never_dry_activity.log` |
+| `activity_log.path` | Absolute path to the log file on the HA host |
+| `activity_log.total_lines` | Total line count at download time |
+
+This bundle is designed to be attached to a bug report or a field-test session
+without exposing any credentials.
+
+### 12.4 Enabling DEBUG in HA logger (optional)
+
+By default, HA logs at INFO for custom integrations. The activity log file always
+captures DEBUG regardless of the HA logger setting. To also see DEBUG in the main
+HA log (useful during development), add to `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.never_dry: debug
+```
+
+Restart or reload the integration after the change.
