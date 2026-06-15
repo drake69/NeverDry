@@ -51,7 +51,7 @@ async def async_get_config_entry_diagnostics(
     log_path = hass.config.path("never_dry_activity.log")
     if os.path.isfile(log_path):
         try:
-            with open(log_path, encoding="utf-8", errors="replace") as fh:  # noqa: PTH123
+            with open(log_path, encoding="utf-8", errors="replace") as fh:
                 lines = fh.readlines()
             log_tail = "".join(lines[-_LOG_TAIL_LINES:])
             log_total_lines = len(lines)

@@ -30,7 +30,7 @@ def _setup_file_logger(hass: HomeAssistant) -> logging.Handler:
     which inherits from this namespace. Attaching once here captures every
     INFO/DEBUG line across controller, sensor, valve_operator, etc.
 
-    File: <ha_config_dir>/never_dry_activity.log (5 MB × 3 files).
+    File: <ha_config_dir>/never_dry_activity.log (5 MB x 3 files).
     """
     log_path = hass.config.path("never_dry_activity.log")
     handler = logging.handlers.RotatingFileHandler(
@@ -48,7 +48,7 @@ def _setup_file_logger(hass: HomeAssistant) -> logging.Handler:
     )
     logging.getLogger("custom_components.never_dry").addHandler(handler)
     _LOGGER.info(
-        "NeverDry activity log → %s (%.0f MB × %d)",
+        "NeverDry activity log -> %s (%.0f MB x %d)",
         log_path,
         _ACTIVITY_LOG_MAX_BYTES / 1024 / 1024,
         _ACTIVITY_LOG_BACKUP_COUNT + 1,
