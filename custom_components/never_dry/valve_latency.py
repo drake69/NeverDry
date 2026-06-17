@@ -2,8 +2,8 @@
 
 Measures the time between a CMD_OPEN/CMD_CLOSE dispatch and the matching
 hardware confirmation (OBS_SWITCH_ON / OBS_SWITCH_OFF).  Builds a rolling
-window of up to WINDOW_SIZE samples and computes mean + 3σ as the adaptive
-timeout fed back into the FSM timer, replacing the fixed 10 s default.
+window of up to WINDOW_SIZE samples and computes mean + 3*sigma as the
+adaptive timeout fed back into the FSM timer, replacing the fixed 10 s default.
 
 Samples are persisted to HA storage so the statistical model survives
 integration reloads and HA restarts.
@@ -41,7 +41,7 @@ class LatencyWindow:
         self._samples.append(latency_ms)
 
     def adaptive_timeout_s(self) -> float:
-        """Return mean + SIGMA·σ clamped to [MIN_TIMEOUT_S, MAX_TIMEOUT_S].
+        """Return mean + SIGMA*sigma clamped to [MIN_TIMEOUT_S, MAX_TIMEOUT_S].
 
         Returns DEFAULT_TIMEOUT_S when fewer than MIN_SAMPLES have been collected.
         """
@@ -57,7 +57,7 @@ class LatencyWindow:
             return {"sample_count": 0, "adaptive_timeout_s": DEFAULT_TIMEOUT_S}
         mean, std = self._mean_std()
         sorted_s = sorted(self._samples)
-        p95_idx = min(int(math.ceil(0.95 * n)) - 1, n - 1)
+        p95_idx = min(math.ceil(0.95 * n) - 1, n - 1)
         return {
             "sample_count": n,
             "mean_ms": round(mean, 1),

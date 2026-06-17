@@ -21,7 +21,7 @@ def hass():
     hass.states.get = MagicMock(return_value=MagicMock(state="off"))
     hass.services = MagicMock()
     hass.services.async_call = AsyncMock()
-    hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
+    hass.async_create_task = MagicMock()
     return hass
 
 

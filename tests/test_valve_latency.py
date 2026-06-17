@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections import deque
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,9 +31,9 @@ def test_adaptive_timeout_default_below_min_samples():
 
 
 def test_adaptive_timeout_with_sufficient_samples():
-    """adaptive_timeout_s = clamp(mean + 3σ / 1000, MIN, MAX)."""
+    """adaptive_timeout_s = clamp(mean + 3*sigma / 1000, MIN, MAX)."""
     w = LatencyWindow()
-    samples = [200.0] * 10  # mean=200, std=0 → raw=200ms=0.2s → clamped to MIN
+    samples = [200.0] * 10  # mean=200, std=0 -> raw=200ms=0.2s -> clamped to MIN
     for s in samples:
         w.record(s)
     result = w.adaptive_timeout_s()
@@ -47,7 +46,7 @@ def test_adaptive_timeout_clamped_to_min():
     """Very fast responses clamp to MIN_TIMEOUT_S."""
     w = LatencyWindow()
     for _ in range(10):
-        w.record(1.0)  # 1 ms → mean+3σ ≈ 0.001 s → below MIN
+        w.record(1.0)  # 1 ms -> mean+3*sigma ~= 0.001 s -> below MIN
     assert w.adaptive_timeout_s() == MIN_TIMEOUT_S
 
 
@@ -55,12 +54,12 @@ def test_adaptive_timeout_clamped_to_max():
     """Very slow responses clamp to MAX_TIMEOUT_S."""
     w = LatencyWindow()
     for _ in range(10):
-        w.record(50_000.0)  # 50 s each → well above MAX
+        w.record(50_000.0)  # 50 s each -> well above MAX
     assert w.adaptive_timeout_s() == MAX_TIMEOUT_S
 
 
 def test_adaptive_timeout_varied_samples():
-    """Mean + 3σ formula holds for a realistic spread."""
+    """Mean + 3*sigma formula holds for a realistic spread."""
     w = LatencyWindow()
     samples = [100.0, 120.0, 150.0, 110.0, 130.0, 90.0, 200.0, 105.0, 115.0, 125.0]
     for s in samples:
@@ -108,7 +107,7 @@ def test_as_dict_p95():
     for i in range(1, 21):  # 1..20
         w.record(float(i * 10))
     d = w.as_dict()
-    # 95th percentile of 20 samples → index ceil(0.95*20)-1 = 18 → value 190
+    # 95th percentile of 20 samples -> index ceil(0.95*20)-1 = 18 -> value 190
     assert d["p95_ms"] == 190.0
 
 
@@ -138,7 +137,7 @@ def tracker(hass, mock_store):
 
 
 async def test_tracker_load_empty(tracker):
-    t, store = tracker
+    t, _ = tracker
     await t.async_load()
     assert len(t.open._samples) == 0
     assert len(t.close._samples) == 0
