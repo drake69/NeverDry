@@ -143,9 +143,7 @@ async def test_tracker_load_empty(tracker):
 
 
 async def test_tracker_load_persisted_samples(hass, mock_store):
-    mock_store.async_load = AsyncMock(
-        return_value={"open": [100.0, 200.0, 150.0], "close": [50.0, 60.0]}
-    )
+    mock_store.async_load = AsyncMock(return_value={"open": [100.0, 200.0, 150.0], "close": [50.0, 60.0]})
     with patch("never_dry.valve_latency.Store", return_value=mock_store):
         t = ValveLatencyTracker(hass, "switch.valve")
     await t.async_load()
@@ -158,9 +156,7 @@ async def test_tracker_save(tracker):
     t.open.record(120.0)
     t.close.record(80.0)
     await t.async_save()
-    store.async_save.assert_awaited_once_with(
-        {"open": [120.0], "close": [80.0]}
-    )
+    store.async_save.assert_awaited_once_with({"open": [120.0], "close": [80.0]})
 
 
 def test_tracker_open_timeout_s_default(tracker):

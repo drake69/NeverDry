@@ -67,9 +67,7 @@ async def async_get_config_entry_diagnostics(
 
     # ── 4. Valve latency statistics ──────────────────────────────────────────
     operators = hass.data.get(DOMAIN, {}).get(f"_operators_{entry.entry_id}", {})
-    valve_latency = {
-        entity_id: op.latency_diagnostics for entity_id, op in operators.items()
-    }
+    valve_latency = {entity_id: op.latency_diagnostics for entity_id, op in operators.items()}
 
     return {
         "domain": DOMAIN,

@@ -33,9 +33,7 @@ _STORAGE_VERSION: int = 1
 class LatencyWindow:
     """Rolling window of confirmed-response latency samples."""
 
-    _samples: deque[float] = field(
-        default_factory=lambda: deque(maxlen=WINDOW_SIZE), repr=False
-    )
+    _samples: deque[float] = field(default_factory=lambda: deque(maxlen=WINDOW_SIZE), repr=False)
 
     def record(self, latency_ms: float) -> None:
         self._samples.append(latency_ms)
@@ -80,9 +78,7 @@ class ValveLatencyTracker:
 
     def __init__(self, hass: HomeAssistant, switch_entity_id: str) -> None:
         safe_id = switch_entity_id.replace(".", "_").replace("/", "_")
-        self._store: Store = Store(
-            hass, _STORAGE_VERSION, f"never_dry.latency.{safe_id}"
-        )
+        self._store: Store = Store(hass, _STORAGE_VERSION, f"never_dry.latency.{safe_id}")
         self.open = LatencyWindow()
         self.close = LatencyWindow()
 
