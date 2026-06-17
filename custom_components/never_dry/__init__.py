@@ -130,4 +130,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if handler is not None:
             _teardown_file_logger(handler)
         hass.data[DOMAIN].pop(entry.entry_id, None)
+        hass.data[DOMAIN].pop(f"_operators_{entry.entry_id}", None)
     return unload_ok
