@@ -12,8 +12,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
 
-<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>
-
 ---
 
 ## What it does
@@ -202,7 +200,6 @@ t    = V / FlowRate × 60                   [s]     irrigation duration
 
 - [User Manual](docs/user_manual.md)
 - [Developer Manual](docs/developer_manual.md)
-- [HACS Publishing Guide](docs/hacs_publishing_guide.md)
 - [Project Homepage](https://drake69.github.io/NeverDry/)
 
 ## Support
