@@ -103,6 +103,21 @@ def _create_ha_stubs():
     entity_registry_mod.async_get = MagicMock(return_value=MagicMock())
     entity_registry_mod.async_entries_for_device = MagicMock(return_value=[])
 
+    # homeassistant.helpers.storage
+    storage_mod = ModuleType("homeassistant.helpers.storage")
+
+    class _StubStore:
+        def __init__(self, hass, version, key):
+            pass
+
+        async def async_load(self):
+            return None
+
+        async def async_save(self, data):
+            pass
+
+    storage_mod.Store = _StubStore
+
     # homeassistant.const
     const_mod = ModuleType("homeassistant.const")
 
@@ -132,6 +147,7 @@ def _create_ha_stubs():
         "homeassistant.helpers.event": event_mod,
         "homeassistant.helpers.restore_state": restore_mod,
         "homeassistant.helpers.device_registry": device_registry_mod,
+        "homeassistant.helpers.storage": storage_mod,
         "homeassistant.helpers.typing": typing_mod,
         "homeassistant.components.recorder": recorder_mod,
         "homeassistant.components.recorder.history": recorder_history_mod,
