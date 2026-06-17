@@ -43,7 +43,7 @@ from .valve_fsm import (
     ValveFsm,
     ValveState,
 )
-from .valve_latency import ValveLatencyTracker
+from .valve_latency import MIN_SAMPLES, ValveLatencyTracker
 from .valve_notifier import NotificationKind, Severity, ValveNotifier
 
 _LOGGER = logging.getLogger(__name__)
@@ -634,9 +634,9 @@ class ValveOperator:
     def _start_timer(self, name: TimerName, seconds: float) -> None:
         """Start (or restart) a named timer that dispatches the matching TIMEOUT."""
         self._cancel_timer(name)
-        if name == TimerName.OPEN:
+        if name == TimerName.OPEN and len(self._latency.open._samples) >= MIN_SAMPLES:
             seconds = self._latency.open_timeout_s()
-        elif name == TimerName.CLOSE:
+        elif name == TimerName.CLOSE and len(self._latency.close._samples) >= MIN_SAMPLES:
             seconds = self._latency.close_timeout_s()
         self._timers[name] = self._hass.async_create_task(self._timer(name, seconds))
 
