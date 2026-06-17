@@ -136,45 +136,6 @@ NeverDry is configured entirely through the UI — no YAML required.
 
 ---
 
-## Automations
-
-### Mode A — Threshold trigger (per zone)
-
-```yaml
-automation:
-  - alias: "Irrigation — Vegetable Garden"
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.never_dry
-        above: 15
-    condition:
-      - condition: time
-        after: "06:00:00"
-        before: "09:00:00"
-    action:
-      - service: never_dry.irrigate_zone
-        data:
-          zone_name: "Vegetable Garden"
-```
-
-### Mode B — Nightly all zones
-
-```yaml
-automation:
-  - alias: "Nightly irrigation"
-    trigger:
-      - platform: time
-        at: "23:00:00"
-    condition:
-      - condition: numeric_state
-        entity_id: sensor.never_dry
-        above: 1
-    action:
-      - service: never_dry.irrigate_all
-```
-
----
-
 ## Scientific Background
 
 Based on the FAO-56 water balance (Allen et al., 1998):
