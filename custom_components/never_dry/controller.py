@@ -126,6 +126,11 @@ class IrrigationController:
         """Return the entity_id of the currently open valve, or None."""
         return self._active_valve
 
+    @property
+    def valve_operators(self) -> dict[str, ValveOperator]:
+        """Return the mapping of switch entity_id → ValveOperator."""
+        return self._valve_operators
+
     def register_services(self) -> None:
         """Register all irrigation services with Home Assistant."""
         self._hass.services.async_register(DOMAIN, SERVICE_RESET, self._handle_reset)
@@ -430,7 +435,7 @@ class IrrigationController:
         """Run irrigation cycle for the given zones sequentially."""
         self._running = True
         self._stop_requested = False
-        irrigated_zones = []
+        irrigated_zones: list = []
 
         try:
             for i, zone_name in enumerate(zone_names):
@@ -475,9 +480,8 @@ class IrrigationController:
                 delivered = await self._deliver_water(zone)
                 ts_end = datetime.now()
 
-                if self._stop_requested:
-                    break
-
+                # Credit partial delivery BEFORE checking stop so that any
+                # water already delivered is always settled in the finally block.
                 if delivered > 0:
                     irrigated_zones.append(
                         (zone_name, delivered, volume_target, deficit_at_start, ts_start, ts_end),
@@ -499,62 +503,13 @@ class IrrigationController:
                         volume_target,
                     )
 
+                if self._stop_requested:
+                    break
+
                 # Inter-zone delay (pressure stabilization)
                 if i < len(zone_names) - 1 and not self._stop_requested:
                     _LOGGER.debug("Inter-zone delay: %ds", self._inter_zone_delay)
                     await asyncio.sleep(self._inter_zone_delay)
-
-            # Adjust deficits for irrigated zones using the snapshot taken
-            # before each delivery. The settle here is **idempotent** with
-            # any real-time updates that ran inside the delivery modes:
-            # both write ``max(0, deficit_at_start - delivered_mm)``.
-            if irrigated_zones and not self._stop_requested:
-                all_complete = True
-                for zone_name, delivered, target, deficit_at_start, ts_start, ts_end in irrigated_zones:
-                    zone = self._zones[zone_name]
-                    if delivered >= target:
-                        # Full irrigation — reset deficit to zero
-                        zone.reset_deficit(self._current_source or "automatic")
-                    else:
-                        # Partial irrigation — authoritative recompute from snapshot
-                        all_complete = False
-                        delivered_mm = delivered * zone._efficiency / zone._area if zone._area > 0 else 0.0
-                        zone._zone_deficit = max(0.0, deficit_at_start - delivered_mm)
-                        zone._last_volume_delivered = round(delivered, 1)
-                        zone._session_water_delivered = round(delivered, 1)
-                        zone._total_water_delivered += delivered
-                        zone._yearly_water_delivered += delivered
-                        zone._last_irrigated = datetime.now()
-                        zone._last_irrigation_source = self._current_source or "automatic"
-                        _LOGGER.info(
-                            "Partial irrigation: zone='%s', delivered=%.1fL/%.1fL, deficit reduced to %.2fmm",
-                            zone_name,
-                            delivered,
-                            target,
-                            zone._zone_deficit,
-                        )
-                    zone._deficit_at_irrigation_start = None
-                    zone.async_write_ha_state()
-                    self._log_session_result(
-                        zone_name=zone_name,
-                        zone=zone,
-                        source=self._current_source or "automatic",
-                        ts_start=ts_start,
-                        ts_end=ts_end,
-                        volume_target_L=target,
-                        volume_delivered_L=delivered,
-                        deficit_mm_pre=deficit_at_start,
-                        deficit_mm_post=zone._zone_deficit,
-                    )
-                # Reset reference sensor only if ALL zones fully irrigated
-                zone_names_irrigated = {z[0] for z in irrigated_zones}
-                if all_complete and zone_names_irrigated == set(self._zones.keys()):
-                    self._dryness.reset()
-                self._dryness.async_write_ha_state()
-                _LOGGER.info(
-                    "Irrigation cycle complete. %d zone(s) irrigated",
-                    len(irrigated_zones),
-                )
 
         except Exception:
             _LOGGER.exception("Error during irrigation cycle")
@@ -566,11 +521,70 @@ class IrrigationController:
         finally:
             self._running = False
             self._active_valve = None
-            # Clear any leftover irrigation-start snapshot so a subsequent
-            # cycle does not see stale state if this one was aborted before
-            # the settle step ran.
+            # Settle deficits unconditionally — covers normal completion, emergency
+            # stop, exceptions, and task cancellation (HA reload mid-cycle).
+            try:
+                self._settle_irrigated_zones(irrigated_zones)
+            except Exception:
+                _LOGGER.exception("Error during deficit settle — partial deliveries may not be recorded")
             for zs in self._zones.values():
                 zs._deficit_at_irrigation_start = None
+
+    def _settle_irrigated_zones(self, irrigated_zones: list) -> None:
+        """Apply deficit adjustments and log results for all zones that received water.
+
+        Idempotent with real-time updates from flow-metered modes: both write
+        ``max(0, deficit_at_start - delivered_mm)``.  Called unconditionally
+        from the finally block so partial deliveries are always credited.
+        """
+        if not irrigated_zones:
+            return
+        all_complete = True
+        for zone_name, delivered, target, deficit_at_start, ts_start, ts_end in irrigated_zones:
+            zone = self._zones[zone_name]
+            if delivered >= target:
+                # Full irrigation — reset deficit to zero
+                zone.reset_deficit(self._current_source or "automatic")
+            else:
+                # Partial irrigation — authoritative recompute from snapshot
+                all_complete = False
+                delivered_mm = delivered * zone._efficiency / zone._area if zone._area > 0 else 0.0
+                zone._zone_deficit = max(0.0, deficit_at_start - delivered_mm)
+                zone._last_volume_delivered = round(delivered, 1)
+                zone._session_water_delivered = round(delivered, 1)
+                zone._total_water_delivered += delivered
+                zone._yearly_water_delivered += delivered
+                zone._last_irrigated = datetime.now()
+                zone._last_irrigation_source = self._current_source or "automatic"
+                _LOGGER.info(
+                    "Partial irrigation: zone='%s', delivered=%.1fL/%.1fL, deficit reduced to %.2fmm",
+                    zone_name,
+                    delivered,
+                    target,
+                    zone._zone_deficit,
+                )
+            zone._deficit_at_irrigation_start = None
+            zone.async_write_ha_state()
+            self._log_session_result(
+                zone_name=zone_name,
+                zone=zone,
+                source=self._current_source or "automatic",
+                ts_start=ts_start,
+                ts_end=ts_end,
+                volume_target_L=target,
+                volume_delivered_L=delivered,
+                deficit_mm_pre=deficit_at_start,
+                deficit_mm_post=zone._zone_deficit,
+            )
+        # Reset reference sensor only if ALL zones fully irrigated
+        zone_names_irrigated = {z[0] for z in irrigated_zones}
+        if all_complete and zone_names_irrigated == set(self._zones.keys()):
+            self._dryness.reset()
+        self._dryness.async_write_ha_state()
+        _LOGGER.info(
+            "Irrigation cycle complete. %d zone(s) irrigated",
+            len(irrigated_zones),
+        )
 
     # ── Delivery mode dispatch ────────────────────────────
 
@@ -600,13 +614,14 @@ class IrrigationController:
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
-        await self._wait_with_stop_check(duration)
+        elapsed = await self._wait_with_stop_check(duration)
 
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        # Estimated flow assumes full delivery if not stopped
-        return zone.volume_liters if not self._stop_requested else 0.0
+        # Credit the proportional fraction of planned volume based on actual
+        # elapsed time — preserves partial delivery data on emergency stop.
+        return zone.volume_liters * elapsed / duration
 
     async def _deliver_volume_preset(self, zone) -> float:
         """Arm the smart-valve dose, ensure it opens, wait for self-close.
@@ -922,12 +937,17 @@ class IrrigationController:
             context={"entity_id": entity_id, "reason": reason},
         )
 
-    async def _wait_with_stop_check(self, duration_s: int) -> None:
-        """Wait for duration, checking for stop requests every second."""
-        for _ in range(duration_s):
+    async def _wait_with_stop_check(self, duration_s: int) -> int:
+        """Wait for duration, checking for stop requests every second.
+
+        Returns the number of seconds actually elapsed, which may be less
+        than ``duration_s`` when a stop is requested mid-wait.
+        """
+        for elapsed in range(duration_s):
             if self._stop_requested:
-                return
+                return elapsed
             await asyncio.sleep(1)
+        return duration_s
 
     async def _open_valve(self, entity_id: str) -> bool:
         """Open a valve switch. Returns True on success, False on failure.

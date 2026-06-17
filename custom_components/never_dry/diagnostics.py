@@ -65,12 +65,19 @@ async def async_get_config_entry_diagnostics(
     # ── 3. Sanitised config ───────────────────────────────────────────────────
     config_data = async_redact_data(dict(entry.data), _REDACT_KEYS)
 
+    # ── 4. Valve latency statistics ──────────────────────────────────────────
+    operators = hass.data.get(DOMAIN, {}).get(f"_operators_{entry.entry_id}", {})
+    valve_latency = {
+        entity_id: op.latency_diagnostics for entity_id, op in operators.items()
+    }
+
     return {
         "domain": DOMAIN,
         "config_entry_id": entry.entry_id,
         "config_entry_title": entry.title,
         "config_data": config_data,
         "entity_states": entity_states,
+        "valve_latency": valve_latency,
         "activity_log": {
             "path": log_path,
             "total_lines": log_total_lines,

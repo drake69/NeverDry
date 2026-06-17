@@ -43,6 +43,7 @@ from .valve_fsm import (
     ValveFsm,
     ValveState,
 )
+from .valve_latency import ValveLatencyTracker
 from .valve_notifier import NotificationKind, Severity, ValveNotifier
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,6 +150,10 @@ class ValveOperator:
         self._watchdog_task: asyncio.Task | None = None
         self._hw_duration_set: bool = False
 
+        self._latency = ValveLatencyTracker(hass, switch_entity_id)
+        self._cmd_start_time: float | None = None
+        hass.async_create_task(self._latency.async_load())
+
         self._unsub_switch = async_track_state_change_event(hass, [switch_entity_id], self._on_switch_state)
         self._unsub_flow = None
         if flow_sensor_entity_id:
@@ -170,6 +175,11 @@ class ValveOperator:
     def failure_count(self) -> int:
         """Return the FSM's consecutive-failure counter."""
         return self._fsm.failure_count
+
+    @property
+    def latency_diagnostics(self) -> dict:
+        """Return latency statistics for this valve (open and close windows)."""
+        return self._latency.as_dict()
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -289,6 +299,7 @@ class ValveOperator:
         loop = asyncio.get_event_loop()
         self._completion = loop.create_future()
         self._expected_terminal = terminals
+        self._cmd_start_time = monotonic()
         await self._dispatch(cmd)
         return await self._completion
 
@@ -623,6 +634,10 @@ class ValveOperator:
     def _start_timer(self, name: TimerName, seconds: float) -> None:
         """Start (or restart) a named timer that dispatches the matching TIMEOUT."""
         self._cancel_timer(name)
+        if name == TimerName.OPEN:
+            seconds = self._latency.open_timeout_s()
+        elif name == TimerName.CLOSE:
+            seconds = self._latency.close_timeout_s()
         self._timers[name] = self._hass.async_create_task(self._timer(name, seconds))
 
     def _cancel_timer(self, name: TimerName) -> None:
@@ -668,8 +683,30 @@ class ValveOperator:
         if self._fsm.state == ValveState.UNREACHABLE:
             await self._dispatch(ValveEvent.OBS_AVAILABLE)
         if value == "on":
+            if self._fsm.state == ValveState.REQ_OPEN and self._cmd_start_time is not None:
+                latency_ms = (monotonic() - self._cmd_start_time) * 1000.0
+                self._cmd_start_time = None
+                self._latency.open.record(latency_ms)
+                self._hass.async_create_task(self._latency.async_save())
+                _LOGGER.debug(
+                    "Valve '%s' open latency %.1f ms → adaptive timeout %.2f s",
+                    self._zone_name,
+                    latency_ms,
+                    self._latency.open_timeout_s(),
+                )
             await self._dispatch(ValveEvent.OBS_SWITCH_ON)
         elif value == "off":
+            if self._fsm.state == ValveState.REQ_CLOSE and self._cmd_start_time is not None:
+                latency_ms = (monotonic() - self._cmd_start_time) * 1000.0
+                self._cmd_start_time = None
+                self._latency.close.record(latency_ms)
+                self._hass.async_create_task(self._latency.async_save())
+                _LOGGER.debug(
+                    "Valve '%s' close latency %.1f ms → adaptive timeout %.2f s",
+                    self._zone_name,
+                    latency_ms,
+                    self._latency.close_timeout_s(),
+                )
             await self._dispatch(ValveEvent.OBS_SWITCH_OFF)
 
     async def _handle_flow_state(self, event) -> None:
