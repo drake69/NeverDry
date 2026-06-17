@@ -355,7 +355,7 @@ def _setup_controller(
         notifier=notifier,
     )
     controller.register_services()
-    return controller
+    return controller  # caller may store valve_operators via controller.valve_operators
 
 
 async def async_setup_platform(
@@ -376,10 +376,14 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the NeverDry sensors from a config entry (UI)."""
+    from .const import DOMAIN
+
     config = dict(entry.data)
     entities, di_sensor, zone_sensors = _create_entities(hass, config, entry.entry_id)
     async_add_entities(entities, True)
-    _setup_controller(hass, config, di_sensor, zone_sensors)
+    controller = _setup_controller(hass, config, di_sensor, zone_sensors)
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][f"_operators_{entry.entry_id}"] = controller.valve_operators
 
 
 # ══════════════════════════════════════════════════════════
