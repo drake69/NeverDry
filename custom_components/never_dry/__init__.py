@@ -115,7 +115,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up NeverDry from a config entry (UI)."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
-    handler = _setup_file_logger(hass)
+    handler = await hass.async_add_executor_job(_setup_file_logger, hass)
     hass.data[DOMAIN][f"_log_handler_{entry.entry_id}"] = handler
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
@@ -128,7 +128,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         handler = hass.data[DOMAIN].pop(f"_log_handler_{entry.entry_id}", None)
         if handler is not None:
-            _teardown_file_logger(handler)
+            await hass.async_add_executor_job(_teardown_file_logger, handler)
         hass.data[DOMAIN].pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(f"_operators_{entry.entry_id}", None)
     return unload_ok
