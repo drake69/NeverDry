@@ -933,8 +933,12 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
 
     @property
     def delivery_timeout(self) -> int:
-        """Safety timeout in seconds for flow_meter and volume_preset modes."""
-        return self._delivery_timeout
+        """Safety timeout in seconds for flow_meter and volume_preset modes.
+
+        Returns the greater of the configured floor and the estimated delivery
+        duration, so large deficits never hit the timeout before completion.
+        """
+        return max(self._delivery_timeout, self.duration_s)
 
     @property
     def hw_max_duration_topic(self) -> str | None:
@@ -1032,7 +1036,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         if self._flow_meter_sensor:
             attrs["flow_meter_sensor"] = self._flow_meter_sensor
         if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
-            attrs["delivery_timeout_s"] = self._delivery_timeout
+            attrs["delivery_timeout_s"] = self.delivery_timeout
         return attrs
 
 
