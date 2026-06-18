@@ -298,3 +298,62 @@ class TestIrrigationFeedback:
         assert zone._last_irrigated == datetime.fromisoformat("2026-04-15T10:30:00")
         assert zone._last_volume_delivered == 55.0
         assert zone._zone_deficit == 3.5
+
+    def test_last_session_duration_in_attributes(self, zone_orto):
+        """last_session_duration_s should appear in attributes after irrigation."""
+        zone_orto._zone_deficit = 5.0
+        zone_orto.reset_deficit()
+        zone_orto._last_session_duration_s = 650
+        attrs = zone_orto.extra_state_attributes
+        assert attrs["last_session_duration_s"] == 650
+
+    def test_last_session_duration_absent_before_irrigation(self, zone_orto):
+        """last_session_duration_s should NOT appear before any irrigation."""
+        attrs = zone_orto.extra_state_attributes
+        assert "last_session_duration_s" not in attrs
+
+    def test_restore_last_session_duration_s(self, hass_mock, di_sensor):
+        """last_session_duration_s should be restored from previous HA state."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {"name": "Test", "area_m2": 10.0, "efficiency": 1.0, "flow_rate_lpm": 5.0},
+            di_sensor,
+        )
+        last_state = MagicMock()
+        last_state.attributes = {
+            "deficit_mm": "2.0",
+            "last_irrigated": "2026-06-18T10:00:00",
+            "last_volume_delivered": "20.0",
+            "last_session_duration_s": "240",
+        }
+        zone.async_get_last_state = AsyncMock(return_value=last_state)
+        asyncio.get_event_loop().run_until_complete(zone.async_added_to_hass())
+
+        assert zone._last_session_duration_s == 240
+
+
+class TestFlowRateGuard:
+    """Warning when flow_rate_lpm is configured in L/h by mistake."""
+
+    def test_high_flow_rate_logs_warning(self, di_sensor, caplog):
+        """flow_rate_lpm > 30 should emit a WARNING with the L/h equivalent."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="custom_components.never_dry"):
+            _make_zone(di_sensor, flow_rate=200.0)
+
+        assert any("12000" in r.message and "3.33" in r.message for r in caplog.records)
+
+    def test_normal_flow_rate_no_warning(self, di_sensor, caplog):
+        """flow_rate_lpm <= 30 should not emit any flow_rate warning."""
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="custom_components.never_dry"):
+            _make_zone(di_sensor, flow_rate=10.0)
+
+        assert not any("L/h" in r.message and "flow_rate" in r.message for r in caplog.records)
