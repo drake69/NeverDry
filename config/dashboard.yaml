@@ -54,6 +54,16 @@ cards:
       - entity: sensor.neverdry_giardino_melino_volume
         name: Volume to irrigate
         icon: mdi:water
+      - type: attribute
+        entity: sensor.neverdry_giardino_melino_deficit
+        attribute: flow_rate_lpm
+        name: Flow rate (L/min)
+        icon: mdi:gauge
+      - type: attribute
+        entity: sensor.neverdry_giardino_melino_deficit
+        attribute: last_session_duration_s
+        name: Last session (s)
+        icon: mdi:timer-outline
       - entity: button.neverdry_giardino_melino_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
@@ -61,9 +71,9 @@ cards:
         name: Mark as irrigated
         icon: mdi:water-check
 
-  # ── Zone: Giardino ortensia ─────────────────────────────
+  # ── Zone: Giardino Ortensia ─────────────────────────────
   - type: entities
-    title: Giardino ortensia
+    title: Giardino Ortensia
     icon: mdi:sprinkler-variant
     entities:
       - entity: sensor.neverdry_giardino_ortensia_deficit
@@ -72,9 +82,75 @@ cards:
       - entity: sensor.neverdry_giardino_ortensia_volume
         name: Volume to irrigate
         icon: mdi:water
+      - type: attribute
+        entity: sensor.neverdry_giardino_ortensia_deficit
+        attribute: flow_rate_lpm
+        name: Flow rate (L/min)
+        icon: mdi:gauge
+      - type: attribute
+        entity: sensor.neverdry_giardino_ortensia_deficit
+        attribute: last_session_duration_s
+        name: Last session (s)
+        icon: mdi:timer-outline
       - entity: button.neverdry_giardino_ortensia_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
       - entity: button.neverdry_giardino_ortensia_mark_irrigated
+        name: Mark as irrigated
+        icon: mdi:water-check
+
+  # ── Zone: Giardino Pino ─────────────────────────────────
+  - type: entities
+    title: Giardino Pino
+    icon: mdi:sprinkler-variant
+    entities:
+      - entity: sensor.neverdry_giardino_pino_deficit
+        name: Deficit
+        icon: mdi:water-percent-alert
+      - entity: sensor.neverdry_giardino_pino_volume
+        name: Volume to irrigate
+        icon: mdi:water
+      - type: attribute
+        entity: sensor.neverdry_giardino_pino_deficit
+        attribute: flow_rate_lpm
+        name: Flow rate (L/min)
+        icon: mdi:gauge
+      - type: attribute
+        entity: sensor.neverdry_giardino_pino_deficit
+        attribute: last_session_duration_s
+        name: Last session (s)
+        icon: mdi:timer-outline
+      - entity: button.neverdry_giardino_pino_irrigate
+        name: Irrigate now
+        icon: mdi:sprinkler
+      - entity: button.neverdry_giardino_pino_mark_irrigated
+        name: Mark as irrigated
+        icon: mdi:water-check
+
+  # ── Zone: Giardino Melograno ────────────────────────────
+  - type: entities
+    title: Giardino Melograno
+    icon: mdi:sprinkler-variant
+    entities:
+      - entity: sensor.neverdry_giardino_melograno_deficit
+        name: Deficit
+        icon: mdi:water-percent-alert
+      - entity: sensor.neverdry_giardino_melograno_volume
+        name: Volume to irrigate
+        icon: mdi:water
+      - type: attribute
+        entity: sensor.neverdry_giardino_melograno_deficit
+        attribute: flow_rate_lpm
+        name: Flow rate (L/min)
+        icon: mdi:gauge
+      - type: attribute
+        entity: sensor.neverdry_giardino_melograno_deficit
+        attribute: last_session_duration_s
+        name: Last session (s)
+        icon: mdi:timer-outline
+      - entity: button.neverdry_giardino_melograno_irrigate
+        name: Irrigate now
+        icon: mdi:sprinkler
+      - entity: button.neverdry_giardino_melograno_mark_irrigated
         name: Mark as irrigated
         icon: mdi:water-check

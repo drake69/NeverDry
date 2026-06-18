@@ -776,6 +776,16 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._area = zone_config.get(CONF_ZONE_AREA, 0.0)
         self._system_type = zone_config.get(CONF_ZONE_SYSTEM_TYPE)
         self._flow_rate = zone_config.get(CONF_ZONE_FLOW_RATE, 0.0)
+        if self._flow_rate > 30:
+            _LOGGER.warning(
+                "Zone '%s': flow_rate_lpm=%.1f L/min (= %.0f L/h) looks unrealistically high "
+                "for garden irrigation. If you configured it in L/h, divide by 60 (e.g. %.0f L/h → %.2f L/min).",
+                zone_config.get(CONF_ZONE_NAME, "?"),
+                self._flow_rate,
+                self._flow_rate * 60,
+                self._flow_rate,
+                self._flow_rate / 60,
+            )
         self._threshold = zone_config.get(CONF_ZONE_THRESHOLD, DEFAULT_THRESHOLD)
         self._delivery_mode = zone_config.get(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE)
         self._volume_entity = zone_config.get(CONF_ZONE_VOLUME_ENTITY)
@@ -790,6 +800,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
         self._last_irrigation_source: str | None = None
+        self._last_session_duration_s: int = 0
         # Snapshot of zone_deficit captured by the controller at the start
         # of an irrigation cycle. Used by flow-metered delivery modes for
         # real-time deficit updates: every update is computed as
@@ -845,6 +856,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                     self._last_irrigated = datetime.fromisoformat(ts)
                     self._last_volume_delivered = float(last.attributes.get("last_volume_delivered", 0.0))
                     self._last_irrigation_source = last.attributes.get("last_irrigation_source")
+                    self._last_session_duration_s = int(last.attributes.get("last_session_duration_s", 0))
             with contextlib.suppress(ValueError, TypeError):
                 self._total_rain = float(last.attributes.get("total_rain_mm", 0.0))
             with contextlib.suppress(ValueError, TypeError):
@@ -1031,6 +1043,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             attrs["last_irrigated"] = self._last_irrigated.isoformat()
             attrs["last_volume_delivered"] = self._last_volume_delivered
             attrs["last_irrigation_source"] = self._last_irrigation_source
+            attrs["last_session_duration_s"] = self._last_session_duration_s
         if self._volume_entity:
             attrs["volume_entity"] = self._volume_entity
         if self._flow_meter_sensor:
