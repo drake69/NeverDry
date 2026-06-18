@@ -668,6 +668,13 @@ class TestManualValveDetection:
         assert task is not None
         assert task._must_cancel or task.cancelled() or task.done()
 
+    def test_manual_close_records_session_duration(self, controller, zone_orto):
+        """Manual valve open→close should store elapsed seconds in last_session_duration_s."""
+        zone_orto._zone_deficit = 10.0
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+        assert zone_orto._last_session_duration_s >= 0
+
 
 class TestExternalSessionMonitor:
     """Auto-close behaviour for manually-opened valves."""
