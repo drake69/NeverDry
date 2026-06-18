@@ -563,6 +563,7 @@ class IrrigationController:
                     target,
                     zone._zone_deficit,
                 )
+            zone._last_session_duration_s = round((ts_end - ts_start).total_seconds())
             zone._deficit_at_irrigation_start = None
             zone.async_write_ha_state()
             self._log_session_result(
@@ -1148,6 +1149,7 @@ class IrrigationController:
             session_meta = self._manual_session_meta.pop(entity_id, None)
             if session_meta is not None:
                 ts_start, deficit_pre = session_meta
+                zone._last_session_duration_s = round((datetime.now() - ts_start).total_seconds())
                 self._log_session_result(
                     zone_name=zone_name,
                     zone=zone,
