@@ -701,13 +701,12 @@ class TestExternalSessionMonitor:
         )
 
     @pytest.mark.asyncio
-    async def test_estimated_duration_caps_at_timeout(self, controller, zone_orto, hass_mock, monkeypatch):
-        """When estimated duration exceeds the safety timeout, the
-        timeout wins (min of the two)."""
-        # Big deficit → long estimated duration.
-        zone_orto._zone_deficit = 1000.0
-        zone_orto._delivery_timeout = 30
-        zone_orto._flow_rate = 1.0  # L/min — irrelevant magnitude here
+    async def test_estimated_duration_used_when_no_flow_meter(self, controller, zone_orto, hass_mock, monkeypatch):
+        """When no flow meter is present, the monitor waits exactly the estimated
+        delivery duration (volume / flow_rate). delivery_timeout adapts to be >=
+        duration_s so it never cuts the wait short."""
+        zone_orto._zone_deficit = 5.0
+        zone_orto._flow_rate = 8.0  # L/min
 
         sleeps = []
 
@@ -720,7 +719,8 @@ class TestExternalSessionMonitor:
 
         await controller._external_session_monitor("switch.valve_orto", "Orto")
 
-        assert sleeps == [30]
+        expected_s = int(zone_orto.volume_liters / zone_orto._flow_rate * 60)
+        assert sleeps == [expected_s]
 
 
 class TestBatteryMonitoring:
