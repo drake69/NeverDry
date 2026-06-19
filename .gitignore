@@ -17,3 +17,4 @@ secrets/
 
 # .sestante/ — backlog locale, mai committato
 .sestante/
+.coding_agent/
