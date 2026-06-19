@@ -1102,6 +1102,20 @@ class ZoneDeficitSensor(SensorEntity):
     def native_value(self) -> float:
         return round(self._zone_sensor._zone_deficit, 2)
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {
+            "flow_rate_lpm": self._zone_sensor._flow_rate,
+            "irrigating": self._zone_sensor._irrigating,
+        }
+        if self._zone_sensor._last_irrigated:
+            attrs["last_session_duration_s"] = self._zone_sensor._last_session_duration_s
+        op = self._zone_sensor._operator
+        if op is not None:
+            attrs["valve_fsm_state"] = op.state.value
+            attrs["valve_in_maintenance"] = op.is_in_maintenance
+        return attrs
+
 
 # ══════════════════════════════════════════════════════════
 #  ZoneRainSensor (cumulative rain per zone in mm)

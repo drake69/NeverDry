@@ -139,3 +139,60 @@ class TestZoneDeficitSeeding:
         zone.async_get_last_state = AsyncMock(return_value=None)
         await zone.async_added_to_hass()
         assert zone._zone_deficit == 0.0
+
+
+class TestZoneDeficitSensorAttributes:
+    """Test extra_state_attributes on ZoneDeficitSensor."""
+
+    def test_flow_rate_always_present(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        deficit = ZoneDeficitSensor(zone)
+        assert deficit.extra_state_attributes["flow_rate_lpm"] == 8.0
+
+    def test_irrigating_always_present(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        deficit = ZoneDeficitSensor(zone)
+        assert deficit.extra_state_attributes["irrigating"] is False
+
+    def test_last_session_duration_absent_before_irrigation(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        deficit = ZoneDeficitSensor(zone)
+        assert "last_session_duration_s" not in deficit.extra_state_attributes
+
+    def test_last_session_duration_present_after_irrigation(self, di_sensor):
+        from datetime import datetime
+
+        zone = _make_zone(di_sensor)
+        zone._last_irrigated = datetime.now()
+        zone._last_session_duration_s = 120
+        deficit = ZoneDeficitSensor(zone)
+        assert deficit.extra_state_attributes["last_session_duration_s"] == 120
+
+    def test_fsm_state_absent_without_operator(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        deficit = ZoneDeficitSensor(zone)
+        attrs = deficit.extra_state_attributes
+        assert "valve_fsm_state" not in attrs
+        assert "valve_in_maintenance" not in attrs
+
+    def test_fsm_state_present_with_operator(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        op = MagicMock()
+        op.state.value = "idle"
+        op.is_in_maintenance = False
+        zone._operator = op
+        deficit = ZoneDeficitSensor(zone)
+        attrs = deficit.extra_state_attributes
+        assert attrs["valve_fsm_state"] == "idle"
+        assert attrs["valve_in_maintenance"] is False
+
+    def test_fsm_maintenance_state(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        op = MagicMock()
+        op.state.value = "maintenance"
+        op.is_in_maintenance = True
+        zone._operator = op
+        deficit = ZoneDeficitSensor(zone)
+        attrs = deficit.extra_state_attributes
+        assert attrs["valve_fsm_state"] == "maintenance"
+        assert attrs["valve_in_maintenance"] is True
