@@ -145,7 +145,6 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Threshold | No | 20.0 | Mode A trigger [mm] |
 | Battery sensor | No | — | Valve battery sensor — mirrored in the zone device card |
 | Flow meter sensor | No | — | Flow meter entity — mirrored in the zone device card |
-| Moisture sensor | No | — | Soil moisture sensor — mirrored in the zone device card |
 
 ---
 
@@ -198,7 +197,7 @@ The ET model is a simplification of the FAO-56 standard and is **not a substitut
 
 ## Acknowledgments
 
-This project was developed with the assistance of [Claude](https://claude.ai) by [Anthropic](https://anthropic.com) — an AI assistant that contributed to architecture design, code implementation, scientific modeling, documentation, and testing.
+Developed by [drake69](https://github.com/drake69) with AI assistance ([Claude](https://claude.ai) by Anthropic).
 
 ---
 
