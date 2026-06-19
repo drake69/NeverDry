@@ -7,8 +7,10 @@ water balance model.  Directly controls irrigation valves.
 Supports both YAML configuration and UI-based config flow.
 """
 
+import json
 import logging
 import logging.handlers
+import pathlib
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
@@ -21,6 +23,9 @@ _LOGGER = logging.getLogger(__name__)
 
 _ACTIVITY_LOG_MAX_BYTES = 5 * 1024 * 1024  # 5 MB per file
 _ACTIVITY_LOG_BACKUP_COUNT = 2
+_INTEGRATION_VERSION: str = json.loads((pathlib.Path(__file__).parent / "manifest.json").read_text(encoding="utf-8"))[
+    "version"
+]
 
 
 def _setup_file_logger(hass: HomeAssistant) -> logging.Handler:
@@ -46,9 +51,12 @@ def _setup_file_logger(hass: HomeAssistant) -> logging.Handler:
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )
-    logging.getLogger("custom_components.never_dry").addHandler(handler)
+    nd_logger = logging.getLogger("custom_components.never_dry")
+    nd_logger.setLevel(logging.DEBUG)
+    nd_logger.addHandler(handler)
     _LOGGER.info(
-        "NeverDry activity log -> %s (%.0f MB x %d)",
+        "NeverDry %s — activity log -> %s (%.0f MB x %d)",
+        _INTEGRATION_VERSION,
         log_path,
         _ACTIVITY_LOG_MAX_BYTES / 1024 / 1024,
         _ACTIVITY_LOG_BACKUP_COUNT + 1,
@@ -58,7 +66,9 @@ def _setup_file_logger(hass: HomeAssistant) -> logging.Handler:
 
 def _teardown_file_logger(handler: logging.Handler) -> None:
     """Remove the rotating file handler from the never_dry logger and close it."""
-    logging.getLogger("custom_components.never_dry").removeHandler(handler)
+    nd_logger = logging.getLogger("custom_components.never_dry")
+    nd_logger.removeHandler(handler)
+    nd_logger.setLevel(logging.NOTSET)
     handler.close()
 
 
@@ -108,6 +118,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Reload the integration when config entry data changes (e.g. zone added)."""
+    _LOGGER.info("Config entry data changed — reloading integration")
     await hass.config_entries.async_reload(entry.entry_id)
 
 
@@ -124,6 +135,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    controller = hass.data.get(DOMAIN, {}).pop(f"_controller_{entry.entry_id}", None)
+    if controller is not None:
+        await controller.async_stop()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         handler = hass.data[DOMAIN].pop(f"_log_handler_{entry.entry_id}", None)

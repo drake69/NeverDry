@@ -13,6 +13,7 @@ An emergency stop service closes all valves immediately.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from datetime import datetime
@@ -101,6 +102,9 @@ class IrrigationController:
         self._manual_session_meta: dict[str, tuple[datetime, float]] = {}
         # Per-valve safety-close watchdog for external (non-commanded) opens
         self._manual_safety_tasks: dict[str, asyncio.Task] = {}
+        # Valves currently being closed by the controller — suppresses spurious
+        # "manual irrigation detected" events while operator.close() is in flight.
+        self._controller_closing: set[str] = set()
         # Reverse map: valve_entity_id → zone_name
         self._valve_to_zone: dict[str, str] = {zs.valve: zs.zone_name for zs in zone_sensors if zs.valve}
         # Battery sensor → zone_name map
@@ -358,6 +362,22 @@ class IrrigationController:
         self._current_source = "button"
         self._irrigation_task = self._hass.async_create_task(self._irrigate_zones(list(self._zones.keys())))
 
+    async def async_stop(self) -> None:
+        """Stop any running irrigation and wait for the task to settle.
+
+        Called during entry unload so the old controller finishes cleanly
+        before the new one starts — prevents duplicate deficit updates.
+
+        Sets _stop_requested so the polling loop exits within ~1 s, then
+        awaits the task so the finally block can close the valve and settle
+        the deficit before the new controller takes over.
+        """
+        self._stop_requested = True
+        task = self._irrigation_task
+        if task is not None and not task.done():
+            with contextlib.suppress(Exception):
+                await task
+
     async def _handle_stop(self, call: ServiceCall) -> None:
         """Emergency stop: close every configured valve concurrently."""
         _LOGGER.info("Emergency stop requested")
@@ -480,10 +500,12 @@ class IrrigationController:
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm, timeout=%ds",
+                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL,"
+                    " est_duration=%ds, deficit=%.1fmm, timeout=%ds",
                     zone_name,
                     zone.delivery_mode,
                     zone.volume_liters,
+                    zone.duration_s,
                     zone._zone_deficit,
                     zone.delivery_timeout,
                 )
@@ -635,7 +657,7 @@ class IrrigationController:
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
-        elapsed = await self._wait_with_stop_check(duration)
+        elapsed = await self._wait_with_stop_check(duration, valve_entity=zone.valve)
 
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
@@ -958,15 +980,25 @@ class IrrigationController:
             context={"entity_id": entity_id, "reason": reason},
         )
 
-    async def _wait_with_stop_check(self, duration_s: int) -> int:
+    async def _wait_with_stop_check(self, duration_s: int, valve_entity: str | None = None) -> int:
         """Wait for duration, checking for stop requests every second.
 
         Returns the number of seconds actually elapsed, which may be less
-        than ``duration_s`` when a stop is requested mid-wait.
+        than ``duration_s`` when a stop is requested or the valve is closed
+        externally.
         """
         for elapsed in range(duration_s):
             if self._stop_requested:
                 return elapsed
+            if valve_entity is not None:
+                state = self._hass.states.get(valve_entity)
+                if state is not None and state.state == "off":
+                    _LOGGER.info(
+                        "Valve '%s' closed externally after %ds — aborting estimated_flow wait",
+                        valve_entity,
+                        elapsed,
+                    )
+                    return elapsed
             await asyncio.sleep(1)
         return duration_s
 
@@ -1004,7 +1036,11 @@ class IrrigationController:
             if self._active_valve == entity_id:
                 self._active_valve = None
             return True
-        result = await operator.close()
+        self._controller_closing.add(entity_id)
+        try:
+            result = await operator.close()
+        finally:
+            self._controller_closing.discard(entity_id)
         if self._active_valve == entity_id:
             self._active_valve = None
         if result.status != OperationStatus.OK:
@@ -1099,6 +1135,8 @@ class IrrigationController:
             )
 
         elif old_state.state == "on" and new_state.state == "off":
+            if entity_id in self._controller_closing:
+                return  # NeverDry-initiated close — not a manual event
             # Cancel the safety watchdog: the user (or the watchdog itself)
             # already closed the valve.
             task = self._manual_safety_tasks.pop(entity_id, None)

@@ -423,6 +423,7 @@ async def async_setup_entry(
     async_add_entities(entities, True)
     controller = _setup_controller(hass, config, di_sensor, zone_sensors)
     hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][f"_controller_{entry.entry_id}"] = controller
     hass.data[DOMAIN][f"_operators_{entry.entry_id}"] = controller.valve_operators
 
 

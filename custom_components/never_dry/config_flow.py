@@ -8,6 +8,7 @@ Provides a multi-step UI setup:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
@@ -66,6 +67,8 @@ from .const import (
     SYSTEM_TYPE_MICRO_SPRINKLER,
     SYSTEM_TYPE_SPRINKLER,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 STEP_SENSORS_SCHEMA = vol.Schema(
     {
@@ -352,7 +355,10 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         """Edit ET model parameters."""
         if user_input is not None:
             new_data = {**self._config_entry.data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+            if new_data != dict(self._config_entry.data):
+                changed = [k for k in new_data if new_data[k] != self._config_entry.data.get(k)]
+                _LOGGER.debug("Config updated via model_params — changed keys: %s", changed)
+                self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             return self.async_create_entry(data={})
 
         current = self._config_entry.data
@@ -416,7 +422,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 )
             zones.append(user_input)
             new_data[CONF_ZONES] = zones
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+            if new_data != dict(self._config_entry.data):
+                _LOGGER.debug("Config updated via add_zone — zone added: %s", user_input.get("zone_name"))
+                self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             return self.async_create_entry(data={})
 
         return self.async_show_form(
@@ -466,10 +474,12 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             new_zones = [z for z in zones if z[CONF_ZONE_NAME] != self._edit_zone_name]
             new_zones.append(user_input)
             new_data[CONF_ZONES] = new_zones
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                data=new_data,
-            )
+            if new_data != dict(self._config_entry.data):
+                _LOGGER.debug("Config updated via edit_zone — zone edited: %s", self._edit_zone_name)
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    data=new_data,
+                )
             return self.async_create_entry(data={})
 
         # Helper to get current value or UNDEFINED
@@ -684,7 +694,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             name_to_remove = user_input["zone_to_remove"]
             new_data = dict(self._config_entry.data)
             new_data[CONF_ZONES] = [z for z in zones if z[CONF_ZONE_NAME] != name_to_remove]
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+            if new_data != dict(self._config_entry.data):
+                _LOGGER.debug("Config updated via remove_zone — zone removed: %s", name_to_remove)
+                self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             return self.async_create_entry(data={})
 
         return self.async_show_form(
