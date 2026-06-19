@@ -248,6 +248,8 @@ def _create_entities(
         entities.append(ZoneLastIrrigatedSensor(zone_sensor, zone_device))
         entities.append(ZoneLastSourceSensor(zone_sensor, zone_device))
         entities.append(ZoneLastVolumeSensor(zone_sensor, zone_device))
+        entities.append(ZoneDurationSensor(zone_sensor, zone_device))
+        entities.append(ZoneLastDurationSensor(zone_sensor, zone_device))
         entities.append(ZoneKcSensor(zone_sensor, zone_device))
         # Diagnostic (config)
         entities.append(ZoneIrrigationModeSensor(zone_sensor, zone_device))
@@ -285,7 +287,7 @@ def _create_entities(
                     hass,
                     zone_conf[CONF_ZONE_FLOW_METER_SENSOR],
                     "Flow meter",
-                    "mdi:water-flow",
+                    "mdi:gauge",
                     f"linked_flow_{slug}",
                     zone_device,
                 )
@@ -1264,6 +1266,75 @@ class ZoneYearlyWaterSensor(SensorEntity):
     @property
     def native_value(self) -> float:
         return round(self._zone_sensor._yearly_water_delivered, 1)
+
+
+# ══════════════════════════════════════════════════════════
+#  ZoneDurationSensor / ZoneLastDurationSensor
+# ══════════════════════════════════════════════════════════
+
+
+class ZoneDurationSensor(SensorEntity):
+    """Planned irrigation duration for the next session [s]."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Duration"
+    _attr_native_unit_of_measurement = "s"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:timer"
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        zone_sensor: IrrigationZoneSensor,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        self._zone_sensor = zone_sensor
+        slug = zone_sensor.zone_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"duration_zone_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+        zone_sensor._dryness.register_zone_listener(self._on_update)
+
+    def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> int:
+        return self._zone_sensor.duration_s
+
+
+class ZoneLastDurationSensor(SensorEntity):
+    """Actual duration of the last completed irrigation session [s]."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Last duration"
+    _attr_native_unit_of_measurement = "s"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:timer"
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        zone_sensor: IrrigationZoneSensor,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        self._zone_sensor = zone_sensor
+        slug = zone_sensor.zone_name.lower().replace(" ", "_")
+        self._attr_unique_id = f"last_duration_zone_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+        zone_sensor._dryness.register_zone_listener(self._on_update)
+
+    def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    @property
+    def native_value(self) -> int | None:
+        if not self._zone_sensor._last_irrigated:
+            return None
+        return self._zone_sensor._last_session_duration_s
 
 
 # ══════════════════════════════════════════════════════════
