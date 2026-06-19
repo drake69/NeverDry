@@ -333,7 +333,7 @@ def _setup_controller(
         if getattr(zs, "delivery_mode", None) == "volume_preset":
             continue
         hw_entity, hw_mult = _discover_hw_max_duration(hass, zs.valve)
-        valve_operators[zs.valve] = ValveOperator(
+        op = ValveOperator(
             hass=hass,
             switch_entity_id=zs.valve,
             flow_sensor_entity_id=zs.flow_meter_sensor,
@@ -345,6 +345,8 @@ def _setup_controller(
             hw_max_duration_topic=zs.hw_max_duration_topic,
             hw_max_duration_payload_template=zs.hw_max_duration_payload,
         )
+        valve_operators[zs.valve] = op
+        zs.set_operator(op)
 
     controller = IrrigationController(
         hass,
@@ -801,6 +803,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._last_volume_delivered: float = 0.0
         self._last_irrigation_source: str | None = None
         self._last_session_duration_s: int = 0
+        self._operator = None  # set by _setup_controller after operator creation
         # Snapshot of zone_deficit captured by the controller at the start
         # of an irrigation cycle. Used by flow-metered delivery modes for
         # real-time deficit updates: every update is computed as
@@ -950,7 +953,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         Returns the greater of the configured floor and the estimated delivery
         duration, so large deficits never hit the timeout before completion.
         """
-        return max(self._delivery_timeout, self.duration_s)
+        return max(self._delivery_timeout, round(self.duration_s * 1.1))
 
     @property
     def hw_max_duration_topic(self) -> str | None:
@@ -961,6 +964,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     def hw_max_duration_payload(self) -> str:
         """Payload template for the hw_max_duration MQTT publish (``{value}`` placeholder)."""
         return self._hw_max_duration_payload
+
+    def set_operator(self, operator) -> None:
+        """Attach the ValveOperator so FSM state can be exposed in attributes."""
+        self._operator = operator
 
     @property
     def is_irrigating(self) -> bool:
@@ -1050,6 +1057,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             attrs["flow_meter_sensor"] = self._flow_meter_sensor
         if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
             attrs["delivery_timeout_s"] = self.delivery_timeout
+        if self._operator is not None:
+            attrs["valve_fsm_state"] = self._operator.state.value
+            attrs["valve_in_maintenance"] = self._operator.is_in_maintenance
         return attrs
 
 

@@ -9,6 +9,7 @@
 #    sensor.neverdry_<zone_slug>_volume
 #    button.neverdry_<zone_slug>_irrigate
 #    button.neverdry_<zone_slug>_mark_irrigated
+#    button.neverdry_<zone_slug>_reset_valve
 #
 #  Adjust entity IDs to match your zone names.
 ##############################################################
@@ -29,11 +30,10 @@ cards:
     entities:
       - entity: sensor.neverdry_dryness_index
         name: Global (Kc=1)
-      # ── Add one line per zone ──
       - entity: sensor.neverdry_giardino_melino_deficit
         name: Giardino Melino
       - entity: sensor.neverdry_giardino_ortensia_deficit
-        name: Giardino ortensia
+        name: Giardino Ortensia
 
   # ── ET Hourly ───────────────────────────────────────────
   - type: history-graph
@@ -64,12 +64,20 @@ cards:
         attribute: last_session_duration_s
         name: Last session (s)
         icon: mdi:timer-outline
+      - type: attribute
+        entity: sensor.neverdry_giardino_melino_deficit
+        attribute: valve_fsm_state
+        name: Valve state
+        icon: mdi:valve
       - entity: button.neverdry_giardino_melino_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
       - entity: button.neverdry_giardino_melino_mark_irrigated
         name: Mark as irrigated
         icon: mdi:water-check
+      - entity: button.neverdry_giardino_melino_reset_valve
+        name: Reset valve (unlock)
+        icon: mdi:lock-reset
 
   # ── Zone: Giardino Ortensia ─────────────────────────────
   - type: entities
@@ -92,12 +100,20 @@ cards:
         attribute: last_session_duration_s
         name: Last session (s)
         icon: mdi:timer-outline
+      - type: attribute
+        entity: sensor.neverdry_giardino_ortensia_deficit
+        attribute: valve_fsm_state
+        name: Valve state
+        icon: mdi:valve
       - entity: button.neverdry_giardino_ortensia_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
       - entity: button.neverdry_giardino_ortensia_mark_irrigated
         name: Mark as irrigated
         icon: mdi:water-check
+      - entity: button.neverdry_giardino_ortensia_reset_valve
+        name: Reset valve (unlock)
+        icon: mdi:lock-reset
 
   # ── Zone: Giardino Pino ─────────────────────────────────
   - type: entities
@@ -120,12 +136,20 @@ cards:
         attribute: last_session_duration_s
         name: Last session (s)
         icon: mdi:timer-outline
+      - type: attribute
+        entity: sensor.neverdry_giardino_pino_deficit
+        attribute: valve_fsm_state
+        name: Valve state
+        icon: mdi:valve
       - entity: button.neverdry_giardino_pino_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
       - entity: button.neverdry_giardino_pino_mark_irrigated
         name: Mark as irrigated
         icon: mdi:water-check
+      - entity: button.neverdry_giardino_pino_reset_valve
+        name: Reset valve (unlock)
+        icon: mdi:lock-reset
 
   # ── Zone: Giardino Melograno ────────────────────────────
   - type: entities
@@ -148,9 +172,17 @@ cards:
         attribute: last_session_duration_s
         name: Last session (s)
         icon: mdi:timer-outline
+      - type: attribute
+        entity: sensor.neverdry_giardino_melograno_deficit
+        attribute: valve_fsm_state
+        name: Valve state
+        icon: mdi:valve
       - entity: button.neverdry_giardino_melograno_irrigate
         name: Irrigate now
         icon: mdi:sprinkler
       - entity: button.neverdry_giardino_melograno_mark_irrigated
         name: Mark as irrigated
         icon: mdi:water-check
+      - entity: button.neverdry_giardino_melograno_reset_valve
+        name: Reset valve (unlock)
+        icon: mdi:lock-reset

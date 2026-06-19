@@ -41,6 +41,7 @@ from .const import (
     SERVICE_IRRIGATE_ZONE,
     SERVICE_MARK_IRRIGATED,
     SERVICE_RESET,
+    SERVICE_RESET_VALVE,
     SERVICE_STOP,
 )
 from .valve_fsm import ValveState
@@ -138,6 +139,7 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
         self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
+        self._hass.services.async_register(DOMAIN, SERVICE_RESET_VALVE, self._handle_reset_valve)
 
         # Monitor valve state changes to detect manual irrigation
         valve_entities = [v for v in self._valve_to_zone if v]
@@ -392,6 +394,24 @@ class IrrigationController:
                 zs.reset_deficit("mark_irrigated")
                 zs.async_write_ha_state()
             _LOGGER.info("All zones marked as irrigated, deficits reset")
+
+    async def _handle_reset_valve(self, call: ServiceCall) -> None:
+        """Reset valve FSM from MAINTENANCE to IDLE for a specific zone."""
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        zone = self._zones.get(zone_name)
+        if zone is None:
+            _LOGGER.error("reset_valve: zone '%s' not found", zone_name)
+            return
+        if not zone.valve:
+            _LOGGER.error("reset_valve: zone '%s' has no valve configured", zone_name)
+            return
+        operator = self._valve_operators.get(zone.valve)
+        if operator is None:
+            _LOGGER.warning("reset_valve: zone '%s' has no operator (volume_preset mode?)", zone_name)
+            return
+        await operator.reset_maintenance()
+        zone.async_write_ha_state()
+        _LOGGER.info("Valve maintenance reset: zone='%s'", zone_name)
 
     # ── Core irrigation logic ────────────────────────────
 
