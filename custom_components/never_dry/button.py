@@ -1,6 +1,6 @@
 """Button platform for the NeverDry integration.
 
-Provides per-zone buttons: "Irrigate" and "Mark as irrigated".
+Provides per-zone buttons: "Irrigate", "Mark as irrigated", and "Reset valve".
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from .const import (
     DOMAIN,
     SERVICE_IRRIGATE_ZONE,
     SERVICE_MARK_IRRIGATED,
+    SERVICE_RESET_VALVE,
 )
 
 
@@ -57,6 +58,8 @@ def _create_buttons(hass: HomeAssistant, config: dict, entry_id: str = "yaml") -
         device_info = _zone_device_info(entry_id, zone_name)
         buttons.append(MarkIrrigatedButton(hass, zone_name, device_info))
         buttons.append(IrrigateButton(hass, zone_name, device_info))
+        if zone_conf.get("valve"):
+            buttons.append(ResetMaintenanceButton(hass, zone_name, device_info))
     return buttons
 
 
@@ -104,5 +107,29 @@ class IrrigateButton(ButtonEntity):
         await self._hass.services.async_call(
             DOMAIN,
             SERVICE_IRRIGATE_ZONE,
+            {ATTR_ZONE_NAME: self._zone_name},
+        )
+
+
+class ResetMaintenanceButton(ButtonEntity):
+    """Button to reset a valve FSM from MAINTENANCE back to IDLE."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:lock-reset"
+
+    def __init__(self, hass: HomeAssistant, zone_name: str, device_info: DeviceInfo | None = None) -> None:
+        self._hass = hass
+        self._zone_name = zone_name
+        slug = zone_name.lower().replace(" ", "_")
+        self._attr_name = "Reset valve"
+        self._attr_unique_id = f"reset_valve_{slug}"
+        if device_info:
+            self._attr_device_info = device_info
+
+    async def async_press(self) -> None:
+        """Handle the button press — clear valve MAINTENANCE lock."""
+        await self._hass.services.async_call(
+            DOMAIN,
+            SERVICE_RESET_VALVE,
             {ATTR_ZONE_NAME: self._zone_name},
         )

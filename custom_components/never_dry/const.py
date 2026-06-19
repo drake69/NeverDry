@@ -103,6 +103,7 @@ SERVICE_IRRIGATE_ZONE = "irrigate_zone"
 SERVICE_IRRIGATE_ALL = "irrigate_all"
 SERVICE_STOP = "stop"
 SERVICE_MARK_IRRIGATED = "mark_irrigated"
+SERVICE_RESET_VALVE = "reset_valve"
 
 ATTR_ZONE_NAME = "zone_name"
 
