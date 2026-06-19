@@ -1,6 +1,6 @@
 # NeverDry
 
-**Smart irrigation for Home Assistant** — a scientific water balance model that knows *when* and *how long* to water your garden.
+**Smart irrigation for Home Assistant** — knows exactly when your garden needs water, calculates how long to run the valve, and makes sure it actually closes.
 
 [![Tests](https://github.com/drake69/NeverDry/actions/workflows/tests.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/drake69/NeverDry/graph/badge.svg)](https://codecov.io/gh/drake69/NeverDry)
@@ -14,45 +14,55 @@
 
 ---
 
-## What it does
+## Why NeverDry
 
-NeverDry tracks a real-time **soil water deficit** for each irrigation zone. Instead of fixed timers, it calculates exactly how much water your garden has lost through evaporation and how much it got back from rain — then irrigates only when needed, for exactly the right duration.
+**Your garden tells you when it's thirsty — NeverDry listens.**
 
-**Key idea: 1 mm of deficit = 1 liter per m² of water needed.**
+NeverDry tracks how much water your soil has lost to heat and wind, and how much it got back from rain. When the deficit crosses your threshold, it opens the valve for exactly the right amount of time. No fixed timers. No guessing. 1 mm of deficit = 1 liter per m² of water needed.
+
+**And it makes sure the valve always closes.**
+
+If a valve doesn't respond after three attempts, NeverDry blocks that zone and shows a warning on your dashboard. Three independent mechanisms make sure water can't run indefinitely — hardware timeout, software watchdog, and a per-valve state machine that remembers what happened.
 
 ## Features
 
-- **Scientific model** — simplified FAO-56 water balance with two calibratable parameters
-- **Per-zone crop coefficient (Kc)** — 10 plant families with seasonal variation, auto-adjusted for hemisphere
-- **Direct valve control** — opens/closes valves, calculates exact duration, sequential multi-zone
-- **Per-zone deficit tracking** — each zone dries out at its own rate based on plant type
-- **Rain-aware** — deficit decreases with each rain event, skips irrigation on rainy days
-- **Two scheduling modes** — reactive threshold (Mode A) and nightly deficit-based (Mode B)
-- **Monitoring mode** — no valves? Get a notification every 6h when irrigation is needed
-- **Emergency stop** — instantly closes all valves
-- **State persistence** — survives HA restarts via RestoreEntity
-- **Seamless updates** — automated releases via GitHub Actions, config entry migration preserves settings across versions
-- **UI config flow** — set up entirely from the HA interface
-- **Zero dependencies** — pure Python, no external libraries
+- **Knows when your garden is thirsty** — tracks heat, evaporation, and rainfall in real time; irrigates only when needed
+- **Each plant gets its own schedule** — 10 plant profiles (lawn, citrus, succulents, roses, ...) with seasonal variation; NeverDry knows your lawn drinks more in July than your lavender ever will
+- **Knows how much water to deliver** — calculates exactly how many liters each zone needs; if you have a flow meter, it measures delivery directly; otherwise it computes run time from flow rate
+- **Zones are independent** — the rose bed and the lawn dry out at different rates; each zone tracks its own deficit
+- **Skips irrigation after rain** — tracks how much rain actually fell and subtracts it from the deficit
+- **Valve always closes** — if a valve doesn't respond 3 times, NeverDry blocks it, shows the state on the dashboard, and waits for you to check
+- **Two scheduling modes** — water when the deficit crosses a threshold (Mode A) or every night based on current deficit (Mode B)
+- **Works without valves too** — no hardware? NeverDry sends a notification when watering is needed and by how much
+- **Emergency stop** — one button closes all valves immediately
+- **Grabbed the hose? Just tell NeverDry** — "Mark as irrigated" button keeps the deficit accurate even when you water manually
+- **Survives restarts** — your deficit history is saved across HA restarts
+- **Update in one click** — HACS notifies you when a new version is available; your settings are always preserved
+- **Set up from the UI** — no YAML required
+- **Zero dependencies** — pure Python, no extra packages
 
-## Sensors
+## Sensors and entities
 
-| Sensor | Unit | Description |
+| Entity | Unit | Description |
 |--------|------|-------------|
 | `sensor.et_hourly_estimate` | mm/h | Instantaneous evapotranspiration rate |
 | `sensor.never_dry` | mm | Reference soil water deficit (Kc=1.0) |
-| `sensor.irrigation_<zone>` | L | Per-zone volume with duration, deficit, Kc |
-
-Each zone sensor exposes: `volume_liters`, `duration_s`, `deficit_mm`, `kc`, `plant_family`, `valve`, `irrigating`, and more.
+| `sensor.<zone>_volume` | L | Per-zone volume delivered; attributes: `duration_s`, `deficit_mm`, `kc`, `plant_family`, `irrigating`, ... |
+| `sensor.<zone>_deficit` | mm | Per-zone water deficit; attributes: `valve_fsm_state`, `valve_in_maintenance`, `irrigating`, `flow_rate_lpm` |
+| `sensor.<zone>_valve` | — | Mirror of the physical valve state (`open`/`closed`) inside the zone device card |
+| `sensor.<zone>_battery` | % | Mirror of the valve battery sensor inside the zone device card |
+| `sensor.<zone>_flow_meter` | L/min | Mirror of the flow meter inside the zone device card |
+| `button.<zone>_reset_maintenance` | — | Unlock a valve that NeverDry blocked after repeated failures |
 
 ## Services
 
 | Service | Description |
 |---------|-------------|
-| `never_dry.irrigate_zone` | Irrigate one zone: open valve, wait, close, reset zone deficit |
-| `never_dry.irrigate_all` | All zones sequentially, then reset all deficits |
+| `never_dry.irrigate_zone` | Open valve, water for the calculated duration, close, update zone deficit |
+| `never_dry.irrigate_all` | Water all zones one by one, then mark all as done |
 | `never_dry.stop` | Emergency stop — close all valves immediately |
-| `never_dry.reset` | Reset all deficits to zero |
+| `never_dry.reset` | Reset all zone deficits to zero |
+| `never_dry.reset_valve` | Unlock a valve blocked by NeverDry after repeated close failures |
 
 ## Plant Families
 
@@ -125,7 +135,7 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | Zone name | Yes | — | Display name |
-| Valve | No | — | Switch entity controlling the valve (omit for monitoring mode) |
+| Valve | No | — | Switch entity controlling the valve (omit for monitoring-only mode) |
 | Area | Yes | — | Irrigated area [m²] |
 | System type | Yes | — | Drip / micro-sprinkler / sprinkler / manual |
 | Efficiency | No | (from type) | Override distribution efficiency [0.1–1.0] |
@@ -133,12 +143,17 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Custom Kc | No | — | Override Kc [0.1–2.0] |
 | Flow rate | Yes | — | Valve flow rate [L/min] |
 | Threshold | No | 20.0 | Mode A trigger [mm] |
+| Battery sensor | No | — | Valve battery sensor — mirrored in the zone device card |
+| Flow meter sensor | No | — | Flow meter entity — mirrored in the zone device card |
+| Moisture sensor | No | — | Soil moisture sensor — mirrored in the zone device card |
 
 ---
 
 ## Scientific Background
 
-Based on the FAO-56 water balance (Allen et al., 1998):
+NeverDry tracks how much water your soil has lost to heat (evapotranspiration) and gained from rain, and computes the difference — the *water deficit* — in millimetres. 1 mm = 1 litre per m². When the deficit crosses your threshold, NeverDry calculates the volume needed and runs the valve for exactly that long. Every rain event reduces the deficit; every irrigation session resets it. Plants that drink more in summer (lawn, vegetables) get a higher multiplier; drought-tolerant plants (lavender, succulents) get a lower one — that multiplier is called Kc.
+
+The model is based on FAO-56 (Allen et al., 1998):
 
 ```
 D_zone(t) = clamp(D_zone(t-1) + ET_h × Kc × Δt − ΔP,  0,  D_max)

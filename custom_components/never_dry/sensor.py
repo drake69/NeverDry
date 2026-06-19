@@ -255,6 +255,41 @@ def _create_entities(
         entities.append(ZoneThresholdSensor(zone_sensor, zone_device))
         entities.append(ZoneAreaSensor(zone_sensor, zone_device))
         entities.append(ZoneEfficiencySensor(zone_sensor, zone_device))
+        # Linked mirrors of external entities configured for this zone
+        slug = zone_conf[CONF_ZONE_NAME].lower().replace(" ", "_")
+        if zone_conf.get(CONF_ZONE_VALVE):
+            entities.append(
+                ZoneLinkedSensor(
+                    hass,
+                    zone_conf[CONF_ZONE_VALVE],
+                    "Valve",
+                    "mdi:valve",
+                    f"linked_valve_{slug}",
+                    zone_device,
+                )
+            )
+        if zone_conf.get(CONF_ZONE_BATTERY_SENSOR):
+            entities.append(
+                ZoneLinkedSensor(
+                    hass,
+                    zone_conf[CONF_ZONE_BATTERY_SENSOR],
+                    "Battery",
+                    "mdi:battery",
+                    f"linked_battery_{slug}",
+                    zone_device,
+                )
+            )
+        if zone_conf.get(CONF_ZONE_FLOW_METER_SENSOR):
+            entities.append(
+                ZoneLinkedSensor(
+                    hass,
+                    zone_conf[CONF_ZONE_FLOW_METER_SENSOR],
+                    "Flow meter",
+                    "mdi:water-flow",
+                    f"linked_flow_{slug}",
+                    zone_device,
+                )
+            )
 
     return entities, di_sensor, zone_sensors
 
@@ -1102,6 +1137,20 @@ class ZoneDeficitSensor(SensorEntity):
     def native_value(self) -> float:
         return round(self._zone_sensor._zone_deficit, 2)
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs = {
+            "flow_rate_lpm": self._zone_sensor._flow_rate,
+            "irrigating": self._zone_sensor._irrigating,
+        }
+        if self._zone_sensor._last_irrigated:
+            attrs["last_session_duration_s"] = self._zone_sensor._last_session_duration_s
+        op = self._zone_sensor._operator
+        if op is not None:
+            attrs["valve_fsm_state"] = op.state.value
+            attrs["valve_in_maintenance"] = op.is_in_maintenance
+        return attrs
+
 
 # ══════════════════════════════════════════════════════════
 #  ZoneRainSensor (cumulative rain per zone in mm)
@@ -1417,3 +1466,72 @@ class ZoneKcSensor(_ZoneTextSensor):
     @property
     def native_value(self) -> float:
         return round(self._zone_sensor._get_current_kc(), 3)
+
+
+# ══════════════════════════════════════════════════════════
+#  ZoneLinkedSensor — mirrors an external HA entity inside
+#  the NeverDry zone device (valve, battery, flow meter)
+# ══════════════════════════════════════════════════════════
+
+
+class ZoneLinkedSensor(SensorEntity):
+    """Mirrors the state of an external HA entity within the NeverDry zone device.
+
+    Used to surface valve switch state, battery level, and flow meter readings
+    directly on the zone device card without leaving the NeverDry UI context.
+    Updates in real-time via state-change subscription.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        source_entity_id: str,
+        name: str,
+        icon: str,
+        unique_id: str,
+        device_info: DeviceInfo | None = None,
+    ) -> None:
+        self._hass = hass
+        self._source_entity_id = source_entity_id
+        self._attr_name = name
+        self._attr_icon = icon
+        self._attr_unique_id = unique_id
+        if device_info:
+            self._attr_device_info = device_info
+
+    async def async_added_to_hass(self) -> None:
+        async_track_state_change_event(self.hass, [self._source_entity_id], self._on_source_change)
+
+    @callback
+    def _on_source_change(self, event) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def native_value(self):
+        state = self.hass.states.get(self._source_entity_id)
+        if state is None or state.state in ("unavailable", "unknown"):
+            return None
+        raw = state.state
+        if raw == "on":
+            return "open"
+        if raw == "off":
+            return "closed"
+        try:
+            return float(raw)
+        except ValueError:
+            return raw
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        state = self.hass.states.get(self._source_entity_id)
+        if state:
+            return state.attributes.get("unit_of_measurement")
+        return None
+
+    @property
+    def available(self) -> bool:
+        state = self.hass.states.get(self._source_entity_id)
+        return state is not None and state.state not in ("unavailable", "unknown")
