@@ -8,8 +8,8 @@
 [![Release](https://github.com/drake69/NeverDry/actions/workflows/release.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/release.yml)
 [![Security](https://github.com/drake69/NeverDry/actions/workflows/security.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/security.yml)
 [![Lint](https://github.com/drake69/NeverDry/actions/workflows/lint.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/lint.yml)
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5)](https://github.com/hacs/integration)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
 
 ---
