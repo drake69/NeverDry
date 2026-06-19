@@ -1,4 +1,4 @@
-"""Tests for ZoneDurationSensor and ZoneLastDurationSensor."""
+"""Tests for ZoneFlowRateSensor, ZoneDurationSensor and ZoneLastDurationSensor."""
 
 from datetime import datetime
 from unittest.mock import MagicMock
@@ -12,7 +12,12 @@ from never_dry.const import (
     CONF_ZONE_THRESHOLD,
     CONF_ZONE_VALVE,
 )
-from never_dry.sensor import IrrigationZoneSensor, ZoneDurationSensor, ZoneLastDurationSensor
+from never_dry.sensor import (
+    IrrigationZoneSensor,
+    ZoneDurationSensor,
+    ZoneFlowRateSensor,
+    ZoneLastDurationSensor,
+)
 
 
 def _make_hass():
@@ -32,6 +37,38 @@ def _make_zone(di_sensor, name="Orto", flow_rate=8.0, area=20.0, efficiency=0.90
         CONF_ZONE_THRESHOLD: 15.0,
     }
     return IrrigationZoneSensor(_make_hass(), zone_config, di_sensor)
+
+
+class TestZoneFlowRateSensor:
+    def test_name(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor._attr_name == "Flow rate"
+
+    def test_unit(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor._attr_native_unit_of_measurement == "L/min"
+
+    def test_icon(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor._attr_icon == "mdi:gauge"
+
+    def test_unique_id(self, di_sensor):
+        zone = _make_zone(di_sensor, name="Giardino Orto")
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor._attr_unique_id == "flow_rate_zone_giardino_orto"
+
+    def test_value(self, di_sensor):
+        zone = _make_zone(di_sensor, flow_rate=3.33)
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor.native_value == pytest.approx(3.33, abs=0.01)
+
+    def test_value_rounded(self, di_sensor):
+        zone = _make_zone(di_sensor, flow_rate=8.0)
+        sensor = ZoneFlowRateSensor(zone)
+        assert sensor.native_value == 8.0
 
 
 class TestZoneDurationSensor:

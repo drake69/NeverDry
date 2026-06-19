@@ -248,6 +248,7 @@ def _create_entities(
         entities.append(ZoneLastIrrigatedSensor(zone_sensor, zone_device))
         entities.append(ZoneLastSourceSensor(zone_sensor, zone_device))
         entities.append(ZoneLastVolumeSensor(zone_sensor, zone_device))
+        entities.append(ZoneFlowRateSensor(zone_sensor, zone_device))
         entities.append(ZoneDurationSensor(zone_sensor, zone_device))
         entities.append(ZoneLastDurationSensor(zone_sensor, zone_device))
         entities.append(ZoneKcSensor(zone_sensor, zone_device))
@@ -1402,6 +1403,25 @@ class ZoneLastSourceSensor(_ZoneTextSensor):
     @property
     def native_value(self) -> str | None:
         return self._zone_sensor._last_irrigation_source
+
+
+class ZoneFlowRateSensor(_ZoneTextSensor):
+    """Configured flow rate for this zone [L/min]."""
+
+    _attr_native_unit_of_measurement = "L/min"
+
+    def __init__(self, zone_sensor, device_info=None):
+        super().__init__(
+            zone_sensor,
+            "Flow rate",
+            "mdi:gauge",
+            "flow_rate_zone",
+            device_info,
+        )
+
+    @property
+    def native_value(self) -> float:
+        return round(self._zone_sensor._flow_rate, 2)
 
 
 class ZoneLastVolumeSensor(_ZoneTextSensor):
