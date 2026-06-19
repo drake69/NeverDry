@@ -11,6 +11,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
+[![GitHub stars](https://img.shields.io/github/stars/drake69/NeverDry?style=social)](https://github.com/drake69/NeverDry/stargazers)
+
+If NeverDry is useful to you, **[leave a star](https://github.com/drake69/NeverDry/stargazers)** ⭐ — it helps others find the project.
 
 ---
 
