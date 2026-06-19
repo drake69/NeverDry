@@ -255,7 +255,7 @@
 <section class="hero">
     <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
     <h1>NeverDry</h1>
-    <p class="tagline">Smart irrigation for Home Assistant. Scientific water balance model that knows when and how long to water your garden.</p>
+    <p class="tagline">Your garden tells you when it's thirsty. NeverDry listens — and makes sure the valve always closes.</p>
     <div class="badges">
         <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
         <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
@@ -269,57 +269,57 @@
 <!-- Features -->
 <section class="features">
     <div class="container">
-        <h2>Features</h2>
+        <h2>What NeverDry does for you</h2>
         <div class="feature-grid">
             <div class="feature-card">
                 <div class="icon">🌡️</div>
-                <h3>Scientific ET Model</h3>
-                <p>Simplified FAO-56 water balance. Estimates evapotranspiration from temperature with two calibratable parameters.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🌱</div>
-                <h3>10 Plant Families</h3>
-                <p>Per-zone crop coefficient (Kc) with seasonal variation. Lawn, vegetables, succulents, fruit trees, and more. Auto-adapts to hemisphere.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🚿</div>
-                <h3>Direct Valve Control</h3>
-                <p>Opens and closes valves automatically. Sequential multi-zone irrigation with emergency stop.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">📊</div>
-                <h3>Per-Zone Deficit</h3>
-                <p>Each zone tracks its own soil water deficit. Different plants dry out at different rates — as they should.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🌧️</div>
-                <h3>Rain-Aware</h3>
-                <p>Automatically skips irrigation on rainy days. Deficit decreases with each rain event.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">⚙️</div>
-                <h3>UI Config Flow</h3>
-                <p>Set up entirely from the Home Assistant interface. No YAML editing required.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🔄</div>
-                <h3>Seamless Updates</h3>
-                <p>Automated releases via GitHub Actions. Config migration preserves your settings across versions. Update with one click in HACS.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">🖐️</div>
-                <h3>Manual Valve Aware</h3>
-                <p>Open the valve from the physical button, the Zigbee app, or HA — NeverDry tracks the session, updates the deficit, and auto-closes at the minimum between water needed and safety timeout.</p>
-            </div>
-            <div class="feature-card">
-                <div class="icon">💧</div>
-                <h3>Multiple Triggers</h3>
-                <p>Irrigate from the scheduler, from a Lovelace button, from automations, from the valve itself, or just record "I watered with the hose" — NeverDry keeps the deficit honest in all four cases.</p>
+                <h3>Knows when your garden is thirsty</h3>
+                <p>Tracks evaporation and rainfall day by day. When the soil deficit crosses your threshold, NeverDry opens the valve for exactly as long as needed — no fixed timers, no guessing.</p>
             </div>
             <div class="feature-card">
                 <div class="icon">🛡️</div>
-                <h3>Multi-layer Safety</h3>
-                <p>Three independent safety nets prevent valve run-on: software watchdog (asyncio task), hardware interlock that programs the on-device timer via Zigbee entity or MQTT, and delivery timeout. If one layer fails, the next one catches it.</p>
+                <h3>The valve always closes</h3>
+                <p>If a valve doesn't respond after three attempts, NeverDry blocks that zone and shows a warning on your dashboard. Three independent safety mechanisms make sure water can't run indefinitely.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌱</div>
+                <h3>Each plant gets its own schedule</h3>
+                <p>Lawn, roses, citrus, succulents — 10 plant profiles with seasonal variation. Your lawn drinks more in July than your lavender ever will. NeverDry handles that automatically.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📊</div>
+                <h3>Zones are independent</h3>
+                <p>The rose bed and the lawn dry out at different rates. Each zone tracks its own soil water deficit separately — no more one-schedule-fits-all.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🌧️</div>
+                <h3>Skips irrigation after rain</h3>
+                <p>NeverDry tracks exactly how much rain fell and subtracts it from the deficit automatically. No more watering the day after a storm.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🖐️</div>
+                <h3>Grabbed the hose? Just tell NeverDry</h3>
+                <p>Open the valve manually, use the physical button, or water by hand — "Mark as irrigated" keeps the deficit accurate no matter how you watered.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">💧</div>
+                <h3>Water from anywhere</h3>
+                <p>Dashboard button, automation, scheduler, physical valve — NeverDry always tracks what happened and updates the deficit accordingly.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">⚙️</div>
+                <h3>Set up from the UI</h3>
+                <p>No YAML files. Configure zones, plants, valves, and thresholds directly from the Home Assistant interface.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">🔄</div>
+                <h3>Update in one click</h3>
+                <p>HACS notifies you when a new version is available. One click, restart HA — your settings and history are always preserved.</p>
+            </div>
+            <div class="feature-card">
+                <div class="icon">📡</div>
+                <h3>Works without valves too</h3>
+                <p>No hardware? NeverDry sends you a notification when watering is needed and by how much. Monitoring mode with zero hardware requirements.</p>
             </div>
         </div>
     </div>
@@ -329,11 +329,12 @@
 <section class="how-it-works">
     <div class="container">
         <h2>How It Works</h2>
-        <p>NeverDry tracks a simple water balance for each irrigation zone:</p>
+        <p>NeverDry keeps track of how much water your soil has lost to heat and evaporation, and how much it got back from rain. The difference is the <strong>soil water deficit</strong> — how thirsty your garden is.</p>
         <div class="formula">
-            D<sub>zone</sub>(t) = D<sub>zone</sub>(t-1) + ET<sub>h</sub> &times; Kc &times; &Delta;t &minus; rain
+            1 mm of deficit = 1 litre of water needed per square metre
         </div>
-        <p>When the deficit is high, your soil is dry and needs water. When it rains, the deficit drops. After irrigation, it resets to zero. <strong>1 mm of deficit = 1 liter per square meter needed.</strong></p>
+        <p>When the deficit crosses your threshold, NeverDry opens the valve for exactly as long as needed to fill it back up. When it rains, the deficit drops automatically. After irrigation, it resets. Plants that drink more in summer get a higher multiplier — so the lawn and the lavender each get the right amount, without any manual adjustment.</p>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;">For the technically curious, the full water balance formula is in the <a href="https://github.com/drake69/NeverDry#scientific-background">README</a>.</p>
     </div>
 </section>
 
