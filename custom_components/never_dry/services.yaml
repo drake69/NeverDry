@@ -44,3 +44,18 @@ mark_irrigated:
       example: "Vegetable Garden"
       selector:
         text:
+
+reset_valve:
+  name: Reset valve (unlock maintenance)
+  description: >
+    Reset the valve FSM from MAINTENANCE back to IDLE. Use this after
+    repeated close-verification failures to allow the zone to irrigate again.
+    The valve must be physically closed before resetting.
+  fields:
+    zone_name:
+      name: Zone name
+      description: The zone whose valve should be unlocked.
+      required: true
+      example: "Vegetable Garden"
+      selector:
+        text:
