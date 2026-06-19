@@ -42,6 +42,7 @@ def _make_call(data):
 #  valve_operators property
 # ═══════════════════════════════════════════════
 
+
 class TestValveOperatorsProperty:
     def test_returns_dict(self, controller):
         ops = controller.valve_operators
@@ -51,6 +52,7 @@ class TestValveOperatorsProperty:
 # ═══════════════════════════════════════════════
 #  _handle_reset
 # ═══════════════════════════════════════════════
+
 
 class TestHandleReset:
     @pytest.mark.asyncio
@@ -72,10 +74,12 @@ class TestHandleReset:
 #  _handle_irrigate_zone error paths
 # ═══════════════════════════════════════════════
 
+
 class TestHandleIrrigateZoneErrors:
     @pytest.mark.asyncio
     async def test_unknown_zone_logs_error(self, controller, caplog):
         import logging
+
         with caplog.at_level(logging.ERROR):
             await controller._handle_irrigate_zone(_make_call({"zone_name": "NonExistent"}))
         assert "not found" in caplog.text
@@ -98,6 +102,7 @@ class TestHandleIrrigateZoneErrors:
 #  _handle_irrigate_all error paths
 # ═══════════════════════════════════════════════
 
+
 class TestHandleIrrigateAllErrors:
     @pytest.mark.asyncio
     async def test_already_running_skips(self, controller):
@@ -117,10 +122,12 @@ class TestHandleIrrigateAllErrors:
 #  _handle_reset_valve
 # ═══════════════════════════════════════════════
 
+
 class TestHandleResetValve:
     @pytest.mark.asyncio
     async def test_unknown_zone_logs_error(self, controller, caplog):
         import logging
+
         with caplog.at_level(logging.ERROR):
             await controller._handle_reset_valve(_make_call({"zone_name": "Ghost"}))
         assert "not found" in caplog.text
@@ -128,6 +135,7 @@ class TestHandleResetValve:
     @pytest.mark.asyncio
     async def test_zone_without_valve_logs_error(self, hass_mock, di_sensor, caplog):
         import logging
+
         cfg = {
             CONF_ZONE_NAME: "NoValve",
             CONF_ZONE_AREA: 10.0,
@@ -154,9 +162,10 @@ class TestHandleResetValve:
 #  _make_reactive_handler
 # ═══════════════════════════════════════════════
 
+
 class TestReactiveHandler:
     def test_below_threshold_no_irrigation(self, controller, zone_orto, hass_mock):
-        zone_orto._zone_deficit = 5.0   # threshold is 15.0
+        zone_orto._zone_deficit = 5.0  # threshold is 15.0
         handler = controller._make_reactive_handler("Orto")
         hass_mock.async_create_task = MagicMock()
         handler(1.0, 0.5, 0.0)
@@ -180,7 +189,7 @@ class TestReactiveHandler:
     def test_unknown_zone_no_crash(self, controller, hass_mock):
         handler = controller._make_reactive_handler("Fantasma")
         hass_mock.async_create_task = MagicMock()
-        handler(1.0, 0.5, 0.0)   # should not raise
+        handler(1.0, 0.5, 0.0)  # should not raise
         hass_mock.async_create_task.assert_not_called()
 
     def test_sets_source_to_reactive(self, controller, zone_orto, hass_mock):
@@ -194,6 +203,7 @@ class TestReactiveHandler:
 # ═══════════════════════════════════════════════
 #  _make_scheduled_handler
 # ═══════════════════════════════════════════════
+
 
 class TestScheduledHandler:
     def test_below_threshold_no_irrigation(self, controller, zone_orto, hass_mock):
@@ -236,6 +246,7 @@ class TestScheduledHandler:
 #  register_services — mode setup
 # ═══════════════════════════════════════════════
 
+
 class TestRegisterServicesMode:
     def test_mode_b_registers_time_change(self, hass_mock, di_sensor):
         zone = _make_zone(hass_mock, di_sensor, name="Orto", mode="scheduled", irrigation_time="07:00")
@@ -249,6 +260,7 @@ class TestRegisterServicesMode:
 
     def test_mode_b_invalid_time_logs_error(self, hass_mock, di_sensor, caplog):
         import logging
+
         zone = _make_zone(hass_mock, di_sensor, name="Orto", mode="scheduled", irrigation_time="bad")
         ctrl = IrrigationController(hass_mock, di_sensor, [zone])
         with caplog.at_level(logging.ERROR):
