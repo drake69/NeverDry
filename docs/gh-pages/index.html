@@ -394,6 +394,22 @@
     </div>
 </section>
 
+<!-- What's new -->
+<section class="how-it-works">
+    <div class="container">
+        <h2>What's new in v0.10.0</h2>
+        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-20</p>
+        <ul style="max-width: 680px; margin: 0 auto; text-align: left; line-height: 2;">
+            <li><strong>Metric &amp; imperial units</strong> — all sensors now declare the proper HA device class; deficit, volume, flow rate, and ET rate convert automatically to your system preference.</li>
+            <li><strong><code>never_dry.set_deficit</code> service</strong> — set the water deficit of one zone (or all zones) to an arbitrary mm value; useful for manual calibration and testing.</li>
+            <li><strong>Controller reload reliability</strong> — eliminated duplicate controller instances after HA reload; graceful shutdown ensures the valve closes and session data is saved before a new instance starts.</li>
+            <li><strong>No more spurious notifications</strong> — fixed "Manual irrigation detected" false alarm when NeverDry itself closes a valve; fixed CRITICAL alert firing even when valve recovery succeeds.</li>
+            <li><strong>Config flow guard</strong> — saving zone settings without actual changes no longer triggers an unnecessary integration reload.</li>
+        </ul>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.0">Full release notes on GitHub →</a></p>
+    </div>
+</section>
+
 <!-- Support -->
 <section class="support">
     <h2>Support the Project</h2>
