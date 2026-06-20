@@ -109,7 +109,7 @@ class TestSessionResultIntegration:
     @pytest.mark.asyncio
     async def test_auto_cycle_emits_session_result(self, controller, zone_orto, caplog):
         zone_orto._zone_deficit = 5.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         with caplog.at_level(logging.INFO, logger="never_dry.controller"):
             await controller._irrigate_zones(["Orto"])

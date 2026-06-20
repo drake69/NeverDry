@@ -13,6 +13,7 @@ An emergency stop service closes all valves immediately.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from datetime import datetime
@@ -26,6 +27,7 @@ from homeassistant.helpers.event import (
 
 from .const import (
     ANOMALY_DEFICIT_MULTIPLIER,
+    ATTR_DEFICIT_MM,
     ATTR_ZONE_NAME,
     DEFAULT_BATTERY_LOW_THRESHOLD,
     DEFAULT_INTER_ZONE_DELAY,
@@ -42,6 +44,7 @@ from .const import (
     SERVICE_MARK_IRRIGATED,
     SERVICE_RESET,
     SERVICE_RESET_VALVE,
+    SERVICE_SET_DEFICIT,
     SERVICE_STOP,
 )
 from .valve_fsm import ValveState
@@ -92,6 +95,7 @@ class IrrigationController:
         self._irrigation_task: asyncio.Task | None = None
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
         self._unsub_monitor = None
+        self._unsubs: list = []
         self._last_service_call: dict[str, float] = {}
         self._current_source: str | None = None
         # Manual valve tracking: valve_entity_id → flow meter reading at valve open
@@ -101,6 +105,9 @@ class IrrigationController:
         self._manual_session_meta: dict[str, tuple[datetime, float]] = {}
         # Per-valve safety-close watchdog for external (non-commanded) opens
         self._manual_safety_tasks: dict[str, asyncio.Task] = {}
+        # Valves currently being closed by the controller — suppresses spurious
+        # "manual irrigation detected" events while operator.close() is in flight.
+        self._controller_closing: set[str] = set()
         # Reverse map: valve_entity_id → zone_name
         self._valve_to_zone: dict[str, str] = {zs.valve: zs.zone_name for zs in zone_sensors if zs.valve}
         # Battery sensor → zone_name map
@@ -140,24 +147,27 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
         self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
         self._hass.services.async_register(DOMAIN, SERVICE_RESET_VALVE, self._handle_reset_valve)
+        self._hass.services.async_register(DOMAIN, SERVICE_SET_DEFICIT, self._handle_set_deficit)
 
         # Monitor valve state changes to detect manual irrigation
         valve_entities = [v for v in self._valve_to_zone if v]
         if valve_entities:
-            async_track_state_change_event(self._hass, valve_entities, self._on_valve_state_change)
+            self._unsubs.append(async_track_state_change_event(self._hass, valve_entities, self._on_valve_state_change))
 
         # Monitor battery sensors for low-battery alerts
         battery_entities = [b for b in self._battery_to_zone if b]
         if battery_entities:
-            async_track_state_change_event(self._hass, battery_entities, self._on_battery_change)
+            self._unsubs.append(async_track_state_change_event(self._hass, battery_entities, self._on_battery_change))
 
         # Periodic deficit anomaly check (all modes, every 6h)
         from datetime import timedelta
 
-        async_track_time_interval(
-            self._hass,
-            self._check_deficit_anomaly,
-            timedelta(hours=6),
+        self._unsubs.append(
+            async_track_time_interval(
+                self._hass,
+                self._check_deficit_anomaly,
+                timedelta(hours=6),
+            )
         )
 
         # Set up automatic irrigation per zone based on mode
@@ -170,12 +180,14 @@ class IrrigationController:
                 try:
                     parts = zs.irrigation_time.split(":")
                     hour, minute = int(parts[0]), int(parts[1])
-                    async_track_time_change(
-                        self._hass,
-                        self._make_scheduled_handler(zs.zone_name),
-                        hour=hour,
-                        minute=minute,
-                        second=0,
+                    self._unsubs.append(
+                        async_track_time_change(
+                            self._hass,
+                            self._make_scheduled_handler(zs.zone_name),
+                            hour=hour,
+                            minute=minute,
+                            second=0,
+                        )
                     )
                     _LOGGER.info(
                         "Mode B (scheduled): zone='%s' at %s",
@@ -211,6 +223,7 @@ class IrrigationController:
                 self._check_and_notify,
                 timedelta(hours=6),
             )
+            self._unsubs.append(self._unsub_monitor)
 
     # ── Scheduled irrigation ────────────────────────────────
 
@@ -327,6 +340,25 @@ class IrrigationController:
             zs.reset_deficit("service_reset")
             zs.async_write_ha_state()
 
+    async def _handle_set_deficit(self, call: ServiceCall) -> None:
+        """Set deficit to a specific value [mm] — for testing and manual correction."""
+        deficit_mm = float(call.data.get(ATTR_DEFICIT_MM, 0.0))
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        if zone_name:
+            zone = self._zones.get(zone_name)
+            if zone is None:
+                _LOGGER.error("set_deficit: zone '%s' not found. Available: %s", zone_name, list(self._zones.keys()))
+                return
+            zone.set_deficit_mm(deficit_mm)
+            zone.async_write_ha_state()
+        else:
+            self._dryness.set_deficit_mm(deficit_mm)
+            self._dryness.async_write_ha_state()
+            for zs in self._zones.values():
+                zs.set_deficit_mm(deficit_mm)
+                zs.async_write_ha_state()
+        _LOGGER.info("set_deficit: zone=%s deficit=%.2f mm", zone_name or "all", deficit_mm)
+
     async def _handle_irrigate_zone(self, call: ServiceCall) -> None:
         """Irrigate a single zone by name."""
         zone_name = call.data.get(ATTR_ZONE_NAME)
@@ -357,6 +389,25 @@ class IrrigationController:
 
         self._current_source = "button"
         self._irrigation_task = self._hass.async_create_task(self._irrigate_zones(list(self._zones.keys())))
+
+    async def async_stop(self) -> None:
+        """Stop any running irrigation and wait for the task to settle.
+
+        Called during entry unload so the old controller finishes cleanly
+        before the new one starts — prevents duplicate deficit updates.
+
+        Sets _stop_requested so the polling loop exits within ~1 s, then
+        awaits the task so the finally block can close the valve and settle
+        the deficit before the new controller takes over.
+        """
+        self._stop_requested = True
+        task = self._irrigation_task
+        if task is not None and not task.done():
+            with contextlib.suppress(Exception):
+                await task
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
 
     async def _handle_stop(self, call: ServiceCall) -> None:
         """Emergency stop: close every configured valve concurrently."""
@@ -480,10 +531,12 @@ class IrrigationController:
                     continue
 
                 _LOGGER.info(
-                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL, deficit=%.1fmm, timeout=%ds",
+                    "Starting irrigation: zone='%s', mode='%s', volume=%.1fL,"
+                    " est_duration=%ds, deficit=%.1fmm, timeout=%ds",
                     zone_name,
                     zone.delivery_mode,
                     zone.volume_liters,
+                    zone.duration_s,
                     zone._zone_deficit,
                     zone.delivery_timeout,
                 )
@@ -635,7 +688,7 @@ class IrrigationController:
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
-        elapsed = await self._wait_with_stop_check(duration)
+        elapsed = await self._wait_with_stop_check(duration, valve_entity=zone.valve)
 
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
@@ -958,15 +1011,25 @@ class IrrigationController:
             context={"entity_id": entity_id, "reason": reason},
         )
 
-    async def _wait_with_stop_check(self, duration_s: int) -> int:
+    async def _wait_with_stop_check(self, duration_s: int, valve_entity: str | None = None) -> int:
         """Wait for duration, checking for stop requests every second.
 
         Returns the number of seconds actually elapsed, which may be less
-        than ``duration_s`` when a stop is requested mid-wait.
+        than ``duration_s`` when a stop is requested or the valve is closed
+        externally.
         """
         for elapsed in range(duration_s):
             if self._stop_requested:
                 return elapsed
+            if valve_entity is not None:
+                state = self._hass.states.get(valve_entity)
+                if state is not None and state.state == "off":
+                    _LOGGER.info(
+                        "Valve '%s' closed externally after %ds — aborting estimated_flow wait",
+                        valve_entity,
+                        elapsed,
+                    )
+                    return elapsed
             await asyncio.sleep(1)
         return duration_s
 
@@ -1004,7 +1067,11 @@ class IrrigationController:
             if self._active_valve == entity_id:
                 self._active_valve = None
             return True
-        result = await operator.close()
+        self._controller_closing.add(entity_id)
+        try:
+            result = await operator.close()
+        finally:
+            self._controller_closing.discard(entity_id)
         if self._active_valve == entity_id:
             self._active_valve = None
         if result.status != OperationStatus.OK:
@@ -1099,6 +1166,8 @@ class IrrigationController:
             )
 
         elif old_state.state == "on" and new_state.state == "off":
+            if entity_id in self._controller_closing:
+                return  # NeverDry-initiated close — not a manual event
             # Cancel the safety watchdog: the user (or the watchdog itself)
             # already closed the valve.
             task = self._manual_safety_tasks.pop(entity_id, None)

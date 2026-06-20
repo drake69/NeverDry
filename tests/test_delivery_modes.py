@@ -44,7 +44,7 @@ class TestEstimatedFlowDelivery:
         zone = _make_zone(hass_mock, di_sensor)
         zone._zone_deficit = 5.0
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
-        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await ctrl._deliver_estimated_flow(zone)
 
@@ -320,7 +320,7 @@ class TestDeliveryModeDispatch:
         zone = _make_zone(hass_mock, di_sensor)
         zone._zone_deficit = 5.0
         ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
-        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         result = await ctrl._deliver_water(zone)
 

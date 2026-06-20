@@ -30,7 +30,16 @@ def _create_ha_stubs():
         MEASUREMENT = "measurement"
         TOTAL_INCREASING = "total_increasing"
 
+    class SensorDeviceClass:
+        AREA = "area"
+        DURATION = "duration"
+        PRECIPITATION = "precipitation"
+        PRECIPITATION_INTENSITY = "precipitation_intensity"
+        VOLUME_FLOW_RATE = "volume_flow_rate"
+        VOLUME_STORAGE = "volume_storage"
+
     sensor_mod.SensorStateClass = SensorStateClass
+    sensor_mod.SensorDeviceClass = SensorDeviceClass
 
     # homeassistant.core
     core_mod = ModuleType("homeassistant.core")
@@ -125,7 +134,34 @@ def _create_ha_stubs():
         DIAGNOSTIC = "diagnostic"
         CONFIG = "config"
 
+    class UnitOfArea:
+        SQUARE_METERS = "m²"
+
+    class UnitOfLength:
+        MILLIMETERS = "mm"
+        INCHES = "in"
+
+    class UnitOfTime:
+        SECONDS = "s"
+
+    class UnitOfVolume:
+        LITERS = "L"
+        GALLONS = "gal"
+
+    class UnitOfVolumeFlowRate:
+        LITERS_PER_MINUTE = "L/min"
+
+    class UnitOfVolumetricFlux:
+        MILLIMETERS_PER_HOUR = "mm/h"
+        INCHES_PER_HOUR = "in/h"
+
     const_mod.EntityCategory = EntityCategory
+    const_mod.UnitOfArea = UnitOfArea
+    const_mod.UnitOfLength = UnitOfLength
+    const_mod.UnitOfTime = UnitOfTime
+    const_mod.UnitOfVolume = UnitOfVolume
+    const_mod.UnitOfVolumeFlowRate = UnitOfVolumeFlowRate
+    const_mod.UnitOfVolumetricFlux = UnitOfVolumetricFlux
 
     # Register all stubs
     helpers_mod = ModuleType("homeassistant.helpers")

@@ -387,32 +387,28 @@ class ValveOperator:
     # ── Notifier bridging ────────────────────────────────────────────
 
     async def _notify_failure(self, kind: FailureKind) -> None:
-        """Surface a FailureKind via the notifier (or log if none configured)."""
+        """Surface a FailureKind via the notifier (or log if none configured).
+
+        CLOSE_LEAK is intentionally suppressed here: close() will attempt
+        recovery first, and _escalate_stuck_open() sends CRITICAL only if
+        recovery fails.  Sending CRITICAL before recovery is known causes
+        spurious "Valve stuck open" alerts.
+        """
         _LOGGER.error("Valve '%s' failure: %s", self._zone_name, kind.name)
         if self._notifier is None:
             return
-        severity = (
-            Severity.CRITICAL
-            if kind in (FailureKind.CLOSE_LEAK, FailureKind.CLOSE_VERIFICATION_FAILED)
-            else Severity.WARNING
-        )
         if kind == FailureKind.CLOSE_LEAK:
-            await self._notifier.notify(
-                self._zone_name,
-                NotificationKind.STUCK_OPEN,
-                severity,
-                context={"flow": "still positive after close command"},
-            )
-        else:
-            await self._notifier.notify(
-                self._zone_name,
-                NotificationKind.COMMAND_FAILED,
-                severity,
-                context={
-                    "operation": _OPERATION_FOR_FAILURE[kind],
-                    "error_detail": kind.value,
-                },
-            )
+            return
+        severity = Severity.CRITICAL if kind == FailureKind.CLOSE_VERIFICATION_FAILED else Severity.WARNING
+        await self._notifier.notify(
+            self._zone_name,
+            NotificationKind.COMMAND_FAILED,
+            severity,
+            context={
+                "operation": _OPERATION_FOR_FAILURE[kind],
+                "error_detail": kind.value,
+            },
+        )
 
     async def _attempt_leak_recovery(self) -> bool:
         """Last-resort recovery from ``CLOSE_LEAK``: re-issue turn_off, re-check.

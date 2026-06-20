@@ -7,6 +7,7 @@ NeverDry is a custom integration that calculates a real-time **soil water defici
 - **Per-zone crop coefficient (Kc)** with 10 plant families and seasonal variation
 - **Direct valve control** with sequential multi-zone irrigation
 - **Rain-aware** — skips irrigation automatically on rainy days
+- **Metric & imperial** — all sensors carry HA device classes; units follow your HA system preference automatically
 - **Monitoring mode** — works without smart valves (notification alerts)
 - **UI config flow** — no YAML needed
 

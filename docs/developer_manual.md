@@ -324,6 +324,52 @@ python3 -m pytest tests/ -v
 
 Async controller tests require `pytest-asyncio` (skipped if not installed).
 
+### 7.1 E2E smoke tests (pre-release, against live HA)
+
+One-shot integration tests that hit a real Home Assistant instance via the REST API.
+Run them manually before cutting a release — they are **not** executed in CI.
+
+**Setup:**
+
+```bash
+cd sw_artifacts
+cp tests/e2e/.env.example tests/e2e/.env
+# edit tests/e2e/.env with your values
+```
+
+`.env` fields:
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `HA_URL` | `http://homeassistant.local:8123` | Base URL of your HA instance |
+| `HA_TOKEN` | `eyJ0eXAi...` | Long-lived access token (HA → Profile → Security) |
+| `ZONE_NAME` | `Giardino_Ortensia` | Exact zone name as configured in NeverDry |
+
+The `.env` file is git-ignored and never committed.
+
+**Run:**
+
+```bash
+# All tests except valve control (safe to run anytime)
+python tests/e2e/smoke.py --no-valves
+
+# Full suite including irrigation cycle (opens real valves for ~3s)
+python tests/e2e/smoke.py
+```
+
+**Tests included:**
+
+| Test | Valve HW | What it checks |
+|------|----------|----------------|
+| `ha_reachable` | — | HA REST API responds |
+| `integration_loaded` | — | Config entry present and state=loaded |
+| `entities_present` | — | neverdry entities exist in state machine |
+| `et_sensor_valid` | — | ET sensor has a numeric, non-negative value |
+| `zone_entities_present` | — | Entities for the configured zone exist |
+| `irrigate_zone_and_stop` | yes | `irrigate_zone` changes sensor; `stop` completes |
+| `reset_deficit` | — | `reset` service completes without error |
+| `config_reload` | — | Config entry reloads and comes back loaded |
+
 ## 8. Adding a new ET tier
 
 To add a new ET calculation method (e.g., Hargreaves-Samani):
@@ -382,7 +428,8 @@ Releases are automated via GitHub Actions (`.github/workflows/release.yml`):
 
 ### Pre-release checklist
 
-- [ ] All tests pass (`python3 -m pytest tests/ -v`)
+- [ ] All unit tests pass (`python3 -m pytest tests/ -v`)
+- [ ] E2E smoke tests pass (`python tests/e2e/smoke.py --no-valves`, then full run if valves available)
 - [ ] No uncommitted changes
 - [ ] `HACS` validation passes locally or in CI
 - [ ] Changelog / release notes drafted (GitHub auto-generates from PR titles)

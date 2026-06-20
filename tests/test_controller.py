@@ -24,7 +24,7 @@ class TestControllerState:
 
     def test_register_services(self, controller, hass_mock):
         controller.register_services()
-        assert hass_mock.services.async_register.call_count == 6
+        assert hass_mock.services.async_register.call_count == 7
 
 
 class TestIrrigateSingleZone:
@@ -35,7 +35,7 @@ class TestIrrigateSingleZone:
         """Controller should open valve, wait, close valve."""
         zone_orto._zone_deficit = 5.0
 
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto"])
 
@@ -50,7 +50,7 @@ class TestIrrigateSingleZone:
     async def test_resets_zone_deficit_after_irrigation(self, controller, di_sensor, zone_orto):
         """Zone deficit should be reset to zero after successful irrigation."""
         zone_orto._zone_deficit = 10.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto"])
 
@@ -85,7 +85,7 @@ class TestIrrigateSingleZone:
     async def test_skips_zone_with_zero_duration(self, controller, di_sensor):
         """Zone with zero deficit should be skipped."""
         di_sensor._deficit = 0.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto"])
 
@@ -99,7 +99,7 @@ class TestIrrigateSingleZone:
         zone_orto._zone_deficit = 5.0
         irrigating_states = []
 
-        async def capture_state(duration):
+        async def capture_state(duration, **kwargs):
             irrigating_states.append(zone_orto.is_irrigating)
             return 0
 
@@ -121,7 +121,7 @@ class TestIrrigateAllZones:
         """All zones should be irrigated in order."""
         zone_orto._zone_deficit = 10.0
         zone_prato._zone_deficit = 10.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto", "Prato"])
 
@@ -135,7 +135,7 @@ class TestIrrigateAllZones:
         zone_orto._zone_deficit = 10.0
         zone_prato._zone_deficit = 10.0
         di_sensor._deficit = 10.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto", "Prato"])
 
@@ -174,7 +174,7 @@ class TestEmergencyStop:
         zone_orto._zone_deficit = 10.0
         zone_prato._zone_deficit = 10.0
 
-        async def stop_during_wait(duration):
+        async def stop_during_wait(duration, **kwargs):
             controller._stop_requested = True
             return 0
 
@@ -806,7 +806,7 @@ class TestIrrigationEvent:
     async def test_event_fired_on_zone_completion(self, controller, hass_mock, zone_orto):
         """Event should be fired when a zone completes irrigation."""
         zone_orto._zone_deficit = 5.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
 
         await controller._irrigate_zones(["Orto"])
 
@@ -823,7 +823,7 @@ class TestIrrigationEvent:
         the caller (button, scheduled, reactive) rather than collapsing
         every commanded cycle into the generic 'automatic'."""
         zone_orto._zone_deficit = 5.0
-        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d: d)
+        controller._wait_with_stop_check = AsyncMock(side_effect=lambda d, **kwargs: d)
         controller._current_source = source
 
         await controller._irrigate_zones(["Orto"])
@@ -836,7 +836,7 @@ class TestIrrigationEvent:
         """No event should fire if irrigation is stopped."""
         zone_orto._zone_deficit = 10.0
 
-        async def stop_during_wait(duration):
+        async def stop_during_wait(duration, **kwargs):
             controller._stop_requested = True
             return 0
 
