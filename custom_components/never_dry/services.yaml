@@ -45,6 +45,32 @@ mark_irrigated:
       selector:
         text:
 
+set_deficit:
+  name: Set deficit
+  description: >
+    Set the soil water deficit to a specific value in mm.
+    Intended for testing, debugging, and manual correction of the water balance.
+    If zone_name is omitted, all zones and the reference sensor are updated.
+  fields:
+    deficit_mm:
+      name: Deficit (mm)
+      description: Target deficit value in mm. Must be >= 0.
+      required: true
+      example: 5.0
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.1
+          unit_of_measurement: mm
+    zone_name:
+      name: Zone name
+      description: The zone to update. Leave empty to update all zones.
+      required: false
+      example: "Orto"
+      selector:
+        text:
+
 reset_valve:
   name: Reset valve (unlock maintenance)
   description: >

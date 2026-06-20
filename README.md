@@ -46,8 +46,8 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 
 ## Sensors and entities
 
-| Entity | Unit | Description |
-|--------|------|-------------|
+| Entity | Native unit | Description |
+|--------|-------------|-------------|
 | `sensor.et_hourly_estimate` | mm/h | Instantaneous evapotranspiration rate |
 | `sensor.never_dry` | mm | Reference soil water deficit (Kc=1.0) |
 | `sensor.<zone>_volume` | L | Per-zone volume delivered; attributes: `duration_s`, `deficit_mm`, `kc`, `plant_family`, `irrigating`, ... |
@@ -56,6 +56,8 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 | `sensor.<zone>_battery` | % | Mirror of the valve battery sensor inside the zone device card |
 | `sensor.<zone>_flow_meter` | L/min | Mirror of the flow meter inside the zone device card |
 | `button.<zone>_reset_maintenance` | — | Unlock a valve that NeverDry blocked after repeated failures |
+
+All sensors that carry a physical unit declare the proper HA `device_class` (e.g. `precipitation`, `volume_storage`, `volume_flow_rate`). Home Assistant automatically converts the displayed unit to your system preference — go to **Settings → System → General → Unit system** to switch between metric and imperial. Deficit values appear in mm or inches; volumes in litres or gallons; flow rate in L/min or gal/min; ET rate in mm/h or in/h.
 
 ## Services
 
@@ -66,6 +68,7 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 | `never_dry.stop` | Emergency stop — close all valves immediately |
 | `never_dry.reset` | Reset all zone deficits to zero |
 | `never_dry.reset_valve` | Unlock a valve blocked by NeverDry after repeated close failures |
+| `never_dry.set_deficit` | Set the deficit of one zone (or all zones) to an arbitrary mm value — useful for testing and manual calibration |
 
 ## Plant Families
 

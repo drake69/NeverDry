@@ -27,6 +27,7 @@ from homeassistant.helpers.event import (
 
 from .const import (
     ANOMALY_DEFICIT_MULTIPLIER,
+    ATTR_DEFICIT_MM,
     ATTR_ZONE_NAME,
     DEFAULT_BATTERY_LOW_THRESHOLD,
     DEFAULT_INTER_ZONE_DELAY,
@@ -43,6 +44,7 @@ from .const import (
     SERVICE_MARK_IRRIGATED,
     SERVICE_RESET,
     SERVICE_RESET_VALVE,
+    SERVICE_SET_DEFICIT,
     SERVICE_STOP,
 )
 from .valve_fsm import ValveState
@@ -145,6 +147,7 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
         self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
         self._hass.services.async_register(DOMAIN, SERVICE_RESET_VALVE, self._handle_reset_valve)
+        self._hass.services.async_register(DOMAIN, SERVICE_SET_DEFICIT, self._handle_set_deficit)
 
         # Monitor valve state changes to detect manual irrigation
         valve_entities = [v for v in self._valve_to_zone if v]
@@ -336,6 +339,25 @@ class IrrigationController:
         for zs in self._zones.values():
             zs.reset_deficit("service_reset")
             zs.async_write_ha_state()
+
+    async def _handle_set_deficit(self, call: ServiceCall) -> None:
+        """Set deficit to a specific value [mm] — for testing and manual correction."""
+        deficit_mm = float(call.data.get(ATTR_DEFICIT_MM, 0.0))
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        if zone_name:
+            zone = self._zones.get(zone_name)
+            if zone is None:
+                _LOGGER.error("set_deficit: zone '%s' not found. Available: %s", zone_name, list(self._zones.keys()))
+                return
+            zone.set_deficit_mm(deficit_mm)
+            zone.async_write_ha_state()
+        else:
+            self._dryness.set_deficit_mm(deficit_mm)
+            self._dryness.async_write_ha_state()
+            for zs in self._zones.values():
+                zs.set_deficit_mm(deficit_mm)
+                zs.async_write_ha_state()
+        _LOGGER.info("set_deficit: zone=%s deficit=%.2f mm", zone_name or "all", deficit_mm)
 
     async def _handle_irrigate_zone(self, call: ServiceCall) -> None:
         """Irrigate a single zone by name."""

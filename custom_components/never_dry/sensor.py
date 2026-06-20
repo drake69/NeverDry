@@ -18,10 +18,19 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    UnitOfArea,
+    UnitOfLength,
+    UnitOfTime,
+    UnitOfVolume,
+    UnitOfVolumeFlowRate,
+    UnitOfVolumetricFlux,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -441,7 +450,8 @@ class ETSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_name = "ET Hourly Estimate"
     _attr_unique_id = "et_hourly_estimate"
-    _attr_native_unit_of_measurement = "mm/h"
+    _attr_device_class = SensorDeviceClass.PRECIPITATION_INTENSITY
+    _attr_native_unit_of_measurement = UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:sun-thermometer"
 
@@ -495,7 +505,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     _attr_has_entity_name = True
     _attr_name = "Dryness Index"
     _attr_unique_id = "never_dry"
-    _attr_native_unit_of_measurement = "mm"
+    _attr_device_class = SensorDeviceClass.PRECIPITATION
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-percent-alert"
 
@@ -778,6 +789,11 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._deficit = 0.0
         self._last_update = datetime.now()
 
+    def set_deficit_mm(self, value: float) -> None:
+        """Set deficit to an arbitrary value [mm] — intended for testing/debugging."""
+        self._deficit = max(0.0, min(float(value), self._d_max))
+        self._last_update = datetime.now()
+
     @property
     def native_value(self) -> float:
         return round(self._deficit, 2)
@@ -799,8 +815,9 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = "L"
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_icon = "mdi:sprinkler-variant"
 
     def __init__(
@@ -1020,6 +1037,10 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             self._session_water_delivered = 0.0
         self._irrigating = state
 
+    def set_deficit_mm(self, value: float) -> None:
+        """Set zone deficit to an arbitrary value [mm] — intended for testing/debugging."""
+        self._zone_deficit = max(0.0, min(float(value), self._d_max))
+
     def reset_deficit(self, source: str = "unknown") -> None:
         """Reset this zone's deficit to zero (called after irrigation)."""
         self._last_irrigation_source = source
@@ -1115,8 +1136,9 @@ class ZoneDeficitSensor(SensorEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.PRECIPITATION
     _attr_name = "Deficit"
-    _attr_native_unit_of_measurement = "mm"
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-percent-alert"
 
@@ -1165,8 +1187,9 @@ class ZoneRainSensor(SensorEntity):
     """Cumulative rain received by this zone [mm]."""
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.PRECIPITATION
     _attr_name = "Rain"
-    _attr_native_unit_of_measurement = "mm"
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:weather-rainy"
 
@@ -1204,8 +1227,9 @@ class ZoneSessionWaterSensor(SensorEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
     _attr_name = "Session water"
-    _attr_native_unit_of_measurement = "L"
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-pump"
 
@@ -1243,8 +1267,9 @@ class ZoneYearlyWaterSensor(SensorEntity):
     """
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
     _attr_name = "Yearly water"
-    _attr_native_unit_of_measurement = "L"
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:calendar-clock"
 
@@ -1279,8 +1304,9 @@ class ZoneDurationSensor(SensorEntity):
     """Planned irrigation duration for the next session [s]."""
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_name = "Duration"
-    _attr_native_unit_of_measurement = "s"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:timer"
     _attr_should_poll = False
@@ -1310,8 +1336,9 @@ class ZoneLastDurationSensor(SensorEntity):
     """Actual duration of the last completed irrigation session [s]."""
 
     _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_name = "Last duration"
-    _attr_native_unit_of_measurement = "s"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:timer"
     _attr_should_poll = False
@@ -1409,7 +1436,8 @@ class ZoneLastSourceSensor(_ZoneTextSensor):
 class ZoneFlowRateSensor(_ZoneTextSensor):
     """Configured flow rate for this zone [L/min]."""
 
-    _attr_native_unit_of_measurement = "L/min"
+    _attr_device_class = SensorDeviceClass.VOLUME_FLOW_RATE
+    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.LITERS_PER_MINUTE
 
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
@@ -1428,7 +1456,8 @@ class ZoneFlowRateSensor(_ZoneTextSensor):
 class ZoneLastVolumeSensor(_ZoneTextSensor):
     """Volume delivered in the last irrigation."""
 
-    _attr_native_unit_of_measurement = "L"
+    _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
 
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
@@ -1483,7 +1512,8 @@ class ZoneIrrigationTimeSensor(_ZoneTextSensor):
 class ZoneThresholdSensor(_ZoneTextSensor):
     """Configured irrigation threshold."""
 
-    _attr_native_unit_of_measurement = "mm"
+    _attr_device_class = SensorDeviceClass.PRECIPITATION
+    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
 
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
@@ -1503,7 +1533,8 @@ class ZoneThresholdSensor(_ZoneTextSensor):
 class ZoneAreaSensor(_ZoneTextSensor):
     """Configured zone area."""
 
-    _attr_native_unit_of_measurement = "m²"
+    _attr_device_class = SensorDeviceClass.AREA
+    _attr_native_unit_of_measurement = UnitOfArea.SQUARE_METERS
 
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(

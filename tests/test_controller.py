@@ -24,7 +24,7 @@ class TestControllerState:
 
     def test_register_services(self, controller, hass_mock):
         controller.register_services()
-        assert hass_mock.services.async_register.call_count == 6
+        assert hass_mock.services.async_register.call_count == 7
 
 
 class TestIrrigateSingleZone:

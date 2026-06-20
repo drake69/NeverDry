@@ -104,8 +104,10 @@ SERVICE_IRRIGATE_ALL = "irrigate_all"
 SERVICE_STOP = "stop"
 SERVICE_MARK_IRRIGATED = "mark_irrigated"
 SERVICE_RESET_VALVE = "reset_valve"
+SERVICE_SET_DEFICIT = "set_deficit"
 
 ATTR_ZONE_NAME = "zone_name"
+ATTR_DEFICIT_MM = "deficit_mm"
 
 # ── Events ──────────────────────────────────────────────
 EVENT_IRRIGATION_COMPLETE = "never_dry_irrigation_complete"
