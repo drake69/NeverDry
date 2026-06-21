@@ -215,10 +215,11 @@ from never_dry.sensor import (  # noqa: E402
 )
 
 
-def _make_state(value):
+def _make_state(value, unit=None):
     """Create a mock HA state object."""
     state = MagicMock()
     state.state = str(value)
+    state.attributes = {"unit_of_measurement": unit} if unit else {}
     return state
 
 
@@ -333,9 +334,9 @@ def make_state():
 def make_event():
     """Factory for mock state change events."""
 
-    def _make(new_value):
+    def _make(new_value, unit=None):
         event = MagicMock()
-        event.data = {"new_state": _make_state(new_value)}
+        event.data = {"new_state": _make_state(new_value, unit=unit)}
         return event
 
     return _make

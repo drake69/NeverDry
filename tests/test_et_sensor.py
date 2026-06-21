@@ -91,6 +91,40 @@ class TestETEdgeCases:
         assert et_sensor.native_value == 0.0
 
 
+class TestETFahrenheit:
+    """Test that ETSensor correctly converts °F input to °C before the formula."""
+
+    def test_et_fahrenheit_equivalent(self, et_sensor, make_event):
+        """77°F == 25°C → same ET as 25°C test."""
+        et_sensor._on_temp_change(make_event(77.0, unit="°F"))
+        expected = round(0.22 * (25.0 - 9.0) / 24, 4)
+        assert et_sensor.native_value == expected
+
+    def test_et_fahrenheit_below_base(self, et_sensor, make_event):
+        """48.2°F == 9°C (T_base) → ET should be zero."""
+        et_sensor._on_temp_change(make_event(48.2, unit="°F"))
+        assert et_sensor.native_value == 0.0
+
+    def test_et_fahrenheit_cold(self, et_sensor, make_event):
+        """41°F == 5°C < T_base → ET should be zero."""
+        et_sensor._on_temp_change(make_event(41.0, unit="°F"))
+        assert et_sensor.native_value == 0.0
+
+    def test_et_no_unit_treated_as_celsius(self, et_sensor, make_event):
+        """Sensor without unit_of_measurement is treated as °C (backward compat)."""
+        et_sensor._on_temp_change(make_event(25.0))
+        expected = round(0.22 * (25.0 - 9.0) / 24, 4)
+        assert et_sensor.native_value == expected
+
+    def test_et_unavailable_fahrenheit_preserves_previous(self, et_sensor, make_event):
+        """Unavailable state with °F unit is gracefully ignored."""
+        et_sensor._on_temp_change(make_event(77.0, unit="°F"))
+        previous = et_sensor.native_value
+        assert previous > 0
+        et_sensor._on_temp_change(make_event("unavailable", unit="°F"))
+        assert et_sensor.native_value == previous
+
+
 class TestETAttributes:
     """Test sensor metadata."""
 

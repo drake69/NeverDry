@@ -149,6 +149,23 @@ class SensorBuffer:
         return len(self._buf)
 
 
+def _to_celsius(state) -> float | None:
+    """Return temperature in °C from a HA State object.
+
+    Converts from °F if unit_of_measurement is '°F'. Returns None when the
+    state is unavailable or not numeric.
+    """
+    if state is None or state.state in ("unavailable", "unknown"):
+        return None
+    try:
+        value = float(state.state)
+    except (ValueError, TypeError):
+        return None
+    if state.attributes.get("unit_of_measurement") == "°F":
+        return (value - 32) * 5 / 9
+    return value
+
+
 # ══════════════════════════════════════════════════════════
 #  Kc computation
 # ══════════════════════════════════════════════════════════
@@ -474,13 +491,9 @@ class ETSensor(SensorEntity):
         new_state = event.data.get("new_state")
         if new_state is None:
             return
-        try:
-            t = float(new_state.state)
+        t = _to_celsius(new_state)
+        if t is not None:
             self._value = max(0.0, self._alpha * (t - self._t_base) / 24)
-        except (ValueError, TypeError):
-            # Temperature sensor not yet numeric (boot / unavailable):
-            # keep the previous self._value unchanged.
-            pass
         self.async_write_ha_state()
 
     @property
@@ -571,10 +584,10 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         else:
             rain_delta = self._compute_rain_delta()
 
-            # Push raw temp into the buffer; invalid/unavailable readings are
-            # rejected by the buffer (not zeroed), so the median stays stable.
+            # Push temp into the buffer (converted to °C if sensor reports °F);
+            # invalid/unavailable readings are rejected, median stays stable.
             raw_state = self._hass.states.get(self._temp_sensor)
-            self._temp_buffer.push(raw_state.state if raw_state is not None else None)
+            self._temp_buffer.push(_to_celsius(raw_state))
 
             t_median = self._temp_buffer.median(ET_BUFFER_MIN_READINGS)
             if t_median is None:
@@ -724,12 +737,9 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         events: list[tuple[datetime, str, float]] = []
 
         for s in temp_states:
-            if s.state in ("unknown", "unavailable"):
-                continue
-            try:
-                events.append((s.last_changed, "temp", float(s.state)))
-            except (ValueError, TypeError):
-                continue
+            t = _to_celsius(s)
+            if t is not None:
+                events.append((s.last_changed, "temp", t))
 
         for s in rain_states:
             if s.state in ("unknown", "unavailable"):
