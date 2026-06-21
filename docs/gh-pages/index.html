@@ -367,6 +367,11 @@
                 <tr><td>Mixed garden</td><td>0.40</td><td>0.70</td><td>0.90</td><td>0.55</td></tr>
             </tbody>
         </table>
+        <p style="margin-top: 1.5em; text-align: center; font-size: 0.95em; opacity: 0.85;">
+            Want a more detailed drip irrigation setup?
+            Use <a href="https://drake69.github.io/neverdry-planner/" style="color: #2196F3; font-weight: 600;">NeverDry Planner</a>
+            to calculate the irrigated area and the Kc value to copy directly into NeverDry.
+        </p>
     </div>
 </section>
 
@@ -397,16 +402,32 @@
 <!-- What's new -->
 <section class="how-it-works">
     <div class="container">
-        <h2>What's new in v0.10.0</h2>
-        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-20</p>
+        <h2>What's new in v0.10.1</h2>
+        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-21</p>
         <ul style="max-width: 680px; margin: 0 auto; text-align: left; line-height: 2;">
-            <li><strong>Metric &amp; imperial units</strong> — all sensors now declare the proper HA device class; deficit, volume, flow rate, and ET rate convert automatically to your system preference.</li>
-            <li><strong><code>never_dry.set_deficit</code> service</strong> — set the water deficit of one zone (or all zones) to an arbitrary mm value; useful for manual calibration and testing.</li>
-            <li><strong>Controller reload reliability</strong> — eliminated duplicate controller instances after HA reload; graceful shutdown ensures the valve closes and session data is saved before a new instance starts.</li>
-            <li><strong>No more spurious notifications</strong> — fixed "Manual irrigation detected" false alarm when NeverDry itself closes a valve; fixed CRITICAL alert firing even when valve recovery succeeds.</li>
-            <li><strong>Config flow guard</strong> — saving zone settings without actual changes no longer triggers an unnecessary integration reload.</li>
+            <li><strong>Fahrenheit temperature input</strong> — NeverDry now auto-converts °F→°C when your HA system is configured in imperial units; no template sensor needed.</li>
         </ul>
-        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.0">Full release notes on GitHub →</a></p>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.1">Full release notes on GitHub →</a></p>
+        <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
+            <summary style="cursor: pointer;">v0.10.0 — 2026-06-20</summary>
+            <ul style="line-height: 2; margin-top: 0.5em;">
+                <li><strong>Metric &amp; imperial units</strong> — all sensors now declare the proper HA device class; deficit, volume, flow rate, and ET rate convert automatically to your system preference.</li>
+                <li><strong><code>never_dry.set_deficit</code> service</strong> — set the water deficit of one zone (or all zones) to an arbitrary mm value; useful for manual calibration and testing.</li>
+                <li><strong>Controller reload reliability</strong> — eliminated duplicate controller instances after HA reload; graceful shutdown ensures the valve closes and session data is saved before a new instance starts.</li>
+                <li><strong>No more spurious notifications</strong> — fixed "Manual irrigation detected" false alarm when NeverDry itself closes a valve; fixed CRITICAL alert firing even when valve recovery succeeds.</li>
+                <li><strong>Config flow guard</strong> — saving zone settings without actual changes no longer triggers an unnecessary integration reload.</li>
+            </ul>
+        </details>
+    </div>
+</section>
+
+<!-- Get Help -->
+<section class="support" style="background: #f8f8f8;">
+    <h2>Get Help</h2>
+    <p style="margin-bottom: 1.5em;">Questions about setup or behaviour? Join the conversation.</p>
+    <div style="display: flex; gap: 1em; justify-content: center; flex-wrap: wrap;">
+        <a class="kofi-btn" style="background: #24292e;" href="https://github.com/drake69/NeverDry/issues">🐛 GitHub Issues</a>
+        <a class="kofi-btn" style="background: #03a9f4;" href="https://community.home-assistant.io/t/neverdry-smart-irrigation-that-calculates-when-and-how-long-to-water-fao-56-water-balance-hacs/1013835">💬 HA Community</a>
     </div>
 </section>
 
