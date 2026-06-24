@@ -122,12 +122,10 @@ You can use one mode, the other, or both together.
 ### Option B: Via HACS
 
 1. In Home Assistant, go to **HACS → Integrations**
-2. Click the **⋮** menu → **Custom repositories**
-3. Add the repository URL (`https://github.com/drake69/NeverDry`), select category **Integration**
-4. Search for **NeverDry** and click **Install**
-5. Restart Home Assistant
-6. Go to **Settings → Devices & Services → Add Integration**
-7. Search for **NeverDry** and follow the setup wizard (see Section 5)
+2. Search for **NeverDry** and click **Install**
+3. Restart Home Assistant
+4. Go to **Settings → Devices & Services → Add Integration**
+5. Search for **NeverDry** and follow the setup wizard (see Section 5)
 
 ## 5. Configuration (UI setup wizard)
 

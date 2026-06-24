@@ -260,7 +260,7 @@
         <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
         <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
         <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
-        <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square" alt="HACS">
+        <img src="https://img.shields.io/badge/HACS-Default-41BDF5?style=flat-square" alt="HACS">
     </div>
     <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repository</a>
     <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Documentation</a>
@@ -388,9 +388,8 @@
             </div>
             <h3>Via HACS (manual steps)</h3>
             <ol>
-                <li>Open HACS &rarr; Integrations &rarr; <strong>Custom repositories</strong></li>
-                <li>Add <code>https://github.com/drake69/NeverDry</code> as <strong>Integration</strong></li>
-                <li>Search for <strong>NeverDry</strong> and install</li>
+                <li>Open HACS &rarr; Integrations</li>
+                <li>Search for <strong>NeverDry</strong> and click Install</li>
                 <li>Restart Home Assistant</li>
                 <li>Go to Settings &rarr; Devices &amp; Services &rarr; <strong>Add Integration</strong> &rarr; NeverDry</li>
             </ol>
@@ -408,12 +407,19 @@
 <!-- What's new -->
 <section class="how-it-works">
     <div class="container">
-        <h2>What's new in v0.10.1</h2>
-        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-21</p>
+        <h2>What's new in v0.10.2</h2>
+        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-24</p>
         <ul style="max-width: 680px; margin: 0 auto; text-align: left; line-height: 2;">
-            <li><strong>Fahrenheit temperature input</strong> — NeverDry now auto-converts °F→°C when your HA system is configured in imperial units; no template sensor needed.</li>
+            <li><strong>Official HACS listing</strong> — NeverDry is now in the HACS default repository list; install with one click, no custom repository needed.</li>
+            <li><strong>Delivery mode guard</strong> — if the sensor entity linked to a zone is removed, NeverDry automatically downgrades the delivery mode to avoid an invalid configuration.</li>
         </ul>
-        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.1">Full release notes on GitHub →</a></p>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.2">Full release notes on GitHub →</a></p>
+        <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
+            <summary style="cursor: pointer;">v0.10.1 — 2026-06-21</summary>
+            <ul style="line-height: 2; margin-top: 0.5em;">
+                <li><strong>Fahrenheit temperature input</strong> — NeverDry now auto-converts °F→°C when your HA system is configured in imperial units; no template sensor needed.</li>
+            </ul>
+        </details>
         <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
             <summary style="cursor: pointer;">v0.10.0 — 2026-06-20</summary>
             <ul style="line-height: 2; margin-top: 0.5em;">

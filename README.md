@@ -8,7 +8,7 @@
 [![Release](https://github.com/drake69/NeverDry/actions/workflows/release.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/release.yml)
 [![Security](https://github.com/drake69/NeverDry/actions/workflows/security.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/security.yml)
 [![Lint](https://github.com/drake69/NeverDry/actions/workflows/lint.yml/badge.svg)](https://github.com/drake69/NeverDry/actions/workflows/lint.yml)
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
 [![GitHub stars](https://img.shields.io/github/stars/drake69/NeverDry?style=social)](https://github.com/drake69/NeverDry/stargazers)
@@ -95,12 +95,14 @@ You can also set a **manual Kc override** per zone (0.1–2.0) if you know the e
 
 ### HACS (recommended)
 
+[![Open your Home Assistant instance and open NeverDry in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=drake69&repository=NeverDry&category=integration)
+
+Or manually:
+
 1. Open **HACS** in Home Assistant
-2. Go to **Integrations** > **Custom repositories**
-3. Add `https://github.com/drake69/NeverDry` — category **Integration**
-4. Search for **NeverDry** and install
-5. Restart Home Assistant
-6. **Settings** > **Devices & Services** > **Add Integration** > search **NeverDry**
+2. Go to **Integrations** and search for **NeverDry**
+3. Click Install, then restart Home Assistant
+4. **Settings** > **Devices & Services** > **Add Integration** > search **NeverDry**
 
 ### Manual
 
