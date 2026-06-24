@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
+from never_dry.sensor import DrynessIndexSensor
 
 
 class TestDeficitAccumulation:
@@ -397,3 +398,89 @@ class TestRainDelta:
         di_sensor._last_update = datetime.now() - timedelta(seconds=1)
         di_sensor._on_sensor_change(MagicMock())
         assert di_sensor._deficit == 0.0
+
+
+class TestRainUnits:
+    """Rain sensor reporting in inches is converted to mm before deficit update."""
+
+    def test_rain_inches_converted_to_mm(self, di_sensor, hass_mock, make_state):
+        """1 inch of rain must reduce the deficit by 25.4 mm."""
+        di_sensor._deficit = 30.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),  # ET = 0
+            "sensor.rain": make_state(1.0, unit="in"),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(hours=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(30.0 - 25.4, abs=0.1)
+
+    def test_rain_mm_not_converted(self, di_sensor, hass_mock, make_state):
+        """Rain in mm must not be multiplied by the inches factor."""
+        di_sensor._deficit = 10.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(5.0, unit="mm"),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(hours=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(5.0, abs=0.1)
+
+    def test_rain_no_unit_treated_as_mm(self, di_sensor, hass_mock, make_state):
+        """Rain sensor without unit_of_measurement is treated as mm (backward compat)."""
+        di_sensor._deficit = 8.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(3.0),  # no unit
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(hours=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(5.0, abs=0.1)
+
+    def test_half_inch_rain_converts_correctly(self, di_sensor, hass_mock, make_state):
+        """0.5 in rain == 12.7 mm."""
+        di_sensor._deficit = 20.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(0.5, unit="in"),
+        }[eid]
+        di_sensor._last_update = datetime.now() - timedelta(hours=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(20.0 - 12.7, abs=0.1)
+
+
+class TestTemperatureUnitsEndToEnd:
+    """Deficit update is identical whether temperature is in °C or °F."""
+
+    def test_celsius_and_fahrenheit_yield_same_deficit(self, hass_mock, base_config, make_state):
+        """25 °C and 77 °F must produce the same deficit after one hour."""
+        # sensor fed in Celsius
+        di_c = DrynessIndexSensor(hass_mock, base_config)
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(25.0, unit="°C"),
+            "sensor.rain": make_state(0.0),
+        }[eid]
+        di_c._last_update = datetime.now() - timedelta(hours=1)
+        di_c._on_sensor_change(MagicMock())
+
+        # sensor fed in Fahrenheit (same physical temperature)
+        di_f = DrynessIndexSensor(hass_mock, base_config)
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(77.0, unit="°F"),  # 77 °F == 25 °C
+            "sensor.rain": make_state(0.0),
+        }[eid]
+        di_f._last_update = datetime.now() - timedelta(hours=1)
+        di_f._on_sensor_change(MagicMock())
+
+        assert di_c._deficit == pytest.approx(di_f._deficit, abs=0.001)
+
+    def test_freezing_fahrenheit_yields_zero_deficit(self, hass_mock, base_config, make_state):
+        """32 °F == 0 °C < T_base → ET = 0, deficit stays unchanged."""
+        di = DrynessIndexSensor(hass_mock, base_config)
+        di._deficit = 5.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(32.0, unit="°F"),
+            "sensor.rain": make_state(0.0),
+        }[eid]
+        di._last_update = datetime.now() - timedelta(hours=1)
+        di._on_sensor_change(MagicMock())
+        assert di._deficit == pytest.approx(5.0, abs=0.01)

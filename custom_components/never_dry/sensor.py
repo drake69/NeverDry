@@ -626,9 +626,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         For 'event' type: the sensor value IS the delta (mm per event).
         For 'daily_total' type: compute delta from last reading, handling
         midnight rollover (rain_now < last_rain → new accumulation).
+        Converts inches to mm when the sensor reports in imperial units.
         """
         try:
-            rain_now = float(self._hass.states.get(self._rain_sensor).state)
+            state = self._hass.states.get(self._rain_sensor)
+            rain_now = float(state.state)
+            unit = (state.attributes.get("unit_of_measurement") or "").lower().strip()
+            if unit in ("in", "inch", "inches"):
+                rain_now *= 25.4
         except (TypeError, ValueError, AttributeError):
             return 0.0
 
