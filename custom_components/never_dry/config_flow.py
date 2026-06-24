@@ -67,187 +67,249 @@ from .const import (
     SYSTEM_TYPE_MICRO_SPRINKLER,
     SYSTEM_TYPE_SPRINKLER,
 )
+from .unit_convert import (
+    LPM_TO_GPM,
+    M2_TO_FT2,
+    MM_TO_IN,
+    c_to_f,
+    sensors_input_to_metric,
+    zone_input_to_metric,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_SENSORS_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_TEMP_SENSOR): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
-        ),
-        vol.Required(CONF_RAIN_SENSOR): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-        vol.Optional(CONF_RAIN_SENSOR_TYPE, default=DEFAULT_RAIN_SENSOR_TYPE): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(
-                        value=RAIN_TYPE_EVENT,
-                        label="Event-based (mm per event — tipping bucket)",
-                    ),
-                    selector.SelectOptionDict(
-                        value=RAIN_TYPE_DAILY_TOTAL,
-                        label="Daily total (cumulative mm since midnight)",
-                    ),
-                ],
-                mode="dropdown",
-            )
-        ),
-        vol.Optional(CONF_ALPHA, default=DEFAULT_ALPHA): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.05,
-                max=1.0,
-                step=0.01,
-                mode="box",
-                unit_of_measurement="mm/°C/day",
-            )
-        ),
-        vol.Optional(CONF_T_BASE, default=DEFAULT_T_BASE): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=-5.0,
-                max=20.0,
-                step=0.5,
-                mode="box",
-                unit_of_measurement="°C",
-            )
-        ),
-        vol.Optional(CONF_D_MAX, default=DEFAULT_D_MAX): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=10.0,
-                max=500.0,
-                step=10.0,
-                mode="box",
-                unit_of_measurement="mm",
-            )
-        ),
-        vol.Optional(CONF_VWC_SENSOR): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
-    }
-)
+# Unit-conversion helpers live in a HA-free module so they stay unit-testable.
+# Aliased here to keep the call sites below terse.
+_MM_TO_IN = MM_TO_IN
+_M2_TO_FT2 = M2_TO_FT2
+_LPM_TO_GPM = LPM_TO_GPM
+_c_to_f = c_to_f
+_sensors_input_to_metric = sensors_input_to_metric
+_zone_input_to_metric = zone_input_to_metric
 
-STEP_ZONE_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_ZONE_NAME): selector.TextSelector(),
-        vol.Optional(CONF_ZONE_VALVE): selector.EntitySelector(selector.EntitySelectorConfig(domain="switch")),
-        vol.Optional(CONF_ZONE_DELIVERY_MODE, default=DEFAULT_DELIVERY_MODE): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(
-                        value=DELIVERY_MODE_ESTIMATED_FLOW,
-                        label="Simple on/off — timer-based (default)",
-                    ),
-                    selector.SelectOptionDict(
-                        value=DELIVERY_MODE_FLOW_METER,
-                        label="Valve with flow meter sensor",
-                    ),
-                    selector.SelectOptionDict(
-                        value=DELIVERY_MODE_VOLUME_PRESET,
-                        label="Smart valve with volume dosing",
-                    ),
-                ],
-                mode="dropdown",
-            )
-        ),
-        vol.Required(CONF_ZONE_AREA): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=10000.0,
-                step=0.1,
-                mode="box",
-                unit_of_measurement="m²",
-            )
-        ),
-        vol.Required(CONF_ZONE_SYSTEM_TYPE): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value=SYSTEM_TYPE_DRIP, label="Drip irrigation (η=0.92)"),
-                    selector.SelectOptionDict(value=SYSTEM_TYPE_MICRO_SPRINKLER, label="Micro-sprinklers (η=0.80)"),
-                    selector.SelectOptionDict(value=SYSTEM_TYPE_SPRINKLER, label="Pop-up sprinklers (η=0.68)"),
-                    selector.SelectOptionDict(value=SYSTEM_TYPE_MANUAL, label="Manual / hose (η=0.55)"),
-                ],
-                mode="dropdown",
-            )
-        ),
-        vol.Optional(CONF_ZONE_EFFICIENCY): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=1.0,
-                step=0.05,
-                mode="slider",
-            )
-        ),
-        vol.Optional(CONF_ZONE_PLANT_FAMILY): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(value=key, label=data["label"]) for key, data in PLANT_FAMILIES.items()
-                ],
-                mode="dropdown",
-            )
-        ),
-        vol.Optional(CONF_ZONE_KC): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=2.0,
-                step=0.05,
-                mode="box",
-            )
-        ),
-        vol.Optional(CONF_ZONE_FLOW_RATE): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0.1,
-                max=200.0,
-                step=0.1,
-                mode="box",
-                unit_of_measurement="L/min",
-            )
-        ),
-        vol.Optional(CONF_ZONE_FLOW_METER_SENSOR): selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor")
-        ),
-        vol.Optional(CONF_ZONE_VOLUME_ENTITY): selector.EntitySelector(selector.EntitySelectorConfig(domain="number")),
-        vol.Optional(CONF_ZONE_DELIVERY_TIMEOUT, default=DEFAULT_DELIVERY_TIMEOUT_S): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=60,
-                max=7200,
-                step=60,
-                mode="box",
-                unit_of_measurement="s",
-            )
-        ),
-        vol.Optional(
-            CONF_ZONE_IRRIGATION_MODE,
-            default=DEFAULT_IRRIGATION_MODE,
-        ): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=[
-                    selector.SelectOptionDict(
-                        value=IRRIGATION_MODE_MANUAL,
-                        label="Manual only (button / service call)",
-                    ),
-                    selector.SelectOptionDict(
-                        value=IRRIGATION_MODE_REACTIVE,
-                        label="Reactive (irrigate when deficit > threshold)",
-                    ),
-                    selector.SelectOptionDict(
-                        value=IRRIGATION_MODE_SCHEDULED,
-                        label="Scheduled (check daily at set time)",
-                    ),
-                ],
-                mode="dropdown",
-            )
-        ),
-        vol.Optional(CONF_ZONE_THRESHOLD, default=DEFAULT_THRESHOLD): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=1.0,
-                max=100.0,
-                step=1.0,
-                mode="box",
-                unit_of_measurement="mm",
-            )
-        ),
-        vol.Optional(
-            CONF_ZONE_IRRIGATION_TIME,
-            default=DEFAULT_IRRIGATION_TIME,
-        ): selector.TimeSelector(),
-    }
-)
+
+def _is_imperial(hass) -> bool:
+    from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
+
+    return hass.config.units is US_CUSTOMARY_SYSTEM
+
+
+def _sensors_schema(is_imperial: bool) -> vol.Schema:
+    """Sensors + ET parameters form for initial setup, unit-aware."""
+    t_unit = "°F" if is_imperial else "°C"
+    d_unit = "in" if is_imperial else "mm"
+    t_base_default = _c_to_f(DEFAULT_T_BASE) if is_imperial else DEFAULT_T_BASE
+    d_max_default = round(DEFAULT_D_MAX * _MM_TO_IN, 1) if is_imperial else DEFAULT_D_MAX
+
+    return vol.Schema(
+        {
+            vol.Required(CONF_TEMP_SENSOR): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
+            ),
+            vol.Required(CONF_RAIN_SENSOR): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(CONF_RAIN_SENSOR_TYPE, default=DEFAULT_RAIN_SENSOR_TYPE): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=RAIN_TYPE_EVENT,
+                            label="Event-based (per event — tipping bucket)",
+                        ),
+                        selector.SelectOptionDict(
+                            value=RAIN_TYPE_DAILY_TOTAL,
+                            label="Daily total (cumulative since midnight)",
+                        ),
+                    ],
+                    mode="dropdown",
+                )
+            ),
+            vol.Optional(CONF_ALPHA, default=DEFAULT_ALPHA): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.05,
+                    max=1.0,
+                    step=0.01,
+                    mode="box",
+                    unit_of_measurement="mm/°C/day",
+                )
+            ),
+            vol.Optional(CONF_T_BASE, default=t_base_default): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=23.0 if is_imperial else -5.0,
+                    max=68.0 if is_imperial else 20.0,
+                    step=1.0 if is_imperial else 0.5,
+                    mode="box",
+                    unit_of_measurement=t_unit,
+                )
+            ),
+            vol.Optional(CONF_D_MAX, default=d_max_default): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5 if is_imperial else 10.0,
+                    max=20.0 if is_imperial else 500.0,
+                    step=0.5 if is_imperial else 10.0,
+                    mode="box",
+                    unit_of_measurement=d_unit,
+                )
+            ),
+            vol.Optional(CONF_VWC_SENSOR): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+        }
+    )
+
+
+def _model_params_schema(is_imperial: bool, current: dict) -> vol.Schema:
+    """ET parameters form for options flow, with stored metric values pre-filled."""
+    t_unit = "°F" if is_imperial else "°C"
+    d_unit = "in" if is_imperial else "mm"
+    t_stored = current.get(CONF_T_BASE, DEFAULT_T_BASE)
+    d_stored = current.get(CONF_D_MAX, DEFAULT_D_MAX)
+    t_display = _c_to_f(t_stored) if is_imperial else t_stored
+    d_display = round(d_stored * _MM_TO_IN, 1) if is_imperial else d_stored
+
+    return vol.Schema(
+        {
+            vol.Optional(CONF_ALPHA, default=current.get(CONF_ALPHA, DEFAULT_ALPHA)): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.05,
+                    max=1.0,
+                    step=0.01,
+                    mode="box",
+                    unit_of_measurement="mm/°C/day",
+                )
+            ),
+            vol.Optional(CONF_T_BASE, default=t_display): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=23.0 if is_imperial else -5.0,
+                    max=68.0 if is_imperial else 20.0,
+                    step=1.0 if is_imperial else 0.5,
+                    mode="box",
+                    unit_of_measurement=t_unit,
+                )
+            ),
+            vol.Optional(CONF_D_MAX, default=d_display): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.5 if is_imperial else 10.0,
+                    max=20.0 if is_imperial else 500.0,
+                    step=0.5 if is_imperial else 10.0,
+                    mode="box",
+                    unit_of_measurement=d_unit,
+                )
+            ),
+        }
+    )
+
+
+def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
+    """Zone form for initial setup and add_zone options flow (no pre-existing values)."""
+    area_unit = "ft²" if is_imperial else "m²"
+    flow_unit = "gal/min" if is_imperial else "L/min"
+    depth_unit = "in" if is_imperial else "mm"
+    threshold_default = round(DEFAULT_THRESHOLD * _MM_TO_IN, 1) if is_imperial else DEFAULT_THRESHOLD
+
+    return vol.Schema(
+        {
+            vol.Required(CONF_ZONE_NAME): selector.TextSelector(),
+            vol.Optional(CONF_ZONE_VALVE): selector.EntitySelector(selector.EntitySelectorConfig(domain="switch")),
+            vol.Optional(CONF_ZONE_DELIVERY_MODE, default=DEFAULT_DELIVERY_MODE): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=DELIVERY_MODE_ESTIMATED_FLOW,
+                            label="Simple on/off — timer-based (default)",
+                        ),
+                        selector.SelectOptionDict(
+                            value=DELIVERY_MODE_FLOW_METER,
+                            label="Valve with flow meter sensor",
+                        ),
+                        selector.SelectOptionDict(
+                            value=DELIVERY_MODE_VOLUME_PRESET,
+                            label="Smart valve with volume dosing",
+                        ),
+                    ],
+                    mode="dropdown",
+                )
+            ),
+            vol.Required(CONF_ZONE_AREA): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1.0 if is_imperial else 0.1,
+                    max=107000.0 if is_imperial else 10000.0,
+                    step=1.0 if is_imperial else 0.1,
+                    mode="box",
+                    unit_of_measurement=area_unit,
+                )
+            ),
+            vol.Required(CONF_ZONE_SYSTEM_TYPE): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=SYSTEM_TYPE_DRIP, label="Drip irrigation (η=0.92)"),
+                        selector.SelectOptionDict(value=SYSTEM_TYPE_MICRO_SPRINKLER, label="Micro-sprinklers (η=0.80)"),
+                        selector.SelectOptionDict(value=SYSTEM_TYPE_SPRINKLER, label="Pop-up sprinklers (η=0.68)"),
+                        selector.SelectOptionDict(value=SYSTEM_TYPE_MANUAL, label="Manual / hose (η=0.55)"),
+                    ],
+                    mode="dropdown",
+                )
+            ),
+            vol.Optional(CONF_ZONE_EFFICIENCY): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0.1, max=1.0, step=0.05, mode="slider")
+            ),
+            vol.Optional(CONF_ZONE_PLANT_FAMILY): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(value=key, label=data["label"])
+                        for key, data in PLANT_FAMILIES.items()
+                    ],
+                    mode="dropdown",
+                )
+            ),
+            vol.Optional(CONF_ZONE_KC): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=0.1, max=2.0, step=0.05, mode="box")
+            ),
+            vol.Optional(CONF_ZONE_FLOW_RATE): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.03 if is_imperial else 0.1,
+                    max=53.0 if is_imperial else 200.0,
+                    step=0.01 if is_imperial else 0.1,
+                    mode="box",
+                    unit_of_measurement=flow_unit,
+                )
+            ),
+            vol.Optional(CONF_ZONE_FLOW_METER_SENSOR): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            ),
+            vol.Optional(CONF_ZONE_VOLUME_ENTITY): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="number")
+            ),
+            vol.Optional(CONF_ZONE_DELIVERY_TIMEOUT, default=DEFAULT_DELIVERY_TIMEOUT_S): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=60, max=7200, step=60, mode="box", unit_of_measurement="s")
+            ),
+            vol.Optional(CONF_ZONE_IRRIGATION_MODE, default=DEFAULT_IRRIGATION_MODE): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=IRRIGATION_MODE_MANUAL,
+                            label="Manual only (button / service call)",
+                        ),
+                        selector.SelectOptionDict(
+                            value=IRRIGATION_MODE_REACTIVE,
+                            label="Reactive (irrigate when deficit > threshold)",
+                        ),
+                        selector.SelectOptionDict(
+                            value=IRRIGATION_MODE_SCHEDULED,
+                            label="Scheduled (check daily at set time)",
+                        ),
+                    ],
+                    mode="dropdown",
+                )
+            ),
+            vol.Optional(CONF_ZONE_THRESHOLD, default=threshold_default): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0.1 if is_imperial else 1.0,
+                    max=4.0 if is_imperial else 100.0,
+                    step=0.1 if is_imperial else 1.0,
+                    mode="box",
+                    unit_of_measurement=depth_unit,
+                )
+            ),
+            vol.Optional(CONF_ZONE_IRRIGATION_TIME, default=DEFAULT_IRRIGATION_TIME): selector.TimeSelector(),
+        }
+    )
 
 
 def _coerce_delivery_mode(user_input: dict) -> dict:
@@ -273,17 +335,19 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1: Select sensors and ET model parameters."""
+        imperial = _is_imperial(self.hass)
         if user_input is not None:
-            self._data = user_input
+            self._data = _sensors_input_to_metric(user_input, imperial)
             return await self.async_step_zone()
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_SENSORS_SCHEMA,
+            data_schema=_sensors_schema(imperial),
         )
 
     async def async_step_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 2: Add an irrigation zone."""
+        imperial = _is_imperial(self.hass)
         errors: dict[str, str] = {}
         if user_input is not None:
             name = user_input.get(CONF_ZONE_NAME, "")
@@ -299,12 +363,12 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif mode == DELIVERY_MODE_VOLUME_PRESET and not user_input.get(CONF_ZONE_VOLUME_ENTITY):
                 errors[CONF_ZONE_VOLUME_ENTITY] = "volume_entity_required"
             else:
-                self._zones.append(user_input)
+                self._zones.append(_zone_input_to_metric(user_input, imperial))
                 return await self.async_step_add_another()
 
         return self.async_show_form(
             step_id="zone",
-            data_schema=STEP_ZONE_SCHEMA,
+            data_schema=_zone_schema_initial(imperial),
             errors=errors,
             description_placeholders={
                 "zone_count": str(len(self._zones)),
@@ -364,7 +428,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Edit ET model parameters."""
+        imperial = _is_imperial(self.hass)
         if user_input is not None:
+            user_input = _sensors_input_to_metric(user_input, imperial)
             new_data = {**self._config_entry.data, **user_input}
             if new_data != dict(self._config_entry.data):
                 changed = [k for k in new_data if new_data[k] != self._config_entry.data.get(k)]
@@ -372,54 +438,16 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             return self.async_create_entry(data={})
 
-        current = self._config_entry.data
         return self.async_show_form(
             step_id="model_params",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_ALPHA,
-                        default=current.get(CONF_ALPHA, DEFAULT_ALPHA),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0.05,
-                            max=1.0,
-                            step=0.01,
-                            mode="box",
-                            unit_of_measurement="mm/°C/day",
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_T_BASE,
-                        default=current.get(CONF_T_BASE, DEFAULT_T_BASE),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=-5.0,
-                            max=20.0,
-                            step=0.5,
-                            mode="box",
-                            unit_of_measurement="°C",
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_D_MAX,
-                        default=current.get(CONF_D_MAX, DEFAULT_D_MAX),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=10.0,
-                            max=500.0,
-                            step=10.0,
-                            mode="box",
-                            unit_of_measurement="mm",
-                        )
-                    ),
-                }
-            ),
+            data_schema=_model_params_schema(imperial, self._config_entry.data),
         )
 
     async def async_step_add_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Add a new irrigation zone."""
+        imperial = _is_imperial(self.hass)
         if user_input is not None:
+            user_input = _zone_input_to_metric(user_input, imperial)
             user_input = _coerce_delivery_mode(user_input)
             new_data = dict(self._config_entry.data)
             zones = list(new_data.get(CONF_ZONES, []))
@@ -429,7 +457,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             if new_name in existing_names:
                 return self.async_show_form(
                     step_id="add_zone",
-                    data_schema=STEP_ZONE_SCHEMA,
+                    data_schema=_zone_schema_initial(imperial),
                     errors={"base": "zone_already_exists"},
                 )
             zones.append(user_input)
@@ -441,7 +469,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="add_zone",
-            data_schema=STEP_ZONE_SCHEMA,
+            data_schema=_zone_schema_initial(imperial),
         )
 
     async def async_step_edit_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
@@ -481,7 +509,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             {},
         )
 
+        imperial = _is_imperial(self.hass)
         if user_input is not None:
+            user_input = _zone_input_to_metric(user_input, imperial)
             user_input = _coerce_delivery_mode(user_input)
             new_data = dict(self._config_entry.data)
             new_zones = [z for z in zones if z[CONF_ZONE_NAME] != self._edit_zone_name]
@@ -495,9 +525,27 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 )
             return self.async_create_entry(data={})
 
+        area_unit = "ft²" if imperial else "m²"
+        flow_unit = "gal/min" if imperial else "L/min"
+        depth_unit = "in" if imperial else "mm"
+
         # Helper to get current value or UNDEFINED
         def _d(key, fallback=vol.UNDEFINED):
             return cur.get(key, fallback)
+
+        def _d_area(fallback):
+            v = cur.get(CONF_ZONE_AREA, fallback)
+            return round(v * _M2_TO_FT2, 1) if (imperial and v is not None) else v
+
+        def _d_flow():
+            v = cur.get(CONF_ZONE_FLOW_RATE)
+            if v is None:
+                return vol.UNDEFINED
+            return round(v * _LPM_TO_GPM, 2) if imperial else v
+
+        def _d_threshold(fallback):
+            v = cur.get(CONF_ZONE_THRESHOLD, fallback)
+            return round(v * _MM_TO_IN, 1) if (imperial and v is not None) else v
 
         dm_opts = [
             selector.SelectOptionDict(
@@ -557,14 +605,14 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Required(
                     CONF_ZONE_AREA,
-                    default=_d(CONF_ZONE_AREA, 10.0),
+                    default=_d_area(10.0),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=10000.0,
-                        step=0.1,
+                        min=1.0 if imperial else 0.1,
+                        max=107000.0 if imperial else 10000.0,
+                        step=1.0 if imperial else 0.1,
                         mode="box",
-                        unit_of_measurement="m²",
+                        unit_of_measurement=area_unit,
                     )
                 ),
                 vol.Required(
@@ -609,14 +657,14 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_ZONE_FLOW_RATE,
-                    default=_d(CONF_ZONE_FLOW_RATE),
+                    default=_d_flow(),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.1,
-                        max=200.0,
-                        step=0.1,
+                        min=0.03 if imperial else 0.1,
+                        max=53.0 if imperial else 200.0,
+                        step=0.01 if imperial else 0.1,
                         mode="box",
-                        unit_of_measurement="L/min",
+                        unit_of_measurement=flow_unit,
                     )
                 ),
                 vol.Optional(
@@ -669,14 +717,14 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(
                     CONF_ZONE_THRESHOLD,
-                    default=_d(CONF_ZONE_THRESHOLD, DEFAULT_THRESHOLD),
+                    default=_d_threshold(DEFAULT_THRESHOLD),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=1.0,
-                        max=100.0,
-                        step=1.0,
+                        min=0.1 if imperial else 1.0,
+                        max=4.0 if imperial else 100.0,
+                        step=0.1 if imperial else 1.0,
                         mode="box",
-                        unit_of_measurement="mm",
+                        unit_of_measurement=depth_unit,
                     )
                 ),
                 vol.Optional(

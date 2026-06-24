@@ -53,6 +53,7 @@ from .valve_operator import OperationStatus, ValveOperator
 
 MONITORING_INTERVAL = 6 * 3600  # 6 hours in seconds
 AUTO_OPEN_GRACE_S = 3.0  # volume_preset: wait this long for smart-valve auto-open
+_GALLON_TO_LITER = 3.785411784  # US liquid gallon → liters
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -811,8 +812,8 @@ class IrrigationController:
             # Flow rate mode: accumulate volume from rate readings
             return await self._deliver_flow_rate(zone, meter_entity, volume_target)
 
-        # Cumulative volume mode: read difference
-        initial_reading = self._read_flow_meter(meter_entity)
+        # Cumulative volume mode: read difference (normalized to liters)
+        initial_reading = self._read_volume_liters(meter_entity)
         if initial_reading is None:
             _LOGGER.error(
                 "Flow meter '%s' unavailable for zone '%s', skipping",
@@ -839,7 +840,7 @@ class IrrigationController:
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
 
-            current_reading = self._read_flow_meter(meter_entity)
+            current_reading = self._read_volume_liters(meter_entity)
             if current_reading is None:
                 _LOGGER.warning(
                     "Flow meter '%s' became unavailable during irrigation of zone '%s'",
@@ -913,15 +914,11 @@ class IrrigationController:
             if rate is None or rate < 0:
                 continue
 
-            # Convert rate to L per poll interval
+            # Normalize rate to L/min (handles metric + imperial), then
+            # integrate over the poll interval.
             unit = self._get_flow_meter_unit(meter_entity)
-            if unit in ("L/min", "l/min"):
-                delivered += rate / 60 * FLOW_METER_POLL_INTERVAL_S
-            elif unit in ("m³/h",):
-                delivered += rate * 1000 / 3600 * FLOW_METER_POLL_INTERVAL_S
-            else:
-                # L/h or default
-                delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
+            lpm = self._rate_to_lpm(rate, unit)
+            delivered += lpm / 60 * FLOW_METER_POLL_INTERVAL_S
 
             # Real-time deficit update (snapshot-based — idempotent with settle).
             self._update_deficit_realtime(zone, delivered)
@@ -948,9 +945,20 @@ class IrrigationController:
         return delivered
 
     def _is_flow_rate_sensor(self, entity_id: str) -> bool:
-        """Check if the sensor reports a flow rate (not cumulative volume)."""
-        unit = self._get_flow_meter_unit(entity_id)
-        return unit in ("L/h", "l/h", "L/min", "l/min", "m³/h")
+        """Check if the sensor reports a flow rate (not cumulative volume).
+
+        Recognizes both metric (L/h, L/min, m³/h) and imperial (gal/min,
+        gal/h) units. When Home Assistant runs in US-customary mode, ZHA
+        flow sensors are exposed in gallons, so these must be detected too.
+        """
+        unit = (self._get_flow_meter_unit(entity_id) or "").lower()
+        return unit in (
+            "l/h",
+            "l/min",
+            "m³/h",
+            "gal/min",
+            "gal/h",
+        )
 
     def _get_flow_meter_unit(self, entity_id: str) -> str | None:
         """Get the unit of measurement of a flow meter sensor."""
@@ -968,6 +976,58 @@ class IrrigationController:
             return float(state.state)
         except (ValueError, TypeError):
             return None
+
+    def _read_volume_liters(self, entity_id: str) -> float | None:
+        """Read a cumulative-volume sensor and normalize to liters in one fetch.
+
+        Reads value and unit from a single ``states.get`` so the result is
+        consistent and imperial (gallons) readings are converted to liters.
+        """
+        state = self._hass.states.get(entity_id)
+        if state is None or state.state in ("unknown", "unavailable"):
+            return None
+        try:
+            value = float(state.state)
+        except (ValueError, TypeError):
+            return None
+        return self._volume_to_liters(value, state.attributes.get("unit_of_measurement"))
+
+    @staticmethod
+    def _rate_to_lpm(rate: float, unit: str | None) -> float:
+        """Normalize a flow-rate reading to liters per minute.
+
+        Handles metric (L/min, L/h, m³/h) and imperial (gal/min, gal/h)
+        units. When HA runs in US-customary mode the underlying ZHA sensor
+        is exposed in gallons, so the raw value must be converted before it
+        is integrated into a delivered volume.
+        """
+        u = (unit or "").lower()
+        if u == "l/min":
+            return rate
+        if u == "l/h":
+            return rate / 60.0
+        if u == "m³/h":
+            return rate * 1000.0 / 60.0
+        if u == "gal/min":
+            return rate * _GALLON_TO_LITER
+        if u == "gal/h":
+            return rate * _GALLON_TO_LITER / 60.0
+        # Unknown unit: assume already L/h (legacy default).
+        return rate / 60.0
+
+    @staticmethod
+    def _volume_to_liters(value: float, unit: str | None) -> float:
+        """Normalize a cumulative-volume reading to liters.
+
+        Converts gallons → liters when the sensor is exposed in US-customary
+        units; passes metric volumes through unchanged.
+        """
+        u = (unit or "").lower()
+        if u in ("gal", "gallon", "gallons"):
+            return value * _GALLON_TO_LITER
+        if u == "m³":
+            return value * 1000.0
+        return value
 
     # ── Deficit live-update helper ────────────────────────
 
@@ -1142,8 +1202,8 @@ class IrrigationController:
                     # For rate sensors, record open timestamp
                     self._manual_valve_open[entity_id] = time.monotonic()
                 else:
-                    # For cumulative sensors, record current reading
-                    self._manual_valve_open[entity_id] = self._read_flow_meter(zone.flow_meter_sensor)
+                    # For cumulative sensors, record current reading (in liters)
+                    self._manual_valve_open[entity_id] = self._read_volume_liters(zone.flow_meter_sensor)
             else:
                 self._manual_valve_open[entity_id] = None
             # Snapshot for the SESSION_RESULT log emitted at manual close.
@@ -1186,17 +1246,13 @@ class IrrigationController:
                     current_rate = self._read_flow_meter(zone.flow_meter_sensor)
                     if current_rate is not None and current_rate > 0:
                         unit = self._get_flow_meter_unit(zone.flow_meter_sensor)
-                        if unit in ("L/min", "l/min"):
-                            delivered_liters = current_rate / 60 * duration_s
-                        elif unit in ("m³/h",):
-                            delivered_liters = current_rate * 1000 / 3600 * duration_s
-                        else:  # L/h or default
-                            delivered_liters = current_rate / 3600 * duration_s
+                        lpm = self._rate_to_lpm(current_rate, unit)
+                        delivered_liters = lpm / 60 * duration_s
                     else:
                         delivered_liters = 0.0
                 else:
-                    # Cumulative: simple difference
-                    flow_end = self._read_flow_meter(zone.flow_meter_sensor)
+                    # Cumulative: simple difference (baseline already in liters)
+                    flow_end = self._read_volume_liters(zone.flow_meter_sensor)
                     delivered_liters = max(0.0, flow_end - baseline) if flow_end is not None else 0.0
 
                 if delivered_liters > 0 and zone._area > 0:
@@ -1357,12 +1413,8 @@ class IrrigationController:
                 rate = self._read_flow_meter(meter)
                 if rate is None or rate < 0:
                     continue
-                if unit in ("L/min", "l/min"):
-                    delivered += rate / 60 * FLOW_METER_POLL_INTERVAL_S
-                elif unit in ("m³/h",):
-                    delivered += rate * 1000 / 3600 * FLOW_METER_POLL_INTERVAL_S
-                else:
-                    delivered += rate / 3600 * FLOW_METER_POLL_INTERVAL_S
+                lpm = self._rate_to_lpm(rate, unit)
+                delivered += lpm / 60 * FLOW_METER_POLL_INTERVAL_S
                 if delivered >= volume_target:
                     _LOGGER.info(
                         "Manual valve '%s' reached target (%.1fL of %.1fL) via flow rate",
@@ -1380,7 +1432,7 @@ class IrrigationController:
             )
             return
 
-        initial = self._read_flow_meter(meter)
+        initial = self._read_volume_liters(meter)
         if initial is None:
             _LOGGER.warning(
                 "Manual valve '%s': flow meter unavailable at open, falling back to timeout=%ds",
@@ -1392,7 +1444,7 @@ class IrrigationController:
         while elapsed < timeout_s:
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
-            current = self._read_flow_meter(meter)
+            current = self._read_volume_liters(meter)
             if current is None:
                 continue
             delivered = current - initial
