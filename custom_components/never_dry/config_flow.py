@@ -111,16 +111,8 @@ def _sensors_schema(is_imperial: bool) -> vol.Schema:
             vol.Required(CONF_RAIN_SENSOR): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_RAIN_SENSOR_TYPE, default=DEFAULT_RAIN_SENSOR_TYPE): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value=RAIN_TYPE_EVENT,
-                            label="Event-based (per event — tipping bucket)",
-                        ),
-                        selector.SelectOptionDict(
-                            value=RAIN_TYPE_DAILY_TOTAL,
-                            label="Daily total (cumulative since midnight)",
-                        ),
-                    ],
+                    options=[RAIN_TYPE_EVENT, RAIN_TYPE_DAILY_TOTAL],
+                    translation_key="rain_sensor_type",
                     mode="dropdown",
                 )
             ),
@@ -212,19 +204,11 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
             vol.Optional(CONF_ZONE_DELIVERY_MODE, default=DEFAULT_DELIVERY_MODE): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(
-                            value=DELIVERY_MODE_ESTIMATED_FLOW,
-                            label="Simple on/off — timer-based (default)",
-                        ),
-                        selector.SelectOptionDict(
-                            value=DELIVERY_MODE_FLOW_METER,
-                            label="Valve with flow meter sensor",
-                        ),
-                        selector.SelectOptionDict(
-                            value=DELIVERY_MODE_VOLUME_PRESET,
-                            label="Smart valve with volume dosing",
-                        ),
+                        DELIVERY_MODE_ESTIMATED_FLOW,
+                        DELIVERY_MODE_FLOW_METER,
+                        DELIVERY_MODE_VOLUME_PRESET,
                     ],
+                    translation_key="delivery_mode",
                     mode="dropdown",
                 )
             ),
@@ -240,11 +224,12 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
             vol.Required(CONF_ZONE_SYSTEM_TYPE): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(value=SYSTEM_TYPE_DRIP, label="Drip irrigation (η=0.92)"),
-                        selector.SelectOptionDict(value=SYSTEM_TYPE_MICRO_SPRINKLER, label="Micro-sprinklers (η=0.80)"),
-                        selector.SelectOptionDict(value=SYSTEM_TYPE_SPRINKLER, label="Pop-up sprinklers (η=0.68)"),
-                        selector.SelectOptionDict(value=SYSTEM_TYPE_MANUAL, label="Manual / hose (η=0.55)"),
+                        SYSTEM_TYPE_DRIP,
+                        SYSTEM_TYPE_MICRO_SPRINKLER,
+                        SYSTEM_TYPE_SPRINKLER,
+                        SYSTEM_TYPE_MANUAL,
                     ],
+                    translation_key="system_type",
                     mode="dropdown",
                 )
             ),
@@ -253,10 +238,8 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
             ),
             vol.Optional(CONF_ZONE_PLANT_FAMILY): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value=key, label=data["label"])
-                        for key, data in PLANT_FAMILIES.items()
-                    ],
+                    options=list(PLANT_FAMILIES.keys()),
+                    translation_key="plant_family",
                     mode="dropdown",
                 )
             ),
@@ -284,19 +267,11 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
             vol.Optional(CONF_ZONE_IRRIGATION_MODE, default=DEFAULT_IRRIGATION_MODE): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
-                        selector.SelectOptionDict(
-                            value=IRRIGATION_MODE_MANUAL,
-                            label="Manual only (button / service call)",
-                        ),
-                        selector.SelectOptionDict(
-                            value=IRRIGATION_MODE_REACTIVE,
-                            label="Reactive (irrigate when deficit > threshold)",
-                        ),
-                        selector.SelectOptionDict(
-                            value=IRRIGATION_MODE_SCHEDULED,
-                            label="Scheduled (check daily at set time)",
-                        ),
+                        IRRIGATION_MODE_MANUAL,
+                        IRRIGATION_MODE_REACTIVE,
+                        IRRIGATION_MODE_SCHEDULED,
                     ],
+                    translation_key="irrigation_mode",
                     mode="dropdown",
                 )
             ),
@@ -550,38 +525,17 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             return round(v * _MM_TO_IN, 1) if (imperial and v is not None) else v
 
         dm_opts = [
-            selector.SelectOptionDict(
-                value=DELIVERY_MODE_ESTIMATED_FLOW,
-                label="Simple on/off — timer-based",
-            ),
-            selector.SelectOptionDict(
-                value=DELIVERY_MODE_FLOW_METER,
-                label="Valve with flow meter sensor",
-            ),
-            selector.SelectOptionDict(
-                value=DELIVERY_MODE_VOLUME_PRESET,
-                label="Smart valve with volume dosing",
-            ),
+            DELIVERY_MODE_ESTIMATED_FLOW,
+            DELIVERY_MODE_FLOW_METER,
+            DELIVERY_MODE_VOLUME_PRESET,
         ]
         st_opts = [
-            selector.SelectOptionDict(
-                value=SYSTEM_TYPE_DRIP,
-                label="Drip (η=0.92)",
-            ),
-            selector.SelectOptionDict(
-                value=SYSTEM_TYPE_MICRO_SPRINKLER,
-                label="Micro-sprinklers (η=0.80)",
-            ),
-            selector.SelectOptionDict(
-                value=SYSTEM_TYPE_SPRINKLER,
-                label="Pop-up sprinklers (η=0.68)",
-            ),
-            selector.SelectOptionDict(
-                value=SYSTEM_TYPE_MANUAL,
-                label="Manual / hose (η=0.55)",
-            ),
+            SYSTEM_TYPE_DRIP,
+            SYSTEM_TYPE_MICRO_SPRINKLER,
+            SYSTEM_TYPE_SPRINKLER,
+            SYSTEM_TYPE_MANUAL,
         ]
-        pf_opts = [selector.SelectOptionDict(value=k, label=d["label"]) for k, d in PLANT_FAMILIES.items()]
+        pf_opts = list(PLANT_FAMILIES.keys())
         ent_sw = selector.EntitySelectorConfig(domain="switch")
         ent_sn = selector.EntitySelectorConfig(domain="sensor")
         ent_nr = selector.EntitySelectorConfig(domain="number")
@@ -602,6 +556,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=dm_opts,
+                        translation_key="delivery_mode",
                         mode="dropdown",
                     )
                 ),
@@ -623,6 +578,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=st_opts,
+                        translation_key="system_type",
                         mode="dropdown",
                     )
                 ),
@@ -643,6 +599,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=pf_opts,
+                        translation_key="plant_family",
                         mode="dropdown",
                     )
                 ),
@@ -701,19 +658,11 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                 ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
-                            selector.SelectOptionDict(
-                                value=IRRIGATION_MODE_MANUAL,
-                                label="Manual only",
-                            ),
-                            selector.SelectOptionDict(
-                                value=IRRIGATION_MODE_REACTIVE,
-                                label="Reactive",
-                            ),
-                            selector.SelectOptionDict(
-                                value=IRRIGATION_MODE_SCHEDULED,
-                                label="Scheduled",
-                            ),
+                            IRRIGATION_MODE_MANUAL,
+                            IRRIGATION_MODE_REACTIVE,
+                            IRRIGATION_MODE_SCHEDULED,
                         ],
+                        translation_key="irrigation_mode",
                         mode="dropdown",
                     )
                 ),
