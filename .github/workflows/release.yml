@@ -40,8 +40,14 @@ jobs:
 
       - name: Package integration
         run: |
-          cd custom_components
-          zip -r ../never_dry.zip never_dry/
+          # Zip the CONTENTS of the integration dir at the archive root (not the
+          # never_dry/ folder itself): HACS extracts the zip INTO
+          # custom_components/never_dry/, so a top-level never_dry/ folder would
+          # produce a broken custom_components/never_dry/never_dry/ nesting and
+          # the integration would not be discovered. Exclude __pycache__ so
+          # compiled bytecode never ships in the release.
+          cd custom_components/never_dry
+          zip -r ../../never_dry.zip . -x '*__pycache__*'
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
