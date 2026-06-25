@@ -71,6 +71,19 @@ def _create_ha_stubs():
     config_entries_mod = ModuleType("homeassistant.config_entries")
     config_entries_mod.ConfigEntry = MagicMock
 
+    class _ConfigFlow:
+        """Subclassable stub accepting the ``domain=`` class kwarg."""
+
+        def __init_subclass__(cls, **kwargs):
+            super().__init_subclass__()
+
+    class _OptionsFlow:
+        pass
+
+    config_entries_mod.ConfigFlow = _ConfigFlow
+    config_entries_mod.OptionsFlow = _OptionsFlow
+    config_entries_mod.ConfigFlowResult = dict
+
     # homeassistant.helpers.entity_platform
     entity_platform_mod = ModuleType("homeassistant.helpers.entity_platform")
     entity_platform_mod.AddEntitiesCallback = MagicMock
@@ -78,6 +91,9 @@ def _create_ha_stubs():
     # homeassistant.helpers.config_validation
     cv_mod = ModuleType("homeassistant.helpers.config_validation")
     cv_mod.config_entry_only_config_schema = lambda domain: {}
+
+    # homeassistant.helpers.selector (only attribute access at call time)
+    selector_mod = ModuleType("homeassistant.helpers.selector")
 
     # homeassistant.components.button
     button_mod = ModuleType("homeassistant.components.button")
@@ -168,7 +184,9 @@ def _create_ha_stubs():
     helpers_mod.config_validation = cv_mod
     helpers_mod.device_registry = device_registry_mod
     helpers_mod.entity_registry = entity_registry_mod
+    helpers_mod.selector = selector_mod
     mods = {
+        "voluptuous": ModuleType("voluptuous"),
         "homeassistant": ModuleType("homeassistant"),
         "homeassistant.components": ModuleType("homeassistant.components"),
         "homeassistant.components.button": button_mod,
@@ -178,6 +196,7 @@ def _create_ha_stubs():
         "homeassistant.core": core_mod,
         "homeassistant.helpers": helpers_mod,
         "homeassistant.helpers.config_validation": cv_mod,
+        "homeassistant.helpers.selector": selector_mod,
         "homeassistant.helpers.entity_platform": entity_platform_mod,
         "homeassistant.helpers.entity_registry": entity_registry_mod,
         "homeassistant.helpers.event": event_mod,
