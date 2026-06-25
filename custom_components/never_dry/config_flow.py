@@ -14,8 +14,10 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import selector
 
+from . import zone_device_identifier
 from .const import (
     CONF_ALPHA,
     CONF_D_MAX,
@@ -743,6 +745,20 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={"zone_name": self._edit_zone_name},
         )
 
+    def _remove_zone_device(self, zone_name: str) -> None:
+        """Remove the device registry entry for a deleted zone.
+
+        Without this the zone device lingers in the registry after its
+        entities are torn down on reload, leaving an undeletable orphan
+        that blocks a clean uninstall.
+        """
+        device_registry = dr.async_get(self.hass)
+        identifier = zone_device_identifier(self._config_entry.entry_id, zone_name)
+        device = device_registry.async_get_device(identifiers={identifier})
+        if device is not None:
+            _LOGGER.debug("Removing stale zone device %s (%s)", device.id, zone_name)
+            device_registry.async_remove_device(device.id)
+
     async def async_step_remove_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Remove an existing irrigation zone."""
         zones = list(self._config_entry.data.get(CONF_ZONES, []))
@@ -757,6 +773,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             new_data[CONF_ZONES] = [z for z in zones if z[CONF_ZONE_NAME] != name_to_remove]
             if new_data != dict(self._config_entry.data):
                 _LOGGER.debug("Config updated via remove_zone — zone removed: %s", name_to_remove)
+                self._remove_zone_device(name_to_remove)
                 self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
             return self.async_create_entry(data={})
 
