@@ -27,12 +27,17 @@ _CONFIG_FLOW = _COMPONENT / "config_flow.py"
 _EN_JSON = _COMPONENT / "translations" / "en.json"
 
 
-def _resolve_options(node: ast.AST) -> set[str] | None:
+def _resolve_options(node: ast.AST, assignments: dict[str, ast.AST] | None = None) -> set[str] | None:
     """Resolve a SelectSelectorConfig ``options=`` argument to its string values.
 
     Returns ``None`` when the expression cannot be resolved statically, so the
     caller can fail loudly rather than pass a false negative.
     """
+    if assignments is None:
+        assignments = {}
+    if isinstance(node, ast.Name):
+        if node.id in assignments:
+            return _resolve_options(assignments[node.id], assignments)
     # options=[CONST_A, CONST_B] or [SelectOptionDict(value=CONST, ...), ...]
     if isinstance(node, ast.List):
         values: set[str] = set()
@@ -74,6 +79,13 @@ def _resolve_options(node: ast.AST) -> set[str] | None:
 
 def _collect_translation_keyed_selectors() -> list[tuple[str, set[str] | None]]:
     tree = ast.parse(_CONFIG_FLOW.read_text())
+    assignments: dict[str, ast.AST] = {}
+    for subnode in ast.walk(tree):
+        if isinstance(subnode, ast.Assign):
+            for target in subnode.targets:
+                if isinstance(target, ast.Name):
+                    assignments[target.id] = subnode.value
+
     out: list[tuple[str, set[str] | None]] = []
     for node in ast.walk(tree):
         if not (
@@ -86,7 +98,7 @@ def _collect_translation_keyed_selectors() -> list[tuple[str, set[str] | None]]:
         if tk_kw is None or not isinstance(tk_kw.value, ast.Constant):
             continue
         opt_kw = next((kw for kw in node.keywords if kw.arg == "options"), None)
-        options = _resolve_options(opt_kw.value) if opt_kw is not None else None
+        options = _resolve_options(opt_kw.value, assignments) if opt_kw is not None else None
         out.append((tk_kw.value.value, options))
     return out
 
