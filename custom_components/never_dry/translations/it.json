@@ -1,0 +1,205 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "NeverDry — Sensori e Modello",
+        "description": "Seleziona i tuoi sensori meteo e configura i parametri del modello di evapotraspirazione (ET).",
+        "data": {
+          "temperature_sensor": "Sensore di temperatura",
+          "rain_sensor": "Sensore di pioggia",
+          "rain_sensor_type": "Tipo di sensore di pioggia",
+          "alpha": "Coefficiente ET (α)",
+          "t_base": "Temperatura di base",
+          "d_max": "Limite massimo del deficit",
+          "vwc_sensor": "Sensore di umidità del suolo (opzionale)"
+        },
+        "data_description": {
+          "temperature_sensor": "Sensore di temperatura esterna in °C",
+          "rain_sensor": "Pluviometro o sensore di precipitazione della stazione meteo",
+          "rain_sensor_type": "Modalità di segnalazione delle precipitazioni del sensore di pioggia. Basato su eventi: mm per evento (pluviometro a vaschetta oscillante, consigliato). Totale giornaliero: mm cumulativi dalla mezzanotte (stazione meteo)",
+          "alpha": "Coefficiente di evapotraspirazione. Inizia con 0.22, regola dopo aver osservato il tuo giardino per una settimana",
+          "t_base": "Temperatura al di sotto della quale l'evapotraspirazione è zero (piante a riposo)",
+          "d_max": "Limite superiore per l'indice di deficit",
+          "vwc_sensor": "Se impostato, il deficit viene calcolato direttamente dall'umidità del suolo invece che dal modello ET"
+        }
+      },
+      "zone": {
+        "title": "Aggiungi zona di irrigazione",
+        "description": "Configura la zona #{zone_count}. Potrai aggiungere altre zone successivamente.",
+        "data": {
+          "name": "Nome della zona",
+          "valve": "Interruttore della valvola (opzionale)",
+          "delivery_mode": "Modalità di erogazione dell'acqua",
+          "area_m2": "Area irrigata",
+          "system_type": "Tipo di impianto di irrigazione",
+          "efficiency": "Efficienza personalizzata (sovrascrive il valore predefinito del tipo di impianto)",
+          "plant_family": "Famiglia di piante",
+          "kc": "Coefficiente colturale Kc personalizzato (sovrascrive la famiglia di piante)",
+          "flow_rate_lpm": "Portata della valvola (solo per estimated_flow)",
+          "flow_meter_sensor": "Sensore del flussometro (solo per flow_meter)",
+          "volume_entity": "Entità target del volume (solo per volume_preset)",
+          "delivery_timeout": "Timeout di sicurezza",
+          "irrigation_mode": "Modalità di irrigazione",
+          "threshold": "Soglia di irrigazione",
+          "irrigation_time": "Orario di irrigazione giornaliero"
+        },
+        "data_description": {
+          "name": "Nome visualizzato per questa zona (es. Orto, Prato)",
+          "valve": "L'entità interruttore (switch) che controlla la valvola di irrigazione di questa zona. Lascia vuoto per la modalità di solo monitoraggio (nessuna valvola)",
+          "delivery_mode": "Modalità di erogazione dell'acqua della valvola. Portata stimata (estimated flow): semplice valvola on/off, durata calcolata in base alla portata. Flussometro (flow meter): valvola con sensore di flusso, si chiude al raggiungimento del volume target. Volume preimpostato (volume preset): valvola intelligente che accetta un volume target e si chiude autonomamente.",
+          "area_m2": "Superficie di questa zona di irrigazione in metri quadrati",
+          "system_type": "Tipo di impianto di irrigazione — imposta l'efficienza predefinita",
+          "efficiency": "Lascia vuoto per utilizzare il valore predefinito del tipo di impianto. Imposta per sovrascriverlo",
+          "plant_family": "Seleziona il tipo di piante in questa zona. Imposta un coefficiente colturale stagionale (Kc) che adatta il fabbisogno idrico durante l'anno",
+          "kc": "Lascia vuoto per utilizzare il profil stagionale della famiglia di piante. Imposta per sovrascriverlo con un valore Kc fisso (0.1–2.0)",
+          "flow_rate_lpm": "Portata d'acqua della valvola in litri al minuto. Richiesto per la modalità estimated_flow. Misurala con un secchio e un cronometro",
+          "flow_meter_sensor": "Entità sensore che rileva i litri cumulativi erogati. Richiesto per la modalità flow_meter",
+          "volume_entity": "Entità numerica sulla valvola intelligente che accetta un target di volume in litri. Richiesto per la modalità volume_preset",
+          "delivery_timeout": "Tempo massimo di attesa per l'erogazione con flow_meter o volume_preset prima di forzare la chiusura della valvola (limite di sicurezza)",
+          "threshold": "Livello di deficit (mm) che attiva l'irrigazione automatica per questa zona",
+          "irrigation_time": "Ora del giorno in cui NeverDry verifica il deficit e irriga se supera la soglia. Lascia vuoto per disabilitare la pianificazione automatica"
+        }
+      },
+      "add_another": {
+        "title": "Aggiungere un'altra zona?",
+        "description": "Hai configurato {zone_count} zona/e: {zone_names}.",
+        "data": {
+          "add_another": "Aggiungi un'altra zona di irrigazione"
+        }
+      }
+    },
+    "error": {
+      "zone_name_too_long": "Il nome della zona è troppo lungo (massimo 64 caratteri)",
+      "too_many_zones": "È stato raggiunto il numero massimo di zone (50)",
+      "flow_rate_required": "La portata è richiesta per la modalità di erogazione estimated_flow",
+      "flow_meter_required": "Il sensore del flussometro è richiesto per la modalità di erogazione flow_meter",
+      "volume_entity_required": "L'entità del volume è richiesta per la modalità di erogazione volume_preset",
+      "zone_already_exists": "Esiste già una zona con questo nome"
+    },
+    "abort": {
+      "already_configured": "NeverDry è già configurato"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "NeverDry — Opzioni",
+        "description": "Scegli cosa configurare.",
+        "menu_options": {
+          "model_params": "Modifica i parametri del modello (α, T_base, D_max)",
+          "add_zone": "Aggiungi una nuova zona di irrigazione",
+          "edit_zone": "Modifica una zona di irrigazione",
+          "remove_zone": "Rimuovi una zona di irrigazione"
+        }
+      },
+      "model_params": {
+        "title": "Parametri del Modello ET",
+        "description": "Regola il modello di evapotraspirazione. Le modifiche hanno effetto immediato.",
+        "data": {
+          "alpha": "Coefficiente ET (α)",
+          "t_base": "Temperatura di base",
+          "d_max": "Limite massimo del deficit"
+        }
+      },
+      "add_zone": {
+        "title": "Aggiungi zona di irrigazione",
+        "data": {
+          "name": "Nome della zona",
+          "valve": "Interruttore della valvola (opzionale)",
+          "delivery_mode": "Modalità di erogazione dell'acqua",
+          "area_m2": "Area irrigata",
+          "system_type": "Tipo di impianto di irrigazione",
+          "efficiency": "Efficienza personalizzata",
+          "plant_family": "Famiglia di piante",
+          "kc": "Coefficiente colturale Kc personalizzato",
+          "flow_rate_lpm": "Portata della valvola",
+          "flow_meter_sensor": "Sensore del flussometro",
+          "volume_entity": "Entità target del volume",
+          "delivery_timeout": "Timeout di sicurezza",
+          "irrigation_mode": "Modalità di irrigazione",
+          "threshold": "Soglia di irrigazione",
+          "irrigation_time": "Orario di irrigazione giornaliero"
+        }
+      },
+      "edit_zone": {
+        "title": "Modifica zona di irrigazione",
+        "data": {
+          "zone_to_edit": "Zona da modificare"
+        }
+      },
+      "edit_zone_detail": {
+        "title": "Modifica zona: {zone_name}",
+        "data": {
+          "name": "Nome della zona",
+          "valve": "Interruttore della valvola",
+          "delivery_mode": "Modalità di erogazione dell'acqua",
+          "area_m2": "Area irrigata",
+          "system_type": "Tipo di impianto di irrigazione",
+          "efficiency": "Efficienza personalizzata",
+          "plant_family": "Famiglia di piante",
+          "kc": "Coefficiente colturale Kc personalizzato",
+          "flow_rate_lpm": "Portata della valvola",
+          "flow_meter_sensor": "Sensore del flussometro",
+          "volume_entity": "Entità target del volume",
+          "delivery_timeout": "Timeout di sicurezza",
+          "irrigation_mode": "Modalità di irrigazione",
+          "threshold": "Soglia di irrigazione",
+          "irrigation_time": "Orario di irrigazione giornaliero"
+        }
+      },
+      "remove_zone": {
+        "title": "Rimuovi zona di irrigazione",
+        "data": {
+          "zone_to_remove": "Zona da rimuovere"
+        }
+      }
+    },
+    "abort": {
+      "no_zones": "Nessuna zona configurata"
+    }
+  },
+  "selector": {
+    "rain_sensor_type": {
+      "options": {
+        "event": "Basato su eventi (mm per evento — pluviometro a vaschetta)",
+        "daily_total": "Totale giornaliero (mm cumulativi dalla mezzanotte)"
+      }
+    },
+    "irrigation_mode": {
+      "options": {
+        "manual": "Solo manuale (pulsante o chiamata di servizio)",
+        "reactive": "Reattiva (irriga quando il deficit supera la soglia)",
+        "scheduled": "Pianificata (verifica giornaliera all'orario prestabilito)"
+      }
+    },
+    "system_type": {
+      "options": {
+        "drip": "Ala gocciolante / Manichetta",
+        "micro_sprinkler": "Micro-irrigatori",
+        "sprinkler": "Irrigatori a scomparsa (Pop-up)",
+        "manual": "Manuale / Gomma da giardino"
+      }
+    },
+    "plant_family": {
+      "options": {
+        "lawn": "Prato / Tappeto erboso",
+        "vegetables": "Orto / Verdure (stagionali)",
+        "fruit_trees": "Alberi da frutto (caducifoglie)",
+        "ornamental_shrubs": "Arbusti ornamentali",
+        "herbs": "Aromatiche (mediterranee)",
+        "citrus": "Agrumi / Fruttiferi sempreverdi",
+        "roses": "Rosai",
+        "succulents": "Piante grasse / Cacti",
+        "native_ground_cover": "Coprisuolo nativo",
+        "mixed_garden": "Giardino misto (predefinito)"
+      }
+    },
+    "delivery_mode": {
+      "options": {
+        "estimated_flow": "Semplice On/Off (calcolo del tempo in base alla portata)",
+        "flow_meter": "Valvola con sensore flussometro",
+        "volume_preset": "Valvola smart con dosaggio a volume"
+      }
+    }
+  }
+}

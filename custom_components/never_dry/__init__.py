@@ -7,6 +7,8 @@ water balance model.  Directly controls irrigation valves.
 Supports both YAML configuration and UI-based config flow.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import logging.handlers
@@ -15,9 +17,25 @@ import pathlib
 import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONFIG_VERSION, DOMAIN
+from .const import CONF_ZONE_NAME, CONF_ZONES, CONFIG_VERSION, DOMAIN
+
+
+def zone_slug(zone_name: str) -> str:
+    """Slug used to build a zone device identifier.
+
+    Must stay in sync with the slug used in sensor.py / button.py
+    DeviceInfo identifiers: ``(DOMAIN, f"{entry_id}_{slug}")``.
+    """
+    return zone_name.lower().replace(" ", "_")
+
+
+def zone_device_identifier(entry_id: str, zone_name: str) -> tuple[str, str]:
+    """Device-registry identifier for a zone device."""
+    return (DOMAIN, f"{entry_id}_{zone_slug(zone_name)}")
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -146,3 +164,23 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(f"_operators_{entry.entry_id}", None)
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    device: dr.DeviceEntry,
+) -> bool:
+    """Allow manual deletion of stale zone devices from the UI.
+
+    Returning True re-enables the "Delete device" button in Home Assistant.
+    We allow removal of any device whose identifier no longer maps to a
+    currently configured zone (orphans left behind after a zone was removed).
+    The hub device and devices belonging to still-configured zones are kept.
+    """
+    valid_identifiers = {(DOMAIN, entry.entry_id)}  # hub device
+    for zone in entry.data.get(CONF_ZONES, []):
+        valid_identifiers.add(zone_device_identifier(entry.entry_id, zone[CONF_ZONE_NAME]))
+
+    # Removable only if NONE of the device identifiers match a live zone/hub.
+    return not any(identifier in valid_identifiers for identifier in device.identifiers)

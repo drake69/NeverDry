@@ -157,5 +157,49 @@
     "abort": {
       "no_zones": "No zones configured"
     }
+  },
+  "selector": {
+    "rain_sensor_type": {
+      "options": {
+        "event": "Event-based (per event — tipping bucket)",
+        "daily_total": "Daily total (cumulative since midnight)"
+      }
+    },
+    "irrigation_mode": {
+      "options": {
+        "manual": "Manual only (button / service call)",
+        "reactive": "Reactive (irrigate when deficit > threshold)",
+        "scheduled": "Scheduled (check daily at set time)"
+      }
+    },
+    "system_type": {
+      "options": {
+        "drip": "Drip irrigation (η=0.92)",
+        "micro_sprinkler": "Micro-sprinklers (η=0.80)",
+        "sprinkler": "Pop-up sprinklers (η=0.68)",
+        "manual": "Manual / hose (η=0.55)"
+      }
+    },
+    "plant_family": {
+      "options": {
+        "lawn": "Lawn / Turf grass",
+        "vegetables": "Vegetables (seasonal)",
+        "fruit_trees": "Fruit trees (deciduous)",
+        "ornamental_shrubs": "Ornamental shrubs",
+        "herbs": "Herbs (Mediterranean)",
+        "citrus": "Citrus / Evergreen fruit",
+        "roses": "Roses",
+        "succulents": "Succulents / Cacti",
+        "native_ground_cover": "Native ground cover",
+        "mixed_garden": "Mixed garden (default)"
+      }
+    },
+    "delivery_mode": {
+      "options": {
+        "estimated_flow": "Simple on/off — timer-based (default)",
+        "flow_meter": "Valve with flow meter sensor",
+        "volume_preset": "Smart valve with volume dosing"
+      }
+    }
   }
 }
