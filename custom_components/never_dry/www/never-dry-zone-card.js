@@ -4,19 +4,22 @@
  * Vanilla custom element (no build step, no Lit/CDN dependency) so it can be
  * served and auto-registered directly by the Python integration.
  *
- * Shows every entity of ONE NeverDry zone-device grouped into readable blocks:
- *   - Water status (Dryness/Deficit + Rain)
- *   - Deficit-vs-threshold bar
- *   - Irrigation (last/duration/mode/flow)
- *   - Water delivered (session/yearly/last volume)
+ * Shows every entity of ONE NeverDry zone-device, grouped by time horizon:
+ *   - At-a-glance status chips (valve state / irrigating / maintenance) + last source
+ *   - Deficit-vs-threshold bar (current state)
+ *   - Next session (planned volume / duration)
+ *   - Last session (last irrigated / duration / volume / session water)
+ *   - Totals (yearly water / rain cumulative)
+ *   - Parameters (threshold / flow rate / area / kc / efficiency / mode / time)
  *   - Actions (Irrigate / Mark irrigated / Reset valve) as real buttons
  *
- * Entity resolution is locale-independent: entities are matched by their
- * registry `original_name` (the English `_attr_name` defined in sensor.py /
- * button.py), not by entity_id, so user renames don't break the card.
+ * Entity resolution prefers each entity's stable `unique_id` prefix (fetched
+ * once from the entity registry) and falls back to the entity_id suffix, so
+ * user renames of entity_ids don't break the card. Labels come from the
+ * localized friendly_name; values via formatEntityState (language + units).
  */
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.6";
 
 // Static UI strings that are NOT backed by an entity (everything else is read
 // from the entity's localized friendly_name / formatEntityState, so it follows
@@ -31,6 +34,13 @@ const I18N = {
     due: "irrigation due",
     barUnavailable: "deficit / threshold unavailable",
     irrigateNow: "Irrigate now",
+    irrigating: "Irrigating",
+    maintenance: "Maintenance",
+    valve: "Valve",
+    secNext: "Next session",
+    secLast: "Last session",
+    secTotals: "Totals",
+    secParams: "Parameters",
   },
   it: {
     selectZone: "Seleziona una zona nell'editor della scheda.",
@@ -41,12 +51,64 @@ const I18N = {
     due: "irrigazione necessaria",
     barUnavailable: "deficit / soglia non disponibili",
     irrigateNow: "Irriga ora",
+    irrigating: "In irrigazione",
+    maintenance: "Manutenzione",
+    valve: "Valvola",
+    secNext: "Prossima sessione",
+    secLast: "Ultima sessione",
+    secTotals: "Totali",
+    secParams: "Parametri",
+  },
+};
+
+// Localized human labels for the valve FSM state (valve_fsm.py ValveState).
+const VALVE_STATE_I18N = {
+  en: {
+    idle: "idle",
+    closed: "closed",
+    open: "open",
+    open_verified: "open (verified)",
+    req_open: "opening…",
+    req_close: "closing…",
+    maintenance: "maintenance",
+  },
+  it: {
+    idle: "ferma",
+    closed: "chiusa",
+    open: "aperta",
+    open_verified: "aperta ✓",
+    req_open: "apertura…",
+    req_close: "chiusura…",
+    maintenance: "manutenzione",
   },
 };
 
 function t(hass, key) {
   const lang = ((hass && hass.language) || "en").split("-")[0];
   return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+
+function valveStateLabel(hass, state) {
+  if (!state) return "—";
+  const lang = ((hass && hass.language) || "en").split("-")[0];
+  const m = VALVE_STATE_I18N[lang] || VALVE_STATE_I18N.en;
+  return m[state] || state;
+}
+
+/** Icon + color for a valve FSM state. */
+function valveMeta(state) {
+  switch (state) {
+    case "open":
+    case "open_verified":
+      return { color: "var(--success-color, #43a047)", icon: "mdi:valve-open" };
+    case "req_open":
+    case "req_close":
+      return { color: "var(--warning-color, #ffa600)", icon: "mdi:valve" };
+    case "maintenance":
+      return { color: "var(--error-color, #db4437)", icon: "mdi:wrench-clock" };
+    default: // idle / closed / unknown
+      return { color: "var(--secondary-text-color)", icon: "mdi:valve-closed" };
+  }
 }
 
 // Map of role -> entity_id suffix (the English _attr_name slug, stable for
@@ -75,6 +137,32 @@ const ROLE_SUFFIX = {
   btnIrrigate: "_irrigate",
   btnMark: "_mark_irrigated",
   btnReset: "_reset_valve",
+};
+
+// Preferred mapping: role -> unique_id prefix (hardcoded in sensor.py/button.py,
+// stable and identical across zones even when the user renames entity_ids).
+// unique_id is fetched once via the entity registry; ROLE_SUFFIX is the fallback.
+const UID_PREFIX = {
+  volume: "irrigation_zone_",
+  deficit: "deficit_zone_",
+  rain: "rain_zone_",
+  threshold: "threshold_zone_",
+  sessionWater: "session_water_zone_",
+  yearlyWater: "yearly_water_zone_",
+  lastVolume: "last_volume_zone_",
+  flowRate: "flow_rate_zone_",
+  duration: "duration_zone_",
+  lastDuration: "last_duration_zone_",
+  lastIrrigated: "last_irrigated_zone_",
+  lastSource: "last_source_zone_",
+  irrigationMode: "irrigation_mode_zone_",
+  irrigationTime: "irrigation_time_zone_",
+  kc: "kc_zone_",
+  area: "area_zone_",
+  efficiency: "efficiency_zone_",
+  btnIrrigate: "irrigate_",
+  btnMark: "mark_irrigated_",
+  btnReset: "reset_valve_",
 };
 
 // A NeverDry zone is a device created by the integration with this model.
@@ -109,20 +197,40 @@ class NeverDryZoneCard extends HTMLElement {
   // ---- entity resolution ------------------------------------------------
 
   _zoneEntities() {
-    // Returns { role: stateObj } for the configured device, matching each
-    // entity by the longest entity_id suffix in ROLE_SUFFIX.
+    // Returns { role: stateObj } for the configured device. Prefers the stable
+    // unique_id prefix (from the entity registry); falls back to entity_id
+    // suffix when the registry isn't loaded yet or the unique_id is unknown.
     const hass = this._hass;
     const deviceId = this._config && this._config.device_id;
     const out = {};
     if (!hass || !deviceId || !hass.entities) return out;
 
-    const roles = Object.entries(ROLE_SUFFIX).sort((a, b) => b[1].length - a[1].length);
+    const uidMap = this._uidMap;
+    const suffixRoles = Object.entries(ROLE_SUFFIX).sort((a, b) => b[1].length - a[1].length);
+    const uidRoles = Object.entries(UID_PREFIX);
+
     for (const ent of Object.values(hass.entities)) {
       if (ent.device_id !== deviceId) continue;
-      const objectId = (ent.entity_id.split(".")[1] || "").toLowerCase();
       const st = hass.states[ent.entity_id];
       if (!st) continue;
-      for (const [role, suffix] of roles) {
+
+      // 1) Preferred: stable unique_id prefix.
+      const uid = uidMap && uidMap[ent.entity_id];
+      if (uid) {
+        let matched = false;
+        for (const [role, prefix] of uidRoles) {
+          if (!out[role] && uid.startsWith(prefix)) {
+            out[role] = st;
+            matched = true;
+            break;
+          }
+        }
+        if (matched) continue;
+      }
+
+      // 2) Fallback: entity_id suffix (longest-match).
+      const objectId = (ent.entity_id.split(".")[1] || "").toLowerCase();
+      for (const [role, suffix] of suffixRoles) {
         if (!out[role] && objectId.endsWith(suffix)) {
           out[role] = st;
           break;
@@ -130,6 +238,29 @@ class NeverDryZoneCard extends HTMLElement {
       }
     }
     return out;
+  }
+
+  _ensureRegistry() {
+    // Lazily load entity_id -> unique_id for never_dry entities (admin WS call).
+    if (this._uidMap || this._uidLoading || !this._hass) return;
+    this._uidLoading = true;
+    this._hass
+      .callWS({ type: "config/entity_registry/list" })
+      .then((list) => {
+        const map = {};
+        for (const e of list) {
+          if (e.platform === "never_dry" && e.unique_id) map[e.entity_id] = e.unique_id;
+        }
+        this._uidMap = map;
+      })
+      .catch(() => {
+        this._uidMap = {}; // give up -> suffix fallback stays in effect
+      })
+      .finally(() => {
+        this._uidLoading = false;
+        this._built = false; // rebuild with corrected mapping
+        this._render();
+      });
   }
 
   _deviceName() {
@@ -161,6 +292,7 @@ class NeverDryZoneCard extends HTMLElement {
       this._renderEmpty(t(this._hass, "selectZone"));
       return;
     }
+    this._ensureRegistry();
     const ents = this._zoneEntities();
     if (Object.keys(ents).length === 0) {
       this._renderEmpty(t(this._hass, "noEntities"));
@@ -188,6 +320,11 @@ class NeverDryZoneCard extends HTMLElement {
           <span class="nd-title"></span>
         </div>
 
+        <div class="nd-status">
+          <div class="nd-status-chips"></div>
+          <div class="nd-status-src"></div>
+        </div>
+
         <div class="nd-bar-wrap">
           <div class="nd-bar-labels">
             <span class="nd-bar-lbl"></span><span class="nd-bar-val"></span>
@@ -196,24 +333,30 @@ class NeverDryZoneCard extends HTMLElement {
           <div class="nd-bar-sub"></div>
         </div>
 
-        <div class="nd-grid" data-block="status"></div>
-        <div class="nd-sep"></div>
-        <div class="nd-grid" data-block="irrigation"></div>
-        <div class="nd-sep"></div>
-        <div class="nd-grid" data-block="water"></div>
+        <div class="nd-section" data-key="next">
+          <div class="nd-sec-title"></div><div class="nd-grid"></div>
+        </div>
+        <div class="nd-section" data-key="last">
+          <div class="nd-sec-title"></div><div class="nd-grid"></div>
+        </div>
+        <div class="nd-section" data-key="totals">
+          <div class="nd-sec-title"></div><div class="nd-grid"></div>
+        </div>
+        <div class="nd-section" data-key="params">
+          <div class="nd-sec-title"></div><div class="nd-grid"></div>
+        </div>
 
         <div class="nd-actions"></div>
       </ha-card>`;
 
     this._el = {
       title: this.querySelector(".nd-title"),
+      statusChips: this.querySelector(".nd-status-chips"),
+      statusSrc: this.querySelector(".nd-status-src"),
       barLbl: this.querySelector(".nd-bar-lbl"),
       barVal: this.querySelector(".nd-bar-val"),
       barFill: this.querySelector(".nd-bar-fill"),
       barSub: this.querySelector(".nd-bar-sub"),
-      status: this.querySelector('[data-block="status"]'),
-      irrigation: this.querySelector('[data-block="irrigation"]'),
-      water: this.querySelector('[data-block="water"]'),
       actions: this.querySelector(".nd-actions"),
     };
     this._buildActions();
@@ -251,6 +394,15 @@ class NeverDryZoneCard extends HTMLElement {
     const hass = this._hass;
     this._el.title.textContent = this._deviceName();
 
+    // --- at-a-glance status chips (valve state / irrigating / maintenance) ---
+    this._el.statusChips.innerHTML = this._statusChips(ents);
+
+    // Last source, top-right aligned with the valve state.
+    const srcVal = fmtState(hass, ents.lastSource);
+    this._el.statusSrc.innerHTML = srcVal
+      ? `<ha-icon icon="mdi:source-branch"></ha-icon><span>${escapeHtml(srcVal)}</span>`
+      : "";
+
     // --- deficit vs threshold bar ---
     // The percentage is a ratio of two same-unit values (mm), so it is
     // independent of the user's measurement system. Displayed values go
@@ -273,27 +425,31 @@ class NeverDryZoneCard extends HTMLElement {
       this._el.barSub.textContent = t(hass, "barUnavailable");
     }
 
-    // --- blocks (label = localized friendly_name, value = formatEntityState) ---
-    this._el.status.innerHTML = this._rows([
-      ["mdi:water-percent-alert", ents.deficit, "Deficit"],
-      ["mdi:weather-rainy", ents.rain, "Rain"],
+    // --- temporal sections (label = localized friendly_name, value = formatEntityState) ---
+    // Current state (deficit) lives in the bar above; here we group by horizon.
+    this._fillSection("next", t(hass, "secNext"), [
       ["mdi:cup-water", ents.volume, "Volume"],
-    ]);
-
-    this._el.irrigation.innerHTML = this._rows([
-      ["mdi:clock-outline", ents.lastIrrigated, "Last irrigated"],
       ["mdi:timer-sand", ents.duration, "Duration"],
-      ["mdi:history", ents.lastDuration, "Last duration"],
-      ["mdi:cog", ents.irrigationMode, "Mode"],
-      ["mdi:gauge", ents.flowRate, "Flow rate"],
-      ["mdi:target", ents.threshold, "Threshold"],
     ]);
-
-    this._el.water.innerHTML = this._rows([
-      ["mdi:water", ents.sessionWater, "Session water"],
-      ["mdi:water-plus", ents.yearlyWater, "Yearly water"],
+    this._fillSection("last", t(hass, "secLast"), [
+      ["mdi:clock-outline", ents.lastIrrigated, "Last irrigated"],
+      ["mdi:history", ents.lastDuration, "Last duration"],
       ["mdi:water-outline", ents.lastVolume, "Last volume"],
-      ["mdi:source-branch", ents.lastSource, "Last source"],
+      ["mdi:water", ents.sessionWater, "Session water"],
+    ]);
+    this._fillSection("totals", t(hass, "secTotals"), [
+      ["mdi:water-plus", ents.yearlyWater, "Yearly water"],
+      ["mdi:weather-rainy", ents.rain, "Rain"],
+    ]);
+    // Static / config parameters last.
+    this._fillSection("params", t(hass, "secParams"), [
+      ["mdi:target", ents.threshold, "Threshold"],
+      ["mdi:speedometer", ents.flowRate, "Flow rate"],
+      ["mdi:texture-box", ents.area, "Area"],
+      ["mdi:leaf", ents.kc, "Kc"],
+      ["mdi:percent", ents.efficiency, "Efficiency"],
+      ["mdi:cog", ents.irrigationMode, "Mode"],
+      ["mdi:clock-time-six", ents.irrigationTime, "Irrigation time"],
     ]);
 
     // --- action buttons (localized label from button entity friendly_name) ---
@@ -304,6 +460,46 @@ class NeverDryZoneCard extends HTMLElement {
       const lbl = d.i18n ? t(hass, d.i18n) : this._label(st, d.role);
       btn.querySelector(".nd-btn-lbl").textContent = lbl;
     }
+  }
+
+  _fillSection(key, title, items) {
+    const box = this.querySelector(`.nd-section[data-key="${key}"]`);
+    if (!box) return;
+    const html = this._rows(items);
+    box.querySelector(".nd-sec-title").textContent = title;
+    box.querySelector(".nd-grid").innerHTML = html;
+    box.style.display = html ? "" : "none"; // hide a section with no available data
+  }
+
+  _statusChips(ents) {
+    const hass = this._hass;
+    // valve_fsm_state / valve_in_maintenance / irrigating live as attributes on
+    // the Deficit (or Volume) sensor.
+    const carrier = ents.deficit || ents.volume;
+    const a = (carrier && carrier.attributes) || {};
+    const chips = [];
+
+    // Valve state — always shown.
+    const vState = a.valve_fsm_state;
+    const vm = valveMeta(vState);
+    chips.push(this._chip(vm.icon, `${t(hass, "valve")}: ${valveStateLabel(hass, vState)}`, vm.color));
+
+    // Irrigating — only when active.
+    if (a.irrigating === true) {
+      chips.push(this._chip("mdi:sprinkler-variant", t(hass, "irrigating"), "var(--info-color, #2196f3)"));
+    }
+
+    // Maintenance — only when in maintenance (red, the at-a-glance alarm).
+    if (a.valve_in_maintenance === true) {
+      chips.push(this._chip("mdi:wrench", t(hass, "maintenance"), "var(--error-color, #db4437)"));
+    }
+
+    return chips.join("");
+  }
+
+  _chip(icon, label, color) {
+    return `<span class="nd-chip" style="--c:${color}">
+      <ha-icon icon="${icon}"></ha-icon>${escapeHtml(label)}</span>`;
   }
 
   _rows(items) {
@@ -389,6 +585,18 @@ const CARD_CSS = `
   .nd-head { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
   .nd-head ha-icon { color: var(--primary-color); }
   .nd-title { font-size:1.15rem; font-weight:600; }
+  .nd-status { display:flex; align-items:center; justify-content:space-between;
+    gap:8px; margin:2px 0 12px; }
+  .nd-status-chips { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+  .nd-status-src { display:inline-flex; align-items:center; gap:4px; flex:0 0 auto;
+    font-size:.8rem; color:var(--secondary-text-color); white-space:nowrap; }
+  .nd-status-src ha-icon { --mdc-icon-size:16px; }
+  .nd-chip { display:inline-flex; align-items:center; gap:4px;
+    padding:3px 9px; border-radius:12px; font-size:.78rem; font-weight:600;
+    color: var(--c, var(--secondary-text-color));
+    background: color-mix(in srgb, var(--c, #888) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c, #888) 35%, transparent); }
+  .nd-chip ha-icon { --mdc-icon-size:16px; }
   .nd-bar-wrap { margin: 4px 0 14px; }
   .nd-bar-labels { display:flex; justify-content:space-between;
     font-size:.8rem; color:var(--secondary-text-color); margin-bottom:4px; }
@@ -406,7 +614,11 @@ const CARD_CSS = `
   .nd-cell-lbl { font-size:.72rem; color:var(--secondary-text-color); }
   .nd-cell-val { font-size:.95rem; font-weight:500;
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .nd-sep { height:1px; background:var(--divider-color); margin:12px 0; }
+  .nd-section { margin-top:6px; }
+  .nd-section + .nd-section { border-top:1px solid var(--divider-color);
+    margin-top:12px; padding-top:12px; }
+  .nd-sec-title { font-size:.7rem; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--secondary-text-color); margin-bottom:8px; }
   .nd-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
   .nd-btn { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
     border:none; border-radius:18px; padding:8px 14px; font-size:.85rem;
