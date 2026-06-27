@@ -1074,9 +1074,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         is derived from the current deficit via ``volume_liters``.
         """
         self._last_irrigation_source = source
-        credited = round(
-            self.volume_liters if delivered_liters is None else delivered_liters, 1
-        )
+        credited = round(self.volume_liters if delivered_liters is None else delivered_liters, 1)
         self._last_volume_delivered = credited
         self._session_water_delivered = credited
         self._total_water_delivered += credited
