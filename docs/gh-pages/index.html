@@ -418,13 +418,24 @@
 <!-- What's new -->
 <section class="how-it-works">
     <div class="container">
-        <h2>What's new in v0.10.2</h2>
-        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-24</p>
+        <h2>What's new in v0.10.7</h2>
+        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-06-27</p>
         <ul style="max-width: 680px; margin: 0 auto; text-align: left; line-height: 2;">
-            <li><strong>Official HACS listing</strong> — NeverDry is now in the HACS default repository list; install with one click, no custom repository needed.</li>
-            <li><strong>Delivery mode guard</strong> — if the sensor entity linked to a zone is removed, NeverDry automatically downgrades the delivery mode to avoid an invalid configuration.</li>
+            <li><strong>NeverDry Zone Card</strong> — a built-in Lovelace card that shows every zone at a glance: deficit, status chips, next watering, and flow rate. Bundled with the integration and registered automatically — no manual resource setup.</li>
+            <li><strong>Flow rate in L/h (gal/h imperial)</strong> — display and enter zone flow rate in litres per hour; converts automatically to US-customary units.</li>
+            <li><strong>Full SI &amp; imperial support</strong> — units convert consistently across the config flow and at runtime, including rain in inches.</li>
+            <li><strong>Per-zone valve stop</strong> — stop a single zone on demand, with proper handling when a valve is closed externally or by hardware.</li>
+            <li><strong>More accurate water accounting</strong> — fixed volume/deficit accounting and rain-event de-duplication.</li>
+            <li><strong>Clean uninstall</strong> — zone devices are removed on deletion, unblocking integration uninstall.</li>
         </ul>
-        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.2">Full release notes on GitHub →</a></p>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.7">Full release notes on GitHub →</a></p>
+        <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
+            <summary style="cursor: pointer;">v0.10.2 — 2026-06-24</summary>
+            <ul style="line-height: 2; margin-top: 0.5em;">
+                <li><strong>Official HACS listing</strong> — NeverDry is now in the HACS default repository list; install with one click, no custom repository needed.</li>
+                <li><strong>Delivery mode guard</strong> — if the sensor entity linked to a zone is removed, NeverDry automatically downgrades the delivery mode to avoid an invalid configuration.</li>
+            </ul>
+        </details>
         <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
             <summary style="cursor: pointer;">v0.10.1 — 2026-06-21</summary>
             <ul style="line-height: 2; margin-top: 0.5em;">
