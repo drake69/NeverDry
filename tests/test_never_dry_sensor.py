@@ -281,24 +281,58 @@ class TestRainDelta:
         assert di_sensor._deficit == pytest.approx(8.0, abs=0.01)
 
     def test_event_mode_same_value_no_double_count(self, di_sensor, hass_mock, make_state):
-        """Same rain value on consecutive reads should not subtract twice."""
+        """A recompute triggered by another sensor (e.g. temperature) must not
+        re-apply rain: the rain sensor's state object is unchanged, so its
+        ``last_updated`` timestamp is identical across the two reads."""
         di_sensor._deficit = 10.0
-        hass_mock.states.get.side_effect = lambda eid: {
-            "sensor.temperature": make_state(9.0),
-            "sensor.rain": make_state(2.0),
-        }[eid]
+        rain_state = make_state(2.0)
+        rain_state.last_updated = datetime(2026, 6, 1, 12, 0, 0)
+
+        def states_get(eid):
+            return rain_state if eid == "sensor.rain" else make_state(9.0)
+
+        hass_mock.states.get.side_effect = states_get
 
         # First event
         di_sensor._last_update = datetime.now() - timedelta(seconds=1)
         di_sensor._on_sensor_change(MagicMock())
         after_first = di_sensor._deficit
 
-        # Second call with same rain value (e.g., temp changed)
+        # Second call: temperature changed but the rain sensor state is the same
+        # object (same last_updated) — no new rain event.
         di_sensor._last_update = datetime.now() - timedelta(seconds=1)
         di_sensor._on_sensor_change(MagicMock())
 
         # Deficit should NOT decrease again (rain_delta = 0 on repeat)
         assert di_sensor._deficit == pytest.approx(after_first, abs=0.01)
+
+    def test_event_mode_repeated_identical_events_counted(self, di_sensor, hass_mock, make_state):
+        """Two genuine rain events of the same magnitude must both be counted.
+
+        Detection of a new event is by the sensor's ``last_updated`` timestamp,
+        not by value, so a ``force_update`` sensor emitting 2 mm twice reduces
+        the deficit twice (regression for the value-equality dedup bug).
+        """
+        di_sensor._deficit = 10.0
+
+        def make_rain(ts):
+            s = make_state(2.0)
+            s.last_updated = ts
+            return s
+
+        # First event at t1
+        rain1 = make_rain(datetime(2026, 6, 1, 12, 0, 0))
+        hass_mock.states.get.side_effect = lambda eid: rain1 if eid == "sensor.rain" else make_state(9.0)
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(8.0, abs=0.01)
+
+        # Second identical event at t2 (advanced timestamp) — counted again.
+        rain2 = make_rain(datetime(2026, 6, 1, 12, 5, 0))
+        hass_mock.states.get.side_effect = lambda eid: rain2 if eid == "sensor.rain" else make_state(9.0)
+        di_sensor._last_update = datetime.now() - timedelta(seconds=1)
+        di_sensor._on_sensor_change(MagicMock())
+        assert di_sensor._deficit == pytest.approx(6.0, abs=0.01)
 
     def test_event_mode_new_event(self, di_sensor, hass_mock, make_state):
         """New rain event with different value should subtract."""

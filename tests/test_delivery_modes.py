@@ -468,6 +468,56 @@ class TestDeliveryModeAttributes:
         assert attrs["flow_meter_sensor"] == "sensor.flow"
         assert "delivery_timeout_s" in attrs
 
+
+class TestSettleWaterAccounting:
+    """Regression: water counters must record the ACTUAL delivered volume.
+
+    Flow-metered delivery depletes ``_zone_deficit`` in real time during the
+    cycle. The end-of-cycle settle for a full delivery must therefore credit
+    the measured ``delivered`` volume, not ``volume_liters`` recomputed from
+    the already-depleted deficit (which would be ~0).
+    """
+
+    @pytest.mark.asyncio
+    async def test_full_flow_meter_delivery_credits_actual_volume(self, controller, zone_orto):
+        zone = zone_orto
+        zone._zone_deficit = 5.0
+        target = zone.volume_liters  # snapshot taken before delivery
+        assert target > 0
+        total_before = zone._total_water_delivered
+
+        async def fake_deliver(z):
+            # Mimic flow_meter/flow_rate: real-time deficit depletion to ~0.
+            controller._update_deficit_realtime(z, target)
+            return target
+
+        controller._deliver_water = fake_deliver
+        await controller._irrigate_zones(["Orto"])
+
+        assert zone._zone_deficit == 0.0
+        assert zone._total_water_delivered == pytest.approx(total_before + target, abs=0.2)
+        assert zone._session_water_delivered == pytest.approx(target, abs=0.2)
+        assert zone._last_volume_delivered == pytest.approx(target, abs=0.2)
+
+    @pytest.mark.asyncio
+    async def test_partial_flow_meter_delivery_credits_actual_volume(self, controller, zone_orto):
+        zone = zone_orto
+        zone._zone_deficit = 5.0
+        target = zone.volume_liters
+        partial = target * 0.4
+
+        async def fake_deliver(z):
+            controller._update_deficit_realtime(z, partial)
+            return partial
+
+        controller._deliver_water = fake_deliver
+        await controller._irrigate_zones(["Orto"])
+
+        # Partial: deficit reduced but not zero, counters reflect partial volume.
+        assert zone._zone_deficit > 0.0
+        assert zone._total_water_delivered == pytest.approx(partial, abs=0.2)
+        assert zone._session_water_delivered == pytest.approx(partial, abs=0.2)
+
     def test_estimated_flow_no_timeout_in_attributes(self, hass_mock, di_sensor):
         zone = _make_zone(hass_mock, di_sensor)
         attrs = zone.extra_state_attributes

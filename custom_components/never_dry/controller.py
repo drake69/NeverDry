@@ -658,8 +658,10 @@ class IrrigationController:
         for zone_name, delivered, target, deficit_at_start, ts_start, ts_end in irrigated_zones:
             zone = self._zones[zone_name]
             if delivered >= target:
-                # Full irrigation — reset deficit to zero
-                zone.reset_deficit(self._current_source or "automatic")
+                # Full irrigation — reset deficit to zero. Credit the measured
+                # ``delivered`` volume because flow-metered modes deplete the
+                # deficit in real time, so volume_liters would read ~0 here.
+                zone.reset_deficit(self._current_source or "automatic", delivered_liters=delivered)
             else:
                 # Partial irrigation — authoritative recompute from snapshot
                 all_complete = False

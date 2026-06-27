@@ -537,6 +537,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._backfill_days = config.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS)
         self._deficit = 0.0
         self._last_rain = 0.0
+        self._last_rain_event_ts = None
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
         self._temp_buffer = SensorBuffer(ET_BUFFER_SIZE, valid_range=ET_TEMP_VALID_RANGE)
@@ -638,10 +639,15 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             return 0.0
 
         if self._rain_type == RAIN_TYPE_EVENT:
-            # Value IS the delta — but only count it once per state change.
-            # We track last_rain to detect repeated reads of the same value.
-            if rain_now == self._last_rain:
-                return 0.0  # no new event
+            # The value IS the delta (mm per event). A new event is detected by
+            # the sensor's last_updated timestamp, not by value: this counts
+            # consecutive identical events (e.g. 2 mm then 2 mm via force_update)
+            # while ignoring recomputes triggered by other sensors (temperature),
+            # for which the rain state object is unchanged.
+            event_ts = getattr(state, "last_updated", None)
+            if event_ts is not None and event_ts == self._last_rain_event_ts:
+                return 0.0  # same event already counted
+            self._last_rain_event_ts = event_ts
             self._last_rain = rain_now
             return max(0.0, rain_now)
 
@@ -1056,18 +1062,29 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         """Set zone deficit to an arbitrary value [mm] — intended for testing/debugging."""
         self._zone_deficit = max(0.0, min(float(value), self._d_max))
 
-    def reset_deficit(self, source: str = "unknown") -> None:
-        """Reset this zone's deficit to zero (called after irrigation)."""
+    def reset_deficit(self, source: str = "unknown", delivered_liters: float | None = None) -> None:
+        """Reset this zone's deficit to zero (called after irrigation).
+
+        When ``delivered_liters`` is provided it is credited to the water
+        counters as the actual volume delivered. This is required for
+        flow-metered deliveries where ``_zone_deficit`` is depleted in real time
+        during the cycle, so ``volume_liters`` would read ~0 by the time the
+        cycle settles. When omitted (manual reset / mark-irrigated), the volume
+        is derived from the current deficit via ``volume_liters``.
+        """
         self._last_irrigation_source = source
-        self._last_volume_delivered = round(self.volume_liters, 1)
-        self._session_water_delivered = self._last_volume_delivered
-        self._total_water_delivered += self._last_volume_delivered
+        credited = round(
+            self.volume_liters if delivered_liters is None else delivered_liters, 1
+        )
+        self._last_volume_delivered = credited
+        self._session_water_delivered = credited
+        self._total_water_delivered += credited
         # Reset yearly counter on year change
         now = datetime.now()
         if now.year != self._yearly_water_year:
             self._yearly_water_delivered = 0.0
             self._yearly_water_year = now.year
-        self._yearly_water_delivered += self._last_volume_delivered
+        self._yearly_water_delivered += credited
         self._last_irrigated = now
         self._zone_deficit = 0.0
 
