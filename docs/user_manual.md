@@ -613,6 +613,30 @@ No manual seasonal adjustment is needed. If you find the model significantly ove
 
 ## 13. Dashboard examples
 
+### NeverDry Zone Card (recommended)
+
+NeverDry bundles a custom Lovelace card that shows everything about **one zone** at a glance. It is installed with the integration and **auto-registered** — you do **not** need to add a Lovelace resource manually. After install (and a browser refresh) it appears in the **"Add card"** picker as *NeverDry Zone Card*; open the card editor, pick the zone, and save.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/docs/assets/zone-card.png" alt="NeverDry Zone Card" width="320">
+</p>
+
+The card groups the zone's entities by time horizon:
+
+- **Status chips** — valve state, irrigating / maintenance, and the source of the last irrigation
+- **Deficit vs threshold** — a bar showing how close the zone is to needing water
+- **Next session** — planned volume and run duration
+- **Last session** — last irrigated, duration, volume, and water delivered
+- **Totals** — yearly water and cumulative rain
+- **Parameters** — threshold, flow rate, area, Kc, efficiency, mode
+- **Actions** — *Irrigate now*, *Mark as irrigated*, and *Reset valve* as real buttons
+
+Labels and units follow your Home Assistant language and unit system automatically, and entity resolution is rename-safe. Add one card per zone for a complete dashboard.
+
+> If the card does not appear after installation, hard-refresh your browser (Ctrl/Cmd+Shift+R) to clear the frontend cache.
+
+If you prefer to build your own dashboard, the manual examples below use the underlying entities directly.
+
 ### Simple status card
 
 ```yaml

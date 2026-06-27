@@ -39,6 +39,7 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 - **Works without valves too** — no hardware? NeverDry sends a notification when watering is needed and by how much
 - **Emergency stop** — one button closes all valves immediately
 - **Grabbed the hose? Just tell NeverDry** — "Mark as irrigated" button keeps the deficit accurate even when you water manually
+- **See everything at a glance** — a bundled Lovelace card shows each zone's status, deficit, next/last session and action buttons; auto-registered, no setup needed
 - **Survives restarts** — your deficit history is saved across HA restarts
 - **Update in one click** — HACS notifies you when a new version is available; your settings are always preserved
 - **Set up from the UI** — no YAML required
@@ -58,6 +59,26 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 | `button.<zone>_reset_maintenance` | — | Unlock a valve that NeverDry blocked after repeated failures |
 
 All sensors that carry a physical unit declare the proper HA `device_class` (e.g. `precipitation`, `volume_storage`, `volume_flow_rate`). Home Assistant automatically converts the displayed unit to your system preference — go to **Settings → System → General → Unit system** to switch between metric and imperial. Deficit values appear in mm or inches; volumes in litres or gallons; flow rate in L/min or gal/min; ET rate in mm/h or in/h.
+
+## Dashboard — Zone Card
+
+NeverDry ships a custom Lovelace card that shows everything about **one zone** at a glance. The card is bundled with the integration and **auto-registered** — no manual resource to add: after install it appears directly in the **"Add card"** picker as *NeverDry Zone Card*. Pick the zone in the card editor and you're done.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/docs/assets/zone-card.png" alt="NeverDry Zone Card" width="320">
+</p>
+
+Each card groups a zone's entities by time horizon:
+
+- **Status chips** — valve state, irrigating / maintenance, and the source of the last irrigation
+- **Deficit vs threshold** — a bar showing how close the zone is to needing water
+- **Next session** — planned volume and run duration
+- **Last session** — last irrigated, duration, volume, and water delivered
+- **Totals** — yearly water and cumulative rain
+- **Parameters** — threshold, flow rate, area, Kc, efficiency, mode
+- **Actions** — *Irrigate now*, *Mark as irrigated*, and *Reset valve* as real buttons
+
+Labels and units follow your Home Assistant language and unit system automatically; entity resolution is rename-safe (it prefers each entity's stable `unique_id`). Add one card per zone for a complete dashboard.
 
 ## Services
 
