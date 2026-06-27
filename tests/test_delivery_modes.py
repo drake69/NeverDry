@@ -469,7 +469,7 @@ class TestDeliveryModeAttributes:
         assert "delivery_timeout_s" in attrs
 
     def test_flow_rate_lph_in_attributes(self, hass_mock, di_sensor):
-        # Internal storage stays L/min; the UI attribute exposes L/h (×60).
+        # Internal storage stays L/min; the UI attribute exposes L/h (x60).
         zone = _make_zone(hass_mock, di_sensor, **{CONF_ZONE_FLOW_RATE: 8.0})
         attrs = zone.extra_state_attributes
         assert attrs["flow_rate_lpm"] == pytest.approx(8.0)
