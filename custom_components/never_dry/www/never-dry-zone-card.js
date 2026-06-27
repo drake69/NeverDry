@@ -136,6 +136,7 @@ const ROLE_SUFFIX = {
   // buttons
   btnIrrigate: "_irrigate",
   btnMark: "_mark_irrigated",
+  btnStop: "_stop",
   btnReset: "_reset_valve",
 };
 
@@ -162,6 +163,7 @@ const UID_PREFIX = {
   efficiency: "efficiency_zone_",
   btnIrrigate: "irrigate_",
   btnMark: "mark_irrigated_",
+  btnStop: "stop_",
   btnReset: "reset_valve_",
 };
 
@@ -368,6 +370,7 @@ class NeverDryZoneCard extends HTMLElement {
     // friendly_name; "irrigateNow" has a dedicated static string for emphasis.
     this._actionDefs = [
       { role: "btnIrrigate", icon: "mdi:sprinkler", i18n: "irrigateNow", cls: "primary" },
+      { role: "btnStop", icon: "mdi:stop", cls: "warn" },
       { role: "btnMark", icon: "mdi:water-check", cls: "" },
       { role: "btnReset", icon: "mdi:lock-reset", cls: "warn" },
     ];

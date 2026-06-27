@@ -302,6 +302,8 @@ class ValveFsm:
                         StartTimer(TimerName.CLOSE, self._config.close_timeout_s),
                     ),
                 )
+            if event == ValveEvent.OBS_SWITCH_OFF:
+                return self._external_close(event)
             return self._noop(event)
 
         # No flow meter: OPEN is the steady state, only CMD_CLOSE moves.
@@ -314,6 +316,8 @@ class ValveFsm:
                     StartTimer(TimerName.CLOSE, self._config.close_timeout_s),
                 ),
             )
+        if event == ValveEvent.OBS_SWITCH_OFF:
+            return self._external_close(event)
         return self._noop(event)
 
     def _on_open_verified(self, event: ValveEvent) -> TransitionResult:
@@ -327,6 +331,8 @@ class ValveFsm:
                     StartTimer(TimerName.CLOSE, self._config.close_timeout_s),
                 ),
             )
+        if event == ValveEvent.OBS_SWITCH_OFF:
+            return self._external_close(event)
         return self._noop(event)
 
     def _on_req_close(self, event: ValveEvent) -> TransitionResult:
@@ -366,6 +372,24 @@ class ValveFsm:
         if event == ValveEvent.TIMEOUT_LEAK:
             return self._fail(event, FailureKind.CLOSE_LEAK)
         return self._noop(event)
+
+    def _external_close(self, event: ValveEvent) -> TransitionResult:
+        """Valve observed OFF while open (e.g. hardware/smart-valve auto-close).
+
+        The switch went off without us commanding it. Treat the cycle as
+        cleanly closed: cancel every timer, clear the failure counter and
+        return to IDLE so the FSM reflects reality. This prevents a later
+        commanded ``CMD_CLOSE`` from waiting on an off-transition that will
+        never arrive (the switch is already off) and timing out as a
+        spurious ``CLOSE_VERIFICATION_FAILED``.
+        """
+        self._failure_count = 0
+        self._last_failure = None
+        return self._transition(
+            ValveState.IDLE,
+            event,
+            actions=(CancelAllTimers(),),
+        )
 
     def _handle_maintenance(self, event: ValveEvent) -> TransitionResult:
         """Handle events while the FSM is locked in maintenance."""

@@ -412,3 +412,72 @@ def test_no_flow_meter_does_not_use_closed_state(fsm_no_flow):
             ValveEvent.OBS_SWITCH_OFF,
         )
         assert fsm_no_flow.state != ValveState.CLOSED
+
+
+# ── External / hardware auto-close (unsolicited switch-off while open) ──
+
+
+def test_external_close_from_open_verified_returns_to_idle(fsm_with_flow):
+    """An unsolicited switch-off while OPEN_VERIFIED (e.g. Sonoff hardware
+    auto-close) returns the FSM to IDLE and cancels timers, so a later
+    commanded close is a clean no-op instead of a spurious
+    CLOSE_VERIFICATION_FAILED (the switch is already off, no off-transition
+    would ever arrive to confirm the close)."""
+    _drive_to(
+        fsm_with_flow,
+        ValveEvent.CMD_OPEN,
+        ValveEvent.OBS_SWITCH_ON,
+        ValveEvent.OBS_FLOW_POSITIVE,
+    )
+    assert fsm_with_flow.state == ValveState.OPEN_VERIFIED
+
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_OFF)
+    assert r.to_state == ValveState.IDLE
+    assert CancelAllTimers() in r.actions
+    assert r.failure is None
+
+    # A subsequent commanded close finds the FSM idle → clean no-op.
+    r2 = fsm_with_flow.dispatch(ValveEvent.CMD_CLOSE)
+    assert r2.to_state == ValveState.IDLE
+    assert r2.failure is None
+
+
+def test_external_close_from_open_waiting_for_flow(fsm_with_flow):
+    """Switch-off while OPEN (flow not yet verified) also returns to IDLE."""
+    _drive_to(fsm_with_flow, ValveEvent.CMD_OPEN, ValveEvent.OBS_SWITCH_ON)
+    assert fsm_with_flow.state == ValveState.OPEN
+
+    r = fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_OFF)
+    assert r.to_state == ValveState.IDLE
+    assert CancelAllTimers() in r.actions
+
+
+def test_external_close_no_flow_meter(fsm_no_flow):
+    """Without a flow meter, switch-off while OPEN returns to IDLE too."""
+    _drive_to(fsm_no_flow, ValveEvent.CMD_OPEN, ValveEvent.OBS_SWITCH_ON)
+    assert fsm_no_flow.state == ValveState.OPEN
+
+    r = fsm_no_flow.dispatch(ValveEvent.OBS_SWITCH_OFF)
+    assert r.to_state == ValveState.IDLE
+
+
+def test_external_close_clears_failure_counter(fsm_with_flow):
+    """External close resets the consecutive-failure counter to zero."""
+    # One failure first (flow never verified → ACTUATION_FAILED).
+    _drive_to(
+        fsm_with_flow,
+        ValveEvent.CMD_OPEN,
+        ValveEvent.OBS_SWITCH_ON,
+        ValveEvent.TIMEOUT_FLOW,
+    )
+    assert fsm_with_flow.failure_count == 1
+
+    # Re-open, verify, then the valve auto-closes externally.
+    _drive_to(
+        fsm_with_flow,
+        ValveEvent.CMD_OPEN,
+        ValveEvent.OBS_SWITCH_ON,
+        ValveEvent.OBS_FLOW_POSITIVE,
+    )
+    fsm_with_flow.dispatch(ValveEvent.OBS_SWITCH_OFF)
+    assert fsm_with_flow.failure_count == 0

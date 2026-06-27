@@ -311,6 +311,76 @@ class TestFlowMeterDelivery:
 
         assert result == 0.0
 
+    @pytest.mark.asyncio
+    async def test_stop_zone_ends_flow_meter(self, hass_mock, di_sensor):
+        """A per-zone stop request aborts the flow_meter loop like the global stop."""
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: 100,
+            },
+        )
+        zone._zone_deficit = 5.0
+
+        meter_state = MagicMock()
+        meter_state.state = "0.0"
+        meter_state.attributes = {"unit_of_measurement": "L"}
+        hass_mock.states.get = MagicMock(return_value=meter_state)
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        ctrl._stop_zone = zone.zone_name
+
+        result = await ctrl._deliver_flow_meter(zone)
+
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_external_close_ends_flow_rate(self, hass_mock, di_sensor):
+        """Flow-rate delivery ends as soon as the valve switch reads 'off'
+        (hardware auto-close) rather than integrating for the full timeout."""
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_rate",
+                CONF_ZONE_DELIVERY_TIMEOUT: 10,
+            },
+        )
+        zone._zone_deficit = 50.0
+
+        polls = {"valve": 0}
+
+        def get_state(entity_id):
+            if entity_id == "sensor.flow_rate":
+                s = MagicMock()
+                s.state = "10.0"
+                s.attributes = {"unit_of_measurement": "L/min"}
+                return s
+            if entity_id == zone.valve:
+                polls["valve"] += 1
+                s = MagicMock()
+                # On for the first poll, then the hardware auto-closes.
+                s.state = "on" if polls["valve"] <= 1 else "off"
+                return s
+            return None
+
+        hass_mock.states.get = MagicMock(side_effect=get_state)
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        # Large target so the loop would otherwise run to the timeout.
+        result = await ctrl._deliver_flow_rate(zone, "sensor.flow_rate", 1000.0)
+
+        # Some water was credited before the valve closed, and the loop exited
+        # early instead of polling all timeout/poll_interval iterations.
+        assert result > 0
+        assert polls["valve"] <= 3
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_off" in str(c)]
+        assert len(close_calls) >= 1
+
 
 class TestDeliveryModeDispatch:
     """Test the _deliver_water dispatch method."""

@@ -46,6 +46,7 @@ from .const import (
     SERVICE_RESET_VALVE,
     SERVICE_SET_DEFICIT,
     SERVICE_STOP,
+    SERVICE_STOP_ZONE,
 )
 from .valve_fsm import ValveState
 from .valve_notifier import NotificationKind, Severity, ValveNotifier
@@ -92,6 +93,10 @@ class IrrigationController:
         self.auto_open_grace_s: float = AUTO_OPEN_GRACE_S
         self._running = False
         self._stop_requested = False
+        # Name of a single zone the user asked to stop mid-delivery (per-zone
+        # stop, distinct from the global emergency stop). Consumed by the
+        # active delivery loop, reset at the start/end of each cycle.
+        self._stop_zone: str | None = None
         self._active_valve: str | None = None
         self._irrigation_task: asyncio.Task | None = None
         self._monitoring_mode = not any(zs.valve for zs in zone_sensors)
@@ -146,6 +151,7 @@ class IrrigationController:
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ZONE, self._handle_irrigate_zone)
         self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
         self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
+        self._hass.services.async_register(DOMAIN, SERVICE_STOP_ZONE, self._handle_stop_zone)
         self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
         self._hass.services.async_register(DOMAIN, SERVICE_RESET_VALVE, self._handle_reset_valve)
         self._hass.services.async_register(DOMAIN, SERVICE_SET_DEFICIT, self._handle_set_deficit)
@@ -425,6 +431,39 @@ class IrrigationController:
         self._running = False
         self._active_valve = None
 
+    async def _handle_stop_zone(self, call: ServiceCall) -> None:
+        """Stop irrigation for a single zone and close its valve.
+
+        Unlike the global emergency stop this targets one zone, so other
+        zones keep irrigating. It works whether the water is being
+        delivered by an active controller loop (the loop sees ``_stop_zone``
+        on its next poll and finalises the partial delivery) or by a manual
+        / hardware-driven open (we close the valve and clear state here).
+        """
+        zone_name = call.data.get(ATTR_ZONE_NAME)
+        zone = self._zones.get(zone_name)
+        if zone is None:
+            _LOGGER.error("stop_zone: zone '%s' not found", zone_name)
+            return
+        if not zone.valve:
+            _LOGGER.warning("stop_zone: zone '%s' has no valve configured", zone_name)
+            return
+
+        _LOGGER.info("Stop requested for zone='%s' — closing valve", zone_name)
+        # Signal any active delivery loop for this zone to abort on next poll.
+        self._stop_zone = zone_name
+        # Cancel a manual safety-close watchdog if one is pending for this valve.
+        safety_task = self._manual_safety_tasks.pop(zone.valve, None)
+        if safety_task is not None and not safety_task.done():
+            safety_task.cancel()
+        # Close the valve now (idempotent with the loop's own close).
+        await self._close_valve(zone.valve)
+        # Clear delivery state and any manual-session tracking for this valve.
+        zone.set_irrigating(False)
+        zone.async_write_ha_state()
+        self._manual_valve_open.pop(zone.valve, None)
+        self._manual_session_meta.pop(zone.valve, None)
+
     async def _handle_mark_irrigated(self, call: ServiceCall) -> None:
         """Mark one or all zones as manually irrigated (reset deficit, no valve)."""
         zone_name = call.data.get(ATTR_ZONE_NAME)
@@ -507,6 +546,7 @@ class IrrigationController:
         """Run irrigation cycle for the given zones sequentially."""
         self._running = True
         self._stop_requested = False
+        self._stop_zone = None
         irrigated_zones: list = []
 
         try:
@@ -595,6 +635,7 @@ class IrrigationController:
         finally:
             self._running = False
             self._active_valve = None
+            self._stop_zone = None
             # Settle deficits unconditionally — covers normal completion, emergency
             # stop, exceptions, and task cancellation (HA reload mid-cycle).
             try:
@@ -678,6 +719,26 @@ class IrrigationController:
         _LOGGER.error("Unknown delivery mode '%s' for zone '%s'", mode, zone.zone_name)
         return 0.0
 
+    def _should_abort(self, zone) -> bool:
+        """True if the active delivery loop for ``zone`` should exit early.
+
+        Covers both the global emergency stop and a per-zone stop request
+        (``never_dry.stop_zone``) targeting this zone.
+        """
+        return self._stop_requested or self._stop_zone == zone.zone_name
+
+    def _valve_closed_externally(self, zone) -> bool:
+        """True if the zone's valve switch reads 'off' mid-delivery.
+
+        A smart/hardware valve (e.g. Sonoff SWV) can auto-close on its own
+        on-time before our software target or ``delivery_timeout`` is
+        reached. When that happens the flow drops to zero; continuing to
+        poll for the full timeout would pin the zone 'irrigating' for up to
+        an hour. A confirmed 'off' is treated as end-of-session.
+        """
+        state = self._hass.states.get(zone.valve)
+        return state is not None and state.state == "off"
+
     async def _deliver_estimated_flow(self, zone) -> float:
         """Open valve, wait calculated duration, close valve."""
         duration = zone.duration_s
@@ -689,7 +750,7 @@ class IrrigationController:
         zone.set_irrigating(True)
         zone.async_write_ha_state()
 
-        elapsed = await self._wait_with_stop_check(duration, valve_entity=zone.valve)
+        elapsed = await self._wait_with_stop_check(duration, valve_entity=zone.valve, zone=zone)
 
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
@@ -762,7 +823,7 @@ class IrrigationController:
         timeout = zone.delivery_timeout
         elapsed = 0
         while elapsed < timeout:
-            if self._stop_requested:
+            if self._should_abort(zone):
                 await self._hass.services.async_call("switch", "turn_off", {"entity_id": zone.valve})
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
@@ -831,7 +892,7 @@ class IrrigationController:
         elapsed = 0
         delivered = 0.0
         while elapsed < timeout:
-            if self._stop_requested:
+            if self._should_abort(zone):
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
@@ -839,6 +900,19 @@ class IrrigationController:
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
+
+            # Valve closed itself (e.g. hardware auto-close) — end the session
+            # instead of polling a dead flow meter for the full timeout.
+            if self._valve_closed_externally(zone):
+                _LOGGER.info(
+                    "Zone '%s' valve closed externally after %ds (hardware auto-close?) —"
+                    " ending session, delivered %.1fL of %.1fL",
+                    zone.zone_name,
+                    elapsed,
+                    delivered,
+                    volume_target,
+                )
+                break
 
             current_reading = self._read_volume_liters(meter_entity)
             if current_reading is None:
@@ -901,7 +975,7 @@ class IrrigationController:
         )
 
         while elapsed < timeout:
-            if self._stop_requested:
+            if self._should_abort(zone):
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
@@ -909,6 +983,19 @@ class IrrigationController:
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
+
+            # Valve closed itself (e.g. hardware auto-close) — end the session
+            # instead of integrating a dead flow sensor for the full timeout.
+            if self._valve_closed_externally(zone):
+                _LOGGER.info(
+                    "Zone '%s' valve closed externally after %ds (hardware auto-close?) —"
+                    " ending session, delivered %.1fL of %.1fL",
+                    zone.zone_name,
+                    elapsed,
+                    delivered,
+                    volume_target,
+                )
+                break
 
             rate = self._read_flow_meter(meter_entity)
             if rate is None or rate < 0:
@@ -1071,15 +1158,15 @@ class IrrigationController:
             context={"entity_id": entity_id, "reason": reason},
         )
 
-    async def _wait_with_stop_check(self, duration_s: int, valve_entity: str | None = None) -> int:
+    async def _wait_with_stop_check(self, duration_s: int, valve_entity: str | None = None, zone=None) -> int:
         """Wait for duration, checking for stop requests every second.
 
         Returns the number of seconds actually elapsed, which may be less
-        than ``duration_s`` when a stop is requested or the valve is closed
-        externally.
+        than ``duration_s`` when a stop is requested (global or per-zone) or
+        the valve is closed externally.
         """
         for elapsed in range(duration_s):
-            if self._stop_requested:
+            if self._stop_requested or (zone is not None and self._stop_zone == zone.zone_name):
                 return elapsed
             if valve_entity is not None:
                 state = self._hass.states.get(valve_entity)
