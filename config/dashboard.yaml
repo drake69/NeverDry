@@ -56,8 +56,8 @@ cards:
         icon: mdi:water
       - type: attribute
         entity: sensor.neverdry_giardino_melino_deficit
-        attribute: flow_rate_lpm
-        name: Flow rate (L/min)
+        attribute: flow_rate_lph
+        name: Flow rate (L/h)
         icon: mdi:gauge
       - type: attribute
         entity: sensor.neverdry_giardino_melino_deficit
@@ -92,8 +92,8 @@ cards:
         icon: mdi:water
       - type: attribute
         entity: sensor.neverdry_giardino_ortensia_deficit
-        attribute: flow_rate_lpm
-        name: Flow rate (L/min)
+        attribute: flow_rate_lph
+        name: Flow rate (L/h)
         icon: mdi:gauge
       - type: attribute
         entity: sensor.neverdry_giardino_ortensia_deficit
@@ -128,8 +128,8 @@ cards:
         icon: mdi:water
       - type: attribute
         entity: sensor.neverdry_giardino_pino_deficit
-        attribute: flow_rate_lpm
-        name: Flow rate (L/min)
+        attribute: flow_rate_lph
+        name: Flow rate (L/h)
         icon: mdi:gauge
       - type: attribute
         entity: sensor.neverdry_giardino_pino_deficit
@@ -164,8 +164,8 @@ cards:
         icon: mdi:water
       - type: attribute
         entity: sensor.neverdry_giardino_melograno_deficit
-        attribute: flow_rate_lpm
-        name: Flow rate (L/min)
+        attribute: flow_rate_lph
+        name: Flow rate (L/h)
         icon: mdi:gauge
       - type: attribute
         entity: sensor.neverdry_giardino_melograno_deficit

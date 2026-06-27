@@ -1127,6 +1127,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "area_m2": self._area,
             "efficiency": self._efficiency,
             "flow_rate_lpm": self._flow_rate,
+            "flow_rate_lph": round(self._flow_rate * 60.0, 1),
             "threshold_mm": self._threshold,
             "volume_liters": round(self.volume_liters, 1),
             "duration_s": self.duration_s,

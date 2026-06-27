@@ -24,6 +24,12 @@ M2_TO_FT2 = 10.7639
 FT2_TO_M2 = 1.0 / 10.7639
 LPM_TO_GPM = 0.264172
 GPM_TO_LPM = 1.0 / 0.264172
+# Flow rate is shown in the UI as L/h (metric) or gal/h (imperial) but stored
+# internally in L/min.
+LPM_TO_LPH = 60.0
+LPH_TO_LPM = 1.0 / 60.0
+LPM_TO_GPH = LPM_TO_GPM * 60.0
+GPH_TO_LPM = GPM_TO_LPM / 60.0
 
 
 def c_to_f(celsius: float) -> float:
@@ -49,14 +55,21 @@ def sensors_input_to_metric(user_input: dict, is_imperial: bool) -> dict:
 
 
 def zone_input_to_metric(user_input: dict, is_imperial: bool) -> dict:
-    """Convert area ft²→m², flow_rate gal/min→L/min, threshold in→mm when imperial."""
-    if not is_imperial:
-        return user_input
+    """Convert UI values to metric storage.
+
+    Flow rate is entered in L/h (metric) or gal/h (imperial) and is always
+    stored in L/min. Area (ft²→m²) and threshold (in→mm) are converted only
+    when the form was shown in imperial units.
+    """
     out = dict(user_input)
-    if out.get(CONF_ZONE_AREA) is not None:
-        out[CONF_ZONE_AREA] = out[CONF_ZONE_AREA] * FT2_TO_M2
     if out.get(CONF_ZONE_FLOW_RATE) is not None:
-        out[CONF_ZONE_FLOW_RATE] = out[CONF_ZONE_FLOW_RATE] * GPM_TO_LPM
-    if out.get(CONF_ZONE_THRESHOLD) is not None:
-        out[CONF_ZONE_THRESHOLD] = out[CONF_ZONE_THRESHOLD] * IN_TO_MM
+        if is_imperial:
+            out[CONF_ZONE_FLOW_RATE] = out[CONF_ZONE_FLOW_RATE] * GPH_TO_LPM
+        else:
+            out[CONF_ZONE_FLOW_RATE] = out[CONF_ZONE_FLOW_RATE] * LPH_TO_LPM
+    if is_imperial:
+        if out.get(CONF_ZONE_AREA) is not None:
+            out[CONF_ZONE_AREA] = out[CONF_ZONE_AREA] * FT2_TO_M2
+        if out.get(CONF_ZONE_THRESHOLD) is not None:
+            out[CONF_ZONE_THRESHOLD] = out[CONF_ZONE_THRESHOLD] * IN_TO_MM
     return out

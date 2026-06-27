@@ -468,6 +468,13 @@ class TestDeliveryModeAttributes:
         assert attrs["flow_meter_sensor"] == "sensor.flow"
         assert "delivery_timeout_s" in attrs
 
+    def test_flow_rate_lph_in_attributes(self, hass_mock, di_sensor):
+        # Internal storage stays L/min; the UI attribute exposes L/h (×60).
+        zone = _make_zone(hass_mock, di_sensor, **{CONF_ZONE_FLOW_RATE: 8.0})
+        attrs = zone.extra_state_attributes
+        assert attrs["flow_rate_lpm"] == pytest.approx(8.0)
+        assert attrs["flow_rate_lph"] == pytest.approx(480.0)
+
 
 class TestSettleWaterAccounting:
     """Regression: water counters must record the ACTUAL delivered volume.
