@@ -67,7 +67,7 @@ class TestDeviceClassDeclarations:
         assert sensor._attr_device_class == SensorDeviceClass.DURATION
 
     def test_zone_flow_rate_volume_flow_rate(self, di_sensor, zone_orto):
-        """Flow rate [L/min] → HA converts to [gal/min] in imperial."""
+        """Flow rate [L/h] → HA converts to [gal/h] in imperial."""
         sensor = ZoneFlowRateSensor(zone_orto)
         assert sensor._attr_device_class == SensorDeviceClass.VOLUME_FLOW_RATE
 

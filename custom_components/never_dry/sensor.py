@@ -93,6 +93,7 @@ from .const import (
     SYSTEM_TYPES,
 )
 from .controller import IrrigationController
+from .unit_convert import LPM_TO_GPH, LPM_TO_LPH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1467,10 +1468,15 @@ class ZoneLastSourceSensor(_ZoneTextSensor):
 
 
 class ZoneFlowRateSensor(_ZoneTextSensor):
-    """Configured flow rate for this zone [L/min]."""
+    """Configured flow rate for this zone.
+
+    Stored internally in L/min (``_flow_rate``). Displayed in L/h (metric) or
+    gal/h (US-customary). Home Assistant does NOT auto-convert the
+    ``volume_flow_rate`` device class between unit systems, so we pick the unit
+    and value ourselves based on ``hass.config.units``.
+    """
 
     _attr_device_class = SensorDeviceClass.VOLUME_FLOW_RATE
-    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.LITERS_PER_MINUTE
 
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
@@ -1482,8 +1488,24 @@ class ZoneFlowRateSensor(_ZoneTextSensor):
         )
 
     @property
+    def _is_imperial(self) -> bool:
+        """True when HA runs in US-customary mode (volume unit is gallons)."""
+        units = getattr(getattr(self, "hass", None), "config", None)
+        units = getattr(units, "units", None)
+        return getattr(units, "volume_unit", None) == UnitOfVolume.GALLONS
+
+    @property
+    def native_unit_of_measurement(self) -> str:
+        if self._is_imperial:
+            return UnitOfVolumeFlowRate.GALLONS_PER_HOUR
+        return UnitOfVolumeFlowRate.LITERS_PER_HOUR
+
+    @property
     def native_value(self) -> float:
-        return round(self._zone_sensor._flow_rate, 2)
+        lpm = self._zone_sensor._flow_rate
+        if self._is_imperial:
+            return round(lpm * LPM_TO_GPH, 1)
+        return round(lpm * LPM_TO_LPH, 1)
 
 
 class ZoneLastVolumeSensor(_ZoneTextSensor):
