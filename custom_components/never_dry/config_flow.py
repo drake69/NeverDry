@@ -70,7 +70,9 @@ from .const import (
     SYSTEM_TYPE_SPRINKLER,
 )
 from .unit_convert import (
+    LPM_TO_GPH,
     LPM_TO_GPM,
+    LPM_TO_LPH,
     M2_TO_FT2,
     MM_TO_IN,
     c_to_f,
@@ -85,6 +87,8 @@ _LOGGER = logging.getLogger(__name__)
 _MM_TO_IN = MM_TO_IN
 _M2_TO_FT2 = M2_TO_FT2
 _LPM_TO_GPM = LPM_TO_GPM
+_LPM_TO_LPH = LPM_TO_LPH
+_LPM_TO_GPH = LPM_TO_GPH
 _c_to_f = c_to_f
 _sensors_input_to_metric = sensors_input_to_metric
 _zone_input_to_metric = zone_input_to_metric
@@ -193,7 +197,7 @@ def _model_params_schema(is_imperial: bool, current: dict) -> vol.Schema:
 def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
     """Zone form for initial setup and add_zone options flow (no pre-existing values)."""
     area_unit = "ft²" if is_imperial else "m²"
-    flow_unit = "gal/min" if is_imperial else "L/min"
+    flow_unit = "gal/h" if is_imperial else "L/h"
     depth_unit = "in" if is_imperial else "mm"
     threshold_default = round(DEFAULT_THRESHOLD * _MM_TO_IN, 1) if is_imperial else DEFAULT_THRESHOLD
 
@@ -248,9 +252,9 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
             ),
             vol.Optional(CONF_ZONE_FLOW_RATE): selector.NumberSelector(
                 selector.NumberSelectorConfig(
-                    min=0.03 if is_imperial else 0.1,
-                    max=53.0 if is_imperial else 200.0,
-                    step=0.01 if is_imperial else 0.1,
+                    min=2.0 if is_imperial else 1.0,
+                    max=3200.0 if is_imperial else 12000.0,
+                    step=0.5 if is_imperial else 1.0,
                     mode="box",
                     unit_of_measurement=flow_unit,
                 )
@@ -503,7 +507,7 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(data={})
 
         area_unit = "ft²" if imperial else "m²"
-        flow_unit = "gal/min" if imperial else "L/min"
+        flow_unit = "gal/h" if imperial else "L/h"
         depth_unit = "in" if imperial else "mm"
 
         # Helper to get current value or UNDEFINED
@@ -518,7 +522,8 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             v = cur.get(CONF_ZONE_FLOW_RATE)
             if v is None:
                 return vol.UNDEFINED
-            return round(v * _LPM_TO_GPM, 2) if imperial else v
+            # Stored in L/min; UI shows gal/h (imperial) or L/h (metric).
+            return round(v * _LPM_TO_GPH, 1) if imperial else round(v * _LPM_TO_LPH, 1)
 
         def _d_threshold(fallback):
             v = cur.get(CONF_ZONE_THRESHOLD, fallback)
@@ -619,9 +624,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                     default=_d_flow(),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0.03 if imperial else 0.1,
-                        max=53.0 if imperial else 200.0,
-                        step=0.01 if imperial else 0.1,
+                        min=2.0 if imperial else 1.0,
+                        max=3200.0 if imperial else 12000.0,
+                        step=0.5 if imperial else 1.0,
                         mode="box",
                         unit_of_measurement=flow_unit,
                     )

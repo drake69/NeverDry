@@ -30,6 +30,21 @@ stop:
     Immediately close all irrigation valves. Use this to abort an
     irrigation cycle in progress.
 
+stop_zone:
+  name: Stop zone
+  description: >
+    Stop irrigation for a single zone and close its valve. Other zones
+    keep irrigating. Works for both a running irrigation cycle and a
+    manual/hardware-driven valve open.
+  fields:
+    zone_name:
+      name: Zone name
+      description: The zone whose irrigation should be stopped.
+      required: true
+      example: "Vegetable Garden"
+      selector:
+        text:
+
 mark_irrigated:
   name: Mark zone as irrigated
   description: >

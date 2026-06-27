@@ -159,6 +159,33 @@ class TestHandleResetValve:
 
 
 # ═══════════════════════════════════════════════
+#  _handle_stop_zone
+# ═══════════════════════════════════════════════
+
+
+class TestHandleStopZone:
+    @pytest.mark.asyncio
+    async def test_unknown_zone_logs_error(self, controller, caplog):
+        import logging
+
+        with caplog.at_level(logging.ERROR):
+            await controller._handle_stop_zone(_make_call({"zone_name": "Ghost"}))
+        assert "not found" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_closes_valve_and_clears_state(self, controller, zone_orto, hass_mock):
+        hass_mock.services.async_call = AsyncMock()
+        zone_orto.set_irrigating(True)
+
+        await controller._handle_stop_zone(_make_call({"zone_name": "Orto"}))
+
+        assert controller._stop_zone == "Orto"
+        assert zone_orto.is_irrigating is False
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_off" in str(c)]
+        assert len(close_calls) >= 1
+
+
+# ═══════════════════════════════════════════════
 #  _make_reactive_handler
 # ═══════════════════════════════════════════════
 

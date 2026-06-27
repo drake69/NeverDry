@@ -52,7 +52,7 @@
           "efficiency": "Lascia vuoto per utilizzare il valore predefinito del tipo di impianto. Imposta per sovrascriverlo",
           "plant_family": "Seleziona il tipo di piante in questa zona. Imposta un coefficiente colturale stagionale (Kc) che adatta il fabbisogno idrico durante l'anno",
           "kc": "Lascia vuoto per utilizzare il profil stagionale della famiglia di piante. Imposta per sovrascriverlo con un valore Kc fisso (0.1–2.0)",
-          "flow_rate_lpm": "Portata d'acqua della valvola in litri al minuto. Richiesto per la modalità estimated_flow. Misurala con un secchio e un cronometro",
+          "flow_rate_lpm": "Portata d'acqua della valvola in litri all'ora (gal/h in imperiale). Richiesto per la modalità estimated_flow. Misurala con un secchio e un cronometro",
           "flow_meter_sensor": "Entità sensore che rileva i litri cumulativi erogati. Richiesto per la modalità flow_meter",
           "volume_entity": "Entità numerica sulla valvola intelligente che accetta un target di volume in litri. Richiesto per la modalità volume_preset",
           "delivery_timeout": "Tempo massimo di attesa per l'erogazione con flow_meter o volume_preset prima di forzare la chiusura della valvola (limite di sicurezza)",

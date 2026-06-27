@@ -52,7 +52,7 @@
           "efficiency": "Leave empty to use the system type default. Set to override",
           "plant_family": "Select the type of plants in this zone. Sets a seasonal crop coefficient (Kc) that adjusts water demand throughout the year",
           "kc": "Leave empty to use the plant family seasonal profile. Set to override with a fixed Kc value (0.1–2.0)",
-          "flow_rate_lpm": "Water flow rate of the valve in liters per minute. Required for estimated_flow mode. Measure with a bucket and stopwatch",
+          "flow_rate_lpm": "Water flow rate of the valve in liters per hour (gal/h in imperial). Required for estimated_flow mode. Measure with a bucket and stopwatch",
           "flow_meter_sensor": "Sensor entity that reports cumulative liters delivered. Required for flow_meter mode",
           "volume_entity": "Number entity on the smart valve that accepts a volume target in liters. Required for volume_preset mode",
           "delivery_timeout": "Maximum time to wait for flow_meter or volume_preset delivery before forcing valve close (safety limit)",

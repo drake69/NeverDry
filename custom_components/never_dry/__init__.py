@@ -94,6 +94,40 @@ PLATFORMS = ["sensor", "button"]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+_FRONTEND_REGISTERED = "_frontend_registered"
+_CARD_FILENAME = "never-dry-zone-card.js"
+# Serve the whole www/ DIRECTORY (StaticPathConfig serves directories reliably,
+# single files can 404), then reference the card file under it.
+_STATIC_URL = f"/{DOMAIN}_static"
+_CARD_URL = f"{_STATIC_URL}/{_CARD_FILENAME}"
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Serve and auto-load the NeverDry Zone Lovelace card.
+
+    Registers the bundled www/ folder as a static path and adds the card to the
+    frontend's extra module URLs so it appears in the "Add card" picker without
+    the user having to add a Lovelace resource manually. Runs once per HA instance.
+    """
+    if hass.data[DOMAIN].get(_FRONTEND_REGISTERED):
+        return
+
+    www_dir = str(pathlib.Path(__file__).parent / "www")
+    url = f"{_CARD_URL}?v={_INTEGRATION_VERSION}"
+    try:
+        from homeassistant.components.http import StaticPathConfig
+
+        _LOGGER.info("NeverDry: registering static path %s -> %s", _STATIC_URL, www_dir)
+        await hass.http.async_register_static_paths([StaticPathConfig(_STATIC_URL, www_dir, cache_headers=False)])
+
+        from homeassistant.components import frontend
+
+        frontend.add_extra_js_url(hass, url)
+        hass.data[DOMAIN][_FRONTEND_REGISTERED] = True
+        _LOGGER.info("NeverDry Zone Card registered and auto-loaded (%s)", url)
+    except Exception:  # never block integration setup on a frontend hiccup
+        _LOGGER.exception("NeverDry: failed to register Lovelace card at %s", url)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the NeverDry integration."""
@@ -146,6 +180,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = entry.data
     handler = await hass.async_add_executor_job(_setup_file_logger, hass)
     hass.data[DOMAIN][f"_log_handler_{entry.entry_id}"] = handler
+    await _async_register_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True

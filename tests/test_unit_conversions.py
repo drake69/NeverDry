@@ -68,17 +68,23 @@ class TestSensorsInputToMetric:
 
 
 class TestZoneInputToMetric:
-    def test_metric_passthrough(self):
-        data = {CONF_ZONE_AREA: 20.0, CONF_ZONE_FLOW_RATE: 8.0, CONF_ZONE_THRESHOLD: 20.0}
+    def test_metric_area_threshold_passthrough(self):
+        # Area and threshold are unchanged in metric; flow is handled separately.
+        data = {CONF_ZONE_AREA: 20.0, CONF_ZONE_THRESHOLD: 20.0}
         assert _zone_input_to_metric(data, is_imperial=False) == data
+
+    def test_flow_rate_lph_to_lpm(self):
+        # Metric UI is L/h, stored in L/min: 60 L/h → 1 L/min.
+        out = _zone_input_to_metric({CONF_ZONE_FLOW_RATE: 60.0}, is_imperial=False)
+        assert out[CONF_ZONE_FLOW_RATE] == pytest.approx(1.0, abs=0.001)
 
     def test_area_ft2_to_m2(self):
         out = _zone_input_to_metric({CONF_ZONE_AREA: 107.639}, is_imperial=True)
         assert out[CONF_ZONE_AREA] == pytest.approx(10.0, abs=0.01)
 
-    def test_flow_rate_gpm_to_lpm(self):
-        out = _zone_input_to_metric({CONF_ZONE_FLOW_RATE: 1.0}, is_imperial=True)
-        # 1 gal/min ≈ 3.785 L/min
+    def test_flow_rate_gph_to_lpm(self):
+        out = _zone_input_to_metric({CONF_ZONE_FLOW_RATE: 60.0}, is_imperial=True)
+        # 60 gal/h = 1 gal/min ≈ 3.785 L/min
         assert out[CONF_ZONE_FLOW_RATE] == pytest.approx(3.785, abs=0.01)
 
     def test_threshold_in_to_mm(self):

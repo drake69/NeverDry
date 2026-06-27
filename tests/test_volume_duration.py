@@ -119,6 +119,39 @@ class TestDurationCalculation:
         assert zone.duration_s == 0
 
 
+class TestResetDeficitAccounting:
+    """reset_deficit must credit the right volume to the water counters."""
+
+    def test_credits_needed_volume_when_no_delivered_given(self, di_sensor):
+        """Manual mark / service reset: credit the volume needed for the deficit."""
+        zone = _make_zone(di_sensor)
+        zone._zone_deficit = 10.0
+        needed = round(zone.volume_liters, 1)
+        assert needed > 0
+
+        zone.reset_deficit("mark_irrigated")
+
+        assert zone._zone_deficit == 0.0
+        assert zone._last_volume_delivered == needed
+        assert zone._session_water_delivered == needed
+        assert zone._total_water_delivered == needed
+
+    def test_credits_explicit_delivered_volume(self, di_sensor):
+        """Flow-metered full delivery: credit the measured volume, not the
+        (already-depleted) deficit-derived volume."""
+        zone = _make_zone(di_sensor)
+        # Simulate post-delivery state: deficit already driven to ~0 in real time.
+        zone._zone_deficit = 0.0
+        measured = 123.4
+
+        zone.reset_deficit("automatic", delivered_liters=measured)
+
+        assert zone._zone_deficit == 0.0
+        assert zone._last_volume_delivered == pytest.approx(measured, abs=0.1)
+        assert zone._session_water_delivered == pytest.approx(measured, abs=0.1)
+        assert zone._total_water_delivered == pytest.approx(measured, abs=0.1)
+
+
 class TestNativeValue:
     """native_value is volume in liters (rounded)."""
 

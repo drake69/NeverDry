@@ -3,7 +3,13 @@
 from unittest.mock import AsyncMock
 
 import pytest
-from never_dry.button import IrrigateButton, MarkIrrigatedButton, _create_buttons
+from never_dry.button import (
+    IrrigateButton,
+    MarkIrrigatedButton,
+    ResetMaintenanceButton,
+    StopButton,
+    _create_buttons,
+)
 from never_dry.const import (
     ATTR_ZONE_NAME,
     CONF_ZONE_NAME,
@@ -11,6 +17,7 @@ from never_dry.const import (
     DOMAIN,
     SERVICE_IRRIGATE_ZONE,
     SERVICE_MARK_IRRIGATED,
+    SERVICE_STOP_ZONE,
 )
 
 
@@ -40,6 +47,14 @@ class TestButtonCreation:
     def test_no_buttons_empty_zones(self, hass_mock):
         buttons = _create_buttons(hass_mock, {CONF_ZONES: []})
         assert len(buttons) == 0
+
+    def test_valve_zone_gets_stop_and_reset_buttons(self, hass_mock):
+        config = {CONF_ZONES: [{CONF_ZONE_NAME: "Orto", "valve": "switch.valve_orto"}]}
+        buttons = _create_buttons(hass_mock, config)
+        # Mark + Irrigate + Stop + Reset
+        assert len(buttons) == 4
+        assert any(isinstance(b, StopButton) for b in buttons)
+        assert any(isinstance(b, ResetMaintenanceButton) for b in buttons)
 
 
 class TestButtonProperties:
@@ -87,6 +102,31 @@ class TestButtonPress:
 
         call_args = hass_mock.services.async_call.call_args
         assert call_args.args[2][ATTR_ZONE_NAME] == "Vegetable Garden"
+
+
+class TestStopButton:
+    """Test the per-zone Stop button."""
+
+    def test_name(self, hass_mock):
+        btn = StopButton(hass_mock, "Orto")
+        assert btn._attr_name == "Stop"
+
+    def test_unique_id(self, hass_mock):
+        btn = StopButton(hass_mock, "Vegetable Garden")
+        assert btn._attr_unique_id == "stop_vegetable_garden"
+
+    @pytest.mark.asyncio
+    async def test_press_calls_stop_zone_service(self, hass_mock):
+        hass_mock.services.async_call = AsyncMock()
+        btn = StopButton(hass_mock, "Orto")
+
+        await btn.async_press()
+
+        hass_mock.services.async_call.assert_called_once_with(
+            DOMAIN,
+            SERVICE_STOP_ZONE,
+            {ATTR_ZONE_NAME: "Orto"},
+        )
 
 
 class TestButtonDeviceInfo:

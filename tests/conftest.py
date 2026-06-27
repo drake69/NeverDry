@@ -166,6 +166,8 @@ def _create_ha_stubs():
 
     class UnitOfVolumeFlowRate:
         LITERS_PER_MINUTE = "L/min"
+        LITERS_PER_HOUR = "L/h"
+        GALLONS_PER_HOUR = "gal/h"
 
     class UnitOfVolumetricFlux:
         MILLIMETERS_PER_HOUR = "mm/h"

@@ -27,6 +27,13 @@ def _make_hass():
     return hass
 
 
+def _make_imperial_hass():
+    """Hass whose unit system reports gallons as the volume unit (US-customary)."""
+    hass = MagicMock()
+    hass.config.units.volume_unit = "gal"
+    return hass
+
+
 def _make_zone(di_sensor, name="Orto", flow_rate=8.0, area=20.0, efficiency=0.90):
     zone_config = {
         CONF_ZONE_NAME: name,
@@ -45,10 +52,11 @@ class TestZoneFlowRateSensor:
         sensor = ZoneFlowRateSensor(zone)
         assert sensor._attr_name == "Flow rate"
 
-    def test_unit(self, di_sensor):
+    def test_unit_metric(self, di_sensor):
         zone = _make_zone(di_sensor)
         sensor = ZoneFlowRateSensor(zone)
-        assert sensor._attr_native_unit_of_measurement == "L/min"
+        # No hass attached → defaults to metric.
+        assert sensor.native_unit_of_measurement == "L/h"
 
     def test_icon(self, di_sensor):
         zone = _make_zone(di_sensor)
@@ -63,12 +71,26 @@ class TestZoneFlowRateSensor:
     def test_value(self, di_sensor):
         zone = _make_zone(di_sensor, flow_rate=3.33)
         sensor = ZoneFlowRateSensor(zone)
-        assert sensor.native_value == pytest.approx(3.33, abs=0.01)
+        assert sensor.native_value == pytest.approx(199.8, abs=0.1)
 
     def test_value_rounded(self, di_sensor):
         zone = _make_zone(di_sensor, flow_rate=8.0)
         sensor = ZoneFlowRateSensor(zone)
-        assert sensor.native_value == 8.0
+        assert sensor.native_value == 480.0
+
+    def test_unit_imperial(self, di_sensor):
+        """US-customary → gal/h (HA does not auto-convert volume_flow_rate)."""
+        zone = _make_zone(di_sensor)
+        sensor = ZoneFlowRateSensor(zone)
+        sensor.hass = _make_imperial_hass()
+        assert sensor.native_unit_of_measurement == "gal/h"
+
+    def test_value_imperial(self, di_sensor):
+        """8 L/min = 480 L/h = 126.8 gal/h (1 US gal = 3.785411784 L)."""
+        zone = _make_zone(di_sensor, flow_rate=8.0)
+        sensor = ZoneFlowRateSensor(zone)
+        sensor.hass = _make_imperial_hass()
+        assert sensor.native_value == pytest.approx(126.8, abs=0.1)
 
 
 class TestZoneDurationSensor:
