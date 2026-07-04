@@ -102,12 +102,45 @@ _STATIC_URL = f"/{DOMAIN}_static"
 _CARD_URL = f"{_STATIC_URL}/{_CARD_FILENAME}"
 
 
+async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
+    """Register (or version-refresh) the card as a Lovelace resource.
+
+    Lovelace resources are fetched dynamically by the frontend, so they keep
+    working even when the service worker serves a stale cached index.html —
+    the failure mode that makes frontend.add_extra_js_url unreliable after
+    install/upgrade (GH issue #96). Only possible in storage mode; returns
+    False for YAML-managed dashboards so the caller can fall back to
+    add_extra_js_url.
+    """
+    lovelace = hass.data.get("lovelace")
+    if lovelace is None or getattr(lovelace, "mode", None) != "storage":
+        return False
+
+    resources = lovelace.resources
+    if not resources.loaded:
+        await resources.async_load()
+        resources.loaded = True
+
+    for item in resources.async_items():
+        if item.get("url", "").partition("?")[0] == _CARD_URL:
+            if item["url"] != url:  # stale ?v= from a previous version: bust the browser cache
+                await resources.async_update_item(item["id"], {"url": url})
+                _LOGGER.info("NeverDry Zone Card Lovelace resource updated to %s", url)
+            return True
+
+    await resources.async_create_item({"res_type": "module", "url": url})
+    _LOGGER.info("NeverDry Zone Card added to Lovelace resources (%s)", url)
+    return True
+
+
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve and auto-load the NeverDry Zone Lovelace card.
 
-    Registers the bundled www/ folder as a static path and adds the card to the
-    frontend's extra module URLs so it appears in the "Add card" picker without
-    the user having to add a Lovelace resource manually. Runs once per HA instance.
+    Registers the bundled www/ folder as a static path, then exposes the card
+    JS to the frontend so it appears in the "Add card" picker without manual
+    resource setup. Storage-mode dashboards get a real Lovelace resource
+    (robust against the service-worker-cached index, GH #96); YAML-mode
+    dashboards fall back to add_extra_js_url. Runs once per HA instance.
     """
     if hass.data[DOMAIN].get(_FRONTEND_REGISTERED):
         return
@@ -120,9 +153,10 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         _LOGGER.info("NeverDry: registering static path %s -> %s", _STATIC_URL, www_dir)
         await hass.http.async_register_static_paths([StaticPathConfig(_STATIC_URL, www_dir, cache_headers=False)])
 
-        from homeassistant.components import frontend
+        if not await _async_register_lovelace_resource(hass, url):
+            from homeassistant.components import frontend
 
-        frontend.add_extra_js_url(hass, url)
+            frontend.add_extra_js_url(hass, url)
         hass.data[DOMAIN][_FRONTEND_REGISTERED] = True
         _LOGGER.info("NeverDry Zone Card registered and auto-loaded (%s)", url)
     except Exception:  # never block integration setup on a frontend hiccup
