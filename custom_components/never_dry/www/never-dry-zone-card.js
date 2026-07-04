@@ -19,7 +19,7 @@
  * localized friendly_name; values via formatEntityState (language + units).
  */
 
-const CARD_VERSION = "0.1.6";
+const CARD_VERSION = "0.1.7";
 
 // Static UI strings that are NOT backed by an entity (everything else is read
 // from the entity's localized friendly_name / formatEntityState, so it follows
@@ -554,7 +554,8 @@ function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function barColor(pct) {
@@ -653,7 +654,7 @@ class NeverDryZoneCardEditor extends HTMLElement {
     const options = devices
       .map(
         (d) =>
-          `<option value="${d.id}" ${d.id === current ? "selected" : ""}>${d.name}</option>`
+          `<option value="${escapeHtml(d.id)}" ${d.id === current ? "selected" : ""}>${escapeHtml(d.name)}</option>`
       )
       .join("");
     this.innerHTML = `

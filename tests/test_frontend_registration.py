@@ -1,7 +1,7 @@
 """Tests for the Lovelace card frontend registration in __init__.py."""
 
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -83,3 +83,91 @@ async def test_does_not_raise_on_failure(frontend_stubs):
     await _async_register_frontend(hass)
 
     assert hass.data[DOMAIN].get(_FRONTEND_REGISTERED) is not True
+
+
+def _make_resources(items=None, loaded=True):
+    """Fake lovelace ResourceStorageCollection."""
+    resources = SimpleNamespace(loaded=loaded)
+    resources._items = items or []
+    resources.async_items = lambda: resources._items
+    resources.async_load = AsyncMock()
+    resources.async_create_item = AsyncMock()
+    resources.async_update_item = AsyncMock()
+    return resources
+
+
+def _with_lovelace(hass, mode="storage", resources=None):
+    hass.data["lovelace"] = SimpleNamespace(mode=mode, resources=resources or _make_resources())
+    return hass.data["lovelace"].resources
+
+
+async def test_storage_mode_creates_lovelace_resource(frontend_stubs):
+    """Storage mode: the card is registered as a real Lovelace resource, not extra_js_url."""
+    add_extra_js_url = frontend_stubs
+    hass = _make_hass()
+    resources = _with_lovelace(hass)
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_awaited_once()
+    created = resources.async_create_item.call_args.args[0]
+    assert created["res_type"] == "module"
+    assert created["url"].startswith(f"{_CARD_URL}?v=")
+    add_extra_js_url.assert_not_called()
+    assert hass.data[DOMAIN][_FRONTEND_REGISTERED] is True
+
+
+async def test_storage_mode_refreshes_stale_resource_version(frontend_stubs):
+    """An existing resource with an old ?v= cache-buster is updated in place."""
+    hass = _make_hass()
+    stale = {"id": "abc123", "url": f"{_CARD_URL}?v=0.0.1"}
+    resources = _with_lovelace(hass, resources=_make_resources(items=[stale]))
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_not_awaited()
+    resources.async_update_item.assert_awaited_once()
+    item_id, updates = resources.async_update_item.call_args.args
+    assert item_id == "abc123"
+    assert updates["url"].startswith(f"{_CARD_URL}?v=")
+    assert updates["url"] != stale["url"]
+
+
+async def test_storage_mode_leaves_current_resource_untouched(frontend_stubs):
+    """A resource already pointing at the current version is neither duplicated nor updated."""
+    from never_dry import _INTEGRATION_VERSION
+
+    hass = _make_hass()
+    current = {"id": "abc123", "url": f"{_CARD_URL}?v={_INTEGRATION_VERSION}"}
+    resources = _with_lovelace(hass, resources=_make_resources(items=[current]))
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_not_awaited()
+    resources.async_update_item.assert_not_awaited()
+    assert hass.data[DOMAIN][_FRONTEND_REGISTERED] is True
+
+
+async def test_storage_mode_loads_resources_when_not_loaded(frontend_stubs):
+    """The resource collection is loaded on demand before being inspected."""
+    hass = _make_hass()
+    resources = _with_lovelace(hass, resources=_make_resources(loaded=False))
+
+    await _async_register_frontend(hass)
+
+    resources.async_load.assert_awaited_once()
+    assert resources.loaded is True
+    resources.async_create_item.assert_awaited_once()
+
+
+async def test_yaml_mode_falls_back_to_extra_js_url(frontend_stubs):
+    """YAML-managed dashboards (read-only resources) fall back to add_extra_js_url."""
+    add_extra_js_url = frontend_stubs
+    hass = _make_hass()
+    resources = _with_lovelace(hass, mode="yaml")
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_not_awaited()
+    add_extra_js_url.assert_called_once()
+    assert hass.data[DOMAIN][_FRONTEND_REGISTERED] is True
