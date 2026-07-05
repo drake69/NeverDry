@@ -338,6 +338,35 @@ class TestFlowMeterDelivery:
         assert result == 0.0
 
     @pytest.mark.asyncio
+    async def test_stop_during_flow_rate(self, hass_mock, di_sensor):
+        """A stop request aborts the flow_rate loop and closes the valve."""
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_rate",
+                CONF_ZONE_DELIVERY_TIMEOUT: 100,
+            },
+        )
+        zone._zone_deficit = 5.0
+
+        meter_state = MagicMock()
+        meter_state.state = "10.0"
+        meter_state.attributes = {"unit_of_measurement": "L/min"}
+        hass_mock.states.get = MagicMock(return_value=meter_state)
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        ctrl._stop_requested = True
+
+        result = await ctrl._deliver_flow_rate(zone, "sensor.flow_rate", 100.0)
+
+        # Stopped before any integration step: nothing delivered, valve closed.
+        assert result == 0.0
+        close_calls = [c for c in hass_mock.services.async_call.call_args_list if "turn_off" in str(c)]
+        assert len(close_calls) >= 1
+
+    @pytest.mark.asyncio
     async def test_external_close_ends_flow_rate(self, hass_mock, di_sensor):
         """Flow-rate delivery ends as soon as the valve switch reads 'off'
         (hardware auto-close) rather than integrating for the full timeout."""
