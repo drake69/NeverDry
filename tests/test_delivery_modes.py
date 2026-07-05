@@ -529,3 +529,149 @@ class TestSettleWaterAccounting:
         zone = _make_zone(hass_mock, di_sensor)
         attrs = zone.extra_state_attributes
         assert "delivery_timeout_s" not in attrs
+
+
+class TestZeroFlowTimeoutFallback:
+    """Regression: delivery timeout with zero measured flow must still settle.
+
+    Field report: the valve stayed open for the whole ``delivery_timeout``
+    (~1h), was closed by the timeout, yet the zone deficit was unchanged —
+    so the scheduler immediately wanted to irrigate again. Root cause: the
+    flow-based modes returned the measured 0.0, ``_irrigate_zones`` only
+    settles zones with ``delivered > 0``, and the hour of real watering was
+    never credited. The fix estimates the volume from the configured
+    nominal flow_rate whenever the sensor measured nothing while the valve
+    was open.
+    """
+
+    @staticmethod
+    def _stuck_states(zone, meter_entity, meter_value, unit):
+        """states.get side effect: flow sensor frozen, valve always 'on'."""
+
+        def get_state(entity_id):
+            if entity_id == meter_entity:
+                s = MagicMock()
+                s.state = meter_value
+                s.attributes = {"unit_of_measurement": unit}
+                return s
+            if entity_id == zone.valve:
+                s = MagicMock()
+                s.state = "on"
+                return s
+            return None
+
+        return get_state
+
+    @pytest.mark.asyncio
+    async def test_timeout_with_dead_flow_meter_settles_deficit(self, hass_mock, di_sensor):
+        """End-to-end reproduction of the reported bug via _irrigate_zones."""
+        timeout_s = 2 * FLOW_METER_POLL_INTERVAL_S
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
+            },
+        )
+        zone._zone_deficit = 5.0
+        hass_mock.states.get = MagicMock(
+            side_effect=self._stuck_states(zone, "sensor.flow_meter", "100.0", "L"),
+        )
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        await ctrl._irrigate_zones(["TestZone"])
+
+        # The valve was open for the full timeout at the configured 8 L/min:
+        # the settle must credit that water even though the meter read 0.
+        expected_liters = 8.0 * timeout_s / 60.0
+        expected_mm = expected_liters * zone._efficiency / zone._area
+        assert zone._zone_deficit == pytest.approx(5.0 - expected_mm, abs=0.01)
+        assert zone._zone_deficit < 5.0
+        assert zone._total_water_delivered == pytest.approx(expected_liters, abs=0.2)
+        assert zone._last_irrigated is not None
+
+    @pytest.mark.asyncio
+    async def test_flow_meter_timeout_zero_flow_credits_estimate(self, hass_mock, di_sensor):
+        timeout_s = 2 * FLOW_METER_POLL_INTERVAL_S
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
+            },
+        )
+        zone._zone_deficit = 5.0
+        hass_mock.states.get = MagicMock(
+            side_effect=self._stuck_states(zone, "sensor.flow_meter", "100.0", "L"),
+        )
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        result = await ctrl._deliver_flow_meter(zone)
+
+        assert result == pytest.approx(8.0 * timeout_s / 60.0, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_flow_rate_timeout_zero_flow_credits_estimate(self, hass_mock, di_sensor):
+        timeout_s = 2 * FLOW_METER_POLL_INTERVAL_S
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_rate",
+                CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
+            },
+        )
+        zone._zone_deficit = 5.0
+        hass_mock.states.get = MagicMock(
+            side_effect=self._stuck_states(zone, "sensor.flow_rate", "0.0", "L/min"),
+        )
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        result = await ctrl._deliver_flow_rate(zone, "sensor.flow_rate", 1000.0)
+
+        assert result == pytest.approx(8.0 * timeout_s / 60.0, abs=0.01)
+
+    @pytest.mark.asyncio
+    async def test_zero_flow_without_flow_rate_cannot_estimate(self, hass_mock, di_sensor):
+        """Without a configured flow_rate there is no basis for an estimate."""
+        timeout_s = 2 * FLOW_METER_POLL_INTERVAL_S
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_FLOW_RATE: 0.0,
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
+            },
+        )
+        zone._zone_deficit = 5.0
+        hass_mock.states.get = MagicMock(
+            side_effect=self._stuck_states(zone, "sensor.flow_meter", "100.0", "L"),
+        )
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        result = await ctrl._deliver_flow_meter(zone)
+
+        assert result == 0.0
+
+    @pytest.mark.asyncio
+    async def test_measured_flow_wins_over_estimate(self, hass_mock, di_sensor):
+        """When the meter DID measure water, the fallback must not replace it."""
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: 100,
+            },
+        )
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        assert ctrl._fallback_volume_estimate(zone, 3600, 42.0) == 42.0
