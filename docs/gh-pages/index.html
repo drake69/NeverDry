@@ -418,13 +418,21 @@
 <!-- What's new -->
 <section class="how-it-works">
     <div class="container">
-        <h2>What's new in v0.10.8</h2>
-        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-07-04</p>
+        <h2>What's new in v0.10.9</h2>
+        <p style="margin-bottom: 1.2em; opacity: 0.8;">Released 2026-07-05</p>
         <ul style="max-width: 680px; margin: 0 auto; text-align: left; line-height: 2;">
-            <li><strong>Zone Card loads reliably</strong> — the card is now registered as a real Lovelace resource, fixing "Custom element doesn't exist: never-dry-zone-card" after install or upgrade (no more manual cache clearing).</li>
-            <li><strong>Card editor hardening</strong> — zone names are now HTML-escaped in the card editor.</li>
+            <li><strong>Zone Card fixed on HA 2026.2+</strong> — Home Assistant renamed an internal Lovelace attribute, so the card resource was never registered and "Custom element doesn't exist: never-dry-zone-card" was back. Now detected correctly on all HA versions, with clear log messages if registration falls back.</li>
+            <li><strong>Deficit settles on delivery timeout</strong> — if the flow sensor reads zero while the valve is actually watering, the delivered volume is now estimated from the configured flow rate, so the deficit no longer stays stuck (and irrigation no longer repeats endlessly).</li>
+            <li><strong>Config sanity guards</strong> — unusual zone values (area below 5 m², flow rate below 10 L/h or above 1800 L/h — usually a L/min vs L/h mix-up) now ask for confirmation before saving, and a new "Check configured zones" menu entry audits existing zones.</li>
         </ul>
-        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.8">Full release notes on GitHub →</a></p>
+        <p style="margin-top: 1.5em; font-size: 0.9em; opacity: 0.7;"><a href="https://github.com/drake69/NeverDry/releases/tag/v0.10.9">Full release notes on GitHub →</a></p>
+        <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
+            <summary style="cursor: pointer;">v0.10.8 — 2026-07-04</summary>
+            <ul style="line-height: 2; margin-top: 0.5em;">
+                <li><strong>Zone Card loads reliably</strong> — the card is now registered as a real Lovelace resource, fixing "Custom element doesn't exist: never-dry-zone-card" after install or upgrade (no more manual cache clearing).</li>
+                <li><strong>Card editor hardening</strong> — zone names are now HTML-escaped in the card editor.</li>
+            </ul>
+        </details>
         <details style="max-width: 680px; margin: 1.5em auto 0; text-align: left; opacity: 0.7; font-size: 0.9em;">
             <summary style="cursor: pointer;">v0.10.7 — 2026-06-27</summary>
             <ul style="line-height: 2; margin-top: 0.5em;">
