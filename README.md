@@ -47,16 +47,41 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 
 ## Sensors and entities
 
+**Integration-level:**
+
 | Entity | Native unit | Description |
 |--------|-------------|-------------|
 | `sensor.et_hourly_estimate` | mm/h | Instantaneous evapotranspiration rate |
 | `sensor.never_dry` | mm | Reference soil water deficit (Kc=1.0) |
-| `sensor.<zone>_volume` | L | Per-zone volume delivered; attributes: `duration_s`, `deficit_mm`, `kc`, `plant_family`, `irrigating`, ... |
-| `sensor.<zone>_deficit` | mm | Per-zone water deficit; attributes: `valve_fsm_state`, `valve_in_maintenance`, `irrigating`, `flow_rate_lpm` |
-| `sensor.<zone>_valve` | — | Mirror of the physical valve state (`open`/`closed`) inside the zone device card |
-| `sensor.<zone>_battery` | % | Mirror of the valve battery sensor inside the zone device card |
-| `sensor.<zone>_flow_meter` | L/min | Mirror of the flow meter inside the zone device card |
-| `button.<zone>_reset_maintenance` | — | Unlock a valve that NeverDry blocked after repeated failures |
+
+**Per zone** (grouped under each zone's device card):
+
+| Entity | Native unit | Description |
+|--------|-------------|-------------|
+| `sensor.<zone>_volume` | L | Volume needed by the next session; attributes: `duration_s`, `deficit_mm`, `kc`, `plant_family`, `irrigating`, ... |
+| `sensor.<zone>_deficit` | mm | Zone water deficit; attributes: `valve_fsm_state`, `valve_in_maintenance`, `irrigating`, `flow_rate_lpm` |
+| `sensor.<zone>_duration` | s | Estimated duration of the next session |
+| `sensor.<zone>_last_irrigated` | timestamp | When the zone was last irrigated |
+| `sensor.<zone>_last_source` | — | What triggered the last irrigation (service, button, schedule, ...) |
+| `sensor.<zone>_last_volume` | L | Water delivered by the last session |
+| `sensor.<zone>_last_duration` | s | Duration of the last session |
+| `sensor.<zone>_session_water` | L | Water delivered in the current session |
+| `sensor.<zone>_yearly_water` | L | Cumulative water delivered this year |
+| `sensor.<zone>_rain` | mm | Cumulative rain accounted for the zone |
+| `sensor.<zone>_kc` | — | Current crop coefficient (seasonal) |
+| `sensor.<zone>_flow_rate` | L/min | Configured flow rate |
+| `sensor.<zone>_threshold` | mm | Configured trigger threshold |
+| `sensor.<zone>_area` | m² | Configured irrigated area |
+| `sensor.<zone>_efficiency` | — | Configured system efficiency |
+| `sensor.<zone>_irrigation_mode` | — | Scheduling mode (manual / reactive / scheduled) |
+| `sensor.<zone>_irrigation_time` | — | Daily irrigation time (scheduled mode) |
+| `sensor.<zone>_valve` | — | Mirror of the physical valve state (`open`/`closed`) |
+| `sensor.<zone>_battery` | % | Mirror of the valve battery sensor |
+| `sensor.<zone>_flow_meter` | L/min | Mirror of the flow meter |
+| `button.<zone>_irrigate` | — | Start an irrigation session now |
+| `button.<zone>_mark_irrigated` | — | Reset the deficit without opening the valve |
+| `button.<zone>_stop` | — | Stop the zone's irrigation immediately |
+| `button.<zone>_reset_valve` | — | Unlock a valve that NeverDry blocked after repeated failures |
 
 All sensors that carry a physical unit declare the proper HA `device_class` (e.g. `precipitation`, `volume_storage`, `volume_flow_rate`). Home Assistant automatically converts the displayed unit to your system preference — go to **Settings → System → General → Unit system** to switch between metric and imperial. Deficit values appear in mm or inches; volumes in litres or gallons; flow rate in L/min or gal/min; ET rate in mm/h or in/h.
 
@@ -87,6 +112,8 @@ Labels and units follow your Home Assistant language and unit system automatical
 | `never_dry.irrigate_zone` | Open valve, water for the calculated duration, close, update zone deficit |
 | `never_dry.irrigate_all` | Water all zones one by one, then mark all as done |
 | `never_dry.stop` | Emergency stop — close all valves immediately |
+| `never_dry.stop_zone` | Stop irrigation for a single zone and close its valve |
+| `never_dry.mark_irrigated` | Reset a zone's deficit without opening the valve — for when you watered manually |
 | `never_dry.reset` | Reset all zone deficits to zero |
 | `never_dry.reset_valve` | Unlock a valve blocked by NeverDry after repeated close failures |
 | `never_dry.set_deficit` | Set the deficit of one zone (or all zones) to an arbitrary mm value — useful for testing and manual calibration |

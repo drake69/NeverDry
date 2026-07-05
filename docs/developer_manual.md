@@ -21,15 +21,25 @@
 
 ```
 custom_components/never_dry/
-├── __init__.py        → Integration setup (YAML + config entry)
+├── __init__.py        → Integration setup (YAML + config entry), activity log setup
 ├── const.py           → All constants, defaults, system types, plant families
 ├── sensor.py          → compute_kc(), ETSensor, DrynessIndexSensor, IrrigationZoneSensor
-├── controller.py      → IrrigationController (valve control, monitoring mode)
+│                        + per-zone stat/linked sensors (deficit, rain, water totals, Kc, …)
+├── controller.py      → IrrigationController (irrigation cycle, services, monitoring mode)
+├── button.py          → Per-zone buttons: Irrigate, Mark irrigated, Stop, Reset valve
+├── valve_operator.py  → ValveOperator: open/close with confirmation, delivery modes, watchdog
+├── valve_fsm.py       → Valve finite-state machine (idle → … → maintenance)
+├── valve_latency.py   → ValveLatencyTracker: adaptive timeout (rolling mean + 3σ)
+├── valve_notifier.py  → User notifications on valve failures
+├── unit_convert.py    → Metric/imperial conversions at the I/O boundaries
+├── diagnostics.py     → HA "Download diagnostics" support
 ├── config_flow.py     → UI setup wizard + options flow
+├── manifest.json      → Integration manifest
 ├── services.yaml      → HA service definitions
 ├── strings.json       → UI strings
-└── translations/
-    └── en.json        → English translations
+├── translations/      → en.json, it.json
+├── brand/             → Local brand assets (icon/logo)
+└── www/               → never-dry-zone-card.js (bundled Lovelace card, auto-registered)
 ```
 
 **Data flow:**
@@ -51,6 +61,8 @@ VWC sensor (optional) ─┘    │
 ```
 
 `DrynessIndexSensor` is the "reference" sensor at Kc=1.0. Each zone sensor registers as a listener and maintains its own deficit scaled by a crop coefficient Kc. The Kc varies seasonally based on the plant family assigned to the zone, with automatic hemisphere detection from `hass.config.latitude`.
+
+For the conceptual domain model behind this layout (System / Zone / Scheduler / ZoneDriver / MasterDriver) and where upcoming features belong, see [`design_domain_object_model.md`](design_domain_object_model.md).
 
 ## 2. Core formulas and their location
 
@@ -289,7 +301,10 @@ Services are registered in `IrrigationController.register_services()`.
 | `never_dry.irrigate_zone` | `_handle_irrigate_zone` | Single zone: open → wait → close → reset zone deficit |
 | `never_dry.irrigate_all` | `_handle_irrigate_all` | All zones sequentially, then reset all deficits |
 | `never_dry.stop` | `_handle_stop` | Close all valves, abort cycle (no deficit reset) |
+| `never_dry.stop_zone` | `_handle_stop_zone` | Stop irrigation for a single zone and close its valve (no deficit reset) |
 | `never_dry.mark_irrigated` | `_handle_mark_irrigated` | Resets deficit without opening any valve (used when the user watered with a different tool — hose, separate sprinkler, unmetered rain) |
+| `never_dry.reset_valve` | `_handle_reset_valve` | Reset the valve FSM from `maintenance` back to `idle` |
+| `never_dry.set_deficit` | `_handle_set_deficit` | Set the deficit of one zone (or all zones) to an arbitrary mm value |
 
 ## 6. Config flow
 
@@ -298,7 +313,7 @@ Services are registered in `IrrigationController.register_services()`.
 | Field | Required | Description |
 |-------|----------|-------------|
 | `name` | Yes | Zone display name |
-| `valve` | No | Switch entity controlling the valve (omit for monitoring mode) |
+| `valve` | No | Valve or switch entity controlling the valve (omit for monitoring mode) |
 | `area_m2` | Yes | Irrigated area [m²] |
 | `system_type` | Yes | Irrigation system → sets default efficiency |
 | `efficiency` | No | Override efficiency [0.1–1.0] |
@@ -306,6 +321,12 @@ Services are registered in `IrrigationController.register_services()`.
 | `kc` | No | Override Kc [0.1–2.0] |
 | `flow_rate_lpm` | Yes | Valve flow rate [L/min] |
 | `threshold` | No | Mode A trigger threshold [mm] (default 20) |
+| `delivery_mode` | No | Delivery method: `estimated_flow` (timer), `flow_meter` (sensor-monitored), `volume_preset` (smart valve with volume dosing) |
+| `flow_meter_sensor` | No | Flow measurement sensor entity (required if `delivery_mode=flow_meter`) |
+| `volume_entity` | No | Number entity for volume commands (required if `delivery_mode=volume_preset`) |
+| `delivery_timeout` | No | Safety timeout [s] for `flow_meter` and `volume_preset` modes (default 3600) |
+| `irrigation_mode` | No | Scheduling mode: `manual`, `reactive` (threshold-based), `scheduled` (time-based) |
+| `irrigation_time` | No | Daily irrigation time (HH:MM) for `scheduled` mode |
 
 ## 7. Testing
 
