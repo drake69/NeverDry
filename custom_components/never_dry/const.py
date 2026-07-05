@@ -139,3 +139,12 @@ ET_TEMP_VALID_RANGE = (-50.0, 70.0)  # °C physical bounds
 MAX_ZONES = 50
 MAX_ZONE_NAME_LENGTH = 64
 MIN_SERVICE_INTERVAL_S = 10  # minimum seconds between service calls
+
+# ── Zone config plausibility guards (soft-confirm, not blocking) ──
+# Values outside these ranges are almost always unit mistakes (e.g. flow
+# entered in L/min instead of L/h). The config flow asks for confirmation
+# instead of rejecting, since tiny planter zones and high-flow sprinkler
+# manifolds do legitimately exist.
+UNUSUAL_AREA_MIN_M2 = 5.0
+UNUSUAL_FLOW_MIN_LPM = 10.0 / 60.0  # 10 L/h
+UNUSUAL_FLOW_MAX_LPM = 30.0  # 1800 L/h — same bound as the runtime warning in sensor.py
