@@ -113,7 +113,16 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bo
     add_extra_js_url.
     """
     lovelace = hass.data.get("lovelace")
-    if lovelace is None or getattr(lovelace, "mode", None) != "storage":
+    if lovelace is None:
+        _LOGGER.warning("NeverDry: Lovelace data not available, falling back to add_extra_js_url")
+        return False
+    # HA 2026.2 renamed LovelaceData.mode -> resource_mode; support both.
+    mode = getattr(lovelace, "resource_mode", None) or getattr(lovelace, "mode", None)
+    if mode != "storage":
+        _LOGGER.info(
+            "NeverDry: Lovelace resources managed in %s mode, falling back to add_extra_js_url",
+            mode,
+        )
         return False
 
     resources = lovelace.resources
@@ -126,6 +135,8 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> bo
             if item["url"] != url:  # stale ?v= from a previous version: bust the browser cache
                 await resources.async_update_item(item["id"], {"url": url})
                 _LOGGER.info("NeverDry Zone Card Lovelace resource updated to %s", url)
+            else:
+                _LOGGER.debug("NeverDry Zone Card Lovelace resource already current (%s)", url)
             return True
 
     await resources.async_create_item({"res_type": "module", "url": url})
@@ -143,6 +154,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     dashboards fall back to add_extra_js_url. Runs once per HA instance.
     """
     if hass.data[DOMAIN].get(_FRONTEND_REGISTERED):
+        _LOGGER.debug("NeverDry: frontend already registered, skipping")
         return
 
     www_dir = str(pathlib.Path(__file__).parent / "www")

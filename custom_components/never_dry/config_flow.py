@@ -68,6 +68,9 @@ from .const import (
     SYSTEM_TYPE_MANUAL,
     SYSTEM_TYPE_MICRO_SPRINKLER,
     SYSTEM_TYPE_SPRINKLER,
+    UNUSUAL_AREA_MIN_M2,
+    UNUSUAL_FLOW_MAX_LPM,
+    UNUSUAL_FLOW_MIN_LPM,
 )
 from .unit_convert import (
     LPM_TO_GPH,
@@ -293,6 +296,40 @@ def _zone_schema_initial(is_imperial: bool) -> vol.Schema:
     )
 
 
+def _unusual_zone_values(zone: dict, imperial: bool) -> list[str]:
+    """Detect implausible zone values for the soft-confirm guard.
+
+    Takes a zone dict in metric storage units (area m², flow L/min) and
+    returns human-readable warning lines in the user's display units.
+    An empty list means all values look plausible.
+    """
+    warnings: list[str] = []
+    area = zone.get(CONF_ZONE_AREA)
+    if area is not None and area < UNUSUAL_AREA_MIN_M2:
+        if imperial:
+            warnings.append(f"area {area * _M2_TO_FT2:.1f} ft² < {UNUSUAL_AREA_MIN_M2 * _M2_TO_FT2:.0f} ft²")
+        else:
+            warnings.append(f"area {area:.1f} m² < {UNUSUAL_AREA_MIN_M2:.0f} m²")
+    flow = zone.get(CONF_ZONE_FLOW_RATE)
+    if flow is not None and flow > 0:
+        if imperial:
+            shown, unit = flow * _LPM_TO_GPH, "gal/h"
+            low, high = UNUSUAL_FLOW_MIN_LPM * _LPM_TO_GPH, UNUSUAL_FLOW_MAX_LPM * _LPM_TO_GPH
+        else:
+            shown, unit = flow * _LPM_TO_LPH, "L/h"
+            low, high = UNUSUAL_FLOW_MIN_LPM * _LPM_TO_LPH, UNUSUAL_FLOW_MAX_LPM * _LPM_TO_LPH
+        if flow < UNUSUAL_FLOW_MIN_LPM:
+            warnings.append(f"flow rate {shown:.1f} {unit} < {low:.1f} {unit}")
+        elif flow > UNUSUAL_FLOW_MAX_LPM:
+            warnings.append(f"flow rate {shown:.0f} {unit} > {high:.0f} {unit}")
+    return warnings
+
+
+def _confirm_zone_schema() -> vol.Schema:
+    """Checkbox form for the unusual-values confirmation step."""
+    return vol.Schema({vol.Required("confirm", default=False): bool})
+
+
 def _coerce_delivery_mode(user_input: dict) -> dict:
     """Downgrade delivery_mode to estimated_flow when the required sensor is missing."""
     dm = user_input.get(CONF_ZONE_DELIVERY_MODE)
@@ -313,6 +350,8 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._data: dict[str, Any] = {}
         self._zones: list[dict[str, Any]] = []
+        self._pending_zone: dict[str, Any] | None = None
+        self._pending_warnings: list[str] = []
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Step 1: Select sensors and ET model parameters."""
@@ -344,7 +383,12 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             elif mode == DELIVERY_MODE_VOLUME_PRESET and not user_input.get(CONF_ZONE_VOLUME_ENTITY):
                 errors[CONF_ZONE_VOLUME_ENTITY] = "volume_entity_required"
             else:
-                self._zones.append(_zone_input_to_metric(user_input, imperial))
+                zone_metric = _zone_input_to_metric(user_input, imperial)
+                self._pending_warnings = _unusual_zone_values(zone_metric, imperial)
+                if self._pending_warnings:
+                    self._pending_zone = zone_metric
+                    return await self.async_step_confirm_zone()
+                self._zones.append(zone_metric)
                 return await self.async_step_add_another()
 
         return self.async_show_form(
@@ -353,6 +397,33 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "zone_count": str(len(self._zones)),
+            },
+        )
+
+    async def async_step_confirm_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Soft guard: unusual zone values need explicit confirmation.
+
+        Values outside the plausibility ranges (tiny area, flow rate that
+        smells like a L/min-vs-L/h mix-up) are confirmed, not rejected —
+        planter zones and sprinkler manifolds legitimately exceed them.
+        Declining returns to the zone form to re-enter the values.
+        """
+        if user_input is not None:
+            pending = self._pending_zone
+            self._pending_zone = None
+            if user_input.get("confirm") and pending is not None:
+                self._zones.append(pending)
+                return await self.async_step_add_another()
+            return await self.async_step_zone()
+
+        return self.async_show_form(
+            step_id="confirm_zone",
+            data_schema=_confirm_zone_schema(),
+            description_placeholders={
+                "zone_name": (self._pending_zone or {}).get(CONF_ZONE_NAME, ""),
+                "warnings": "\n".join(f"- {w}" for w in self._pending_warnings),
             },
         )
 
@@ -397,12 +468,15 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
+        self._pending_zone: dict[str, Any] | None = None
+        self._pending_warnings: list[str] = []
+        self._pending_action: str = ""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Show menu: edit model params or manage zones."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["model_params", "add_zone", "edit_zone", "remove_zone"],
+            menu_options=["model_params", "add_zone", "edit_zone", "check_zones", "remove_zone"],
         )
 
     async def async_step_model_params(
@@ -441,17 +515,28 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                     data_schema=_zone_schema_initial(imperial),
                     errors={"base": "zone_already_exists"},
                 )
-            zones.append(user_input)
-            new_data[CONF_ZONES] = zones
-            if new_data != dict(self._config_entry.data):
-                _LOGGER.debug("Config updated via add_zone — zone added: %s", user_input.get("zone_name"))
-                self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(data={})
+            self._pending_warnings = _unusual_zone_values(user_input, imperial)
+            if self._pending_warnings:
+                self._pending_zone = user_input
+                self._pending_action = "add"
+                return await self.async_step_confirm_zone()
+            return self._save_added_zone(user_input)
 
         return self.async_show_form(
             step_id="add_zone",
             data_schema=_zone_schema_initial(imperial),
         )
+
+    def _save_added_zone(self, zone: dict[str, Any]) -> config_entries.ConfigFlowResult:
+        """Append a new zone to the config entry and finish the flow."""
+        new_data = dict(self._config_entry.data)
+        zones = list(new_data.get(CONF_ZONES, []))
+        zones.append(zone)
+        new_data[CONF_ZONES] = zones
+        if new_data != dict(self._config_entry.data):
+            _LOGGER.debug("Config updated via add_zone — zone added: %s", zone.get(CONF_ZONE_NAME))
+            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+        return self.async_create_entry(data={})
 
     async def async_step_edit_zone(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
         """Select a zone to edit."""
@@ -494,17 +579,12 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             user_input = _zone_input_to_metric(user_input, imperial)
             user_input = _coerce_delivery_mode(user_input)
-            new_data = dict(self._config_entry.data)
-            new_zones = [z for z in zones if z[CONF_ZONE_NAME] != self._edit_zone_name]
-            new_zones.append(user_input)
-            new_data[CONF_ZONES] = new_zones
-            if new_data != dict(self._config_entry.data):
-                _LOGGER.debug("Config updated via edit_zone — zone edited: %s", self._edit_zone_name)
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry,
-                    data=new_data,
-                )
-            return self.async_create_entry(data={})
+            self._pending_warnings = _unusual_zone_values(user_input, imperial)
+            if self._pending_warnings:
+                self._pending_zone = user_input
+                self._pending_action = "edit"
+                return await self.async_step_confirm_zone()
+            return self._save_edited_zone(user_input)
 
         area_unit = "ft²" if imperial else "m²"
         flow_unit = "gal/h" if imperial else "L/h"
@@ -697,6 +777,73 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             step_id="edit_zone_detail",
             data_schema=schema,
             description_placeholders={"zone_name": self._edit_zone_name},
+        )
+
+    def _save_edited_zone(self, zone: dict[str, Any]) -> config_entries.ConfigFlowResult:
+        """Replace the zone being edited in the config entry and finish the flow."""
+        zones = list(self._config_entry.data.get(CONF_ZONES, []))
+        new_data = dict(self._config_entry.data)
+        new_zones = [z for z in zones if z[CONF_ZONE_NAME] != self._edit_zone_name]
+        new_zones.append(zone)
+        new_data[CONF_ZONES] = new_zones
+        if new_data != dict(self._config_entry.data):
+            _LOGGER.debug("Config updated via edit_zone — zone edited: %s", self._edit_zone_name)
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                data=new_data,
+            )
+        return self.async_create_entry(data={})
+
+    async def async_step_confirm_zone(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Soft guard: unusual zone values need explicit confirmation.
+
+        Same semantics as the initial-setup guard: confirm saves the zone
+        as entered, declining returns to the add/edit form.
+        """
+        if user_input is not None:
+            pending = self._pending_zone
+            self._pending_zone = None
+            if user_input.get("confirm") and pending is not None:
+                if self._pending_action == "edit":
+                    return self._save_edited_zone(pending)
+                return self._save_added_zone(pending)
+            if self._pending_action == "edit":
+                return await self.async_step_edit_zone_detail()
+            return await self.async_step_add_zone()
+
+        return self.async_show_form(
+            step_id="confirm_zone",
+            data_schema=_confirm_zone_schema(),
+            description_placeholders={
+                "zone_name": (self._pending_zone or {}).get(CONF_ZONE_NAME, ""),
+                "warnings": "\n".join(f"- {w}" for w in self._pending_warnings),
+            },
+        )
+
+    async def async_step_check_zones(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        """Audit all configured zones against the plausibility guards.
+
+        Read-only report for installations configured before the guards
+        existed — nothing is modified; fixes go through 'Edit zone'.
+        """
+        if user_input is not None:
+            return self.async_create_entry(data={})
+
+        imperial = _is_imperial(self.hass)
+        zones = self._config_entry.data.get(CONF_ZONES, [])
+        findings = []
+        for z in zones:
+            findings.extend(f"- {z[CONF_ZONE_NAME]}: {w}" for w in _unusual_zone_values(z, imperial))
+        return self.async_show_form(
+            step_id="check_zones",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "zone_count": str(len(zones)),
+                "findings_count": str(len(findings)),
+                "report": "\n".join(findings) if findings else "✓",
+            },
         )
 
     def _remove_zone_device(self, zone_name: str) -> None:

@@ -60,6 +60,13 @@
           "irrigation_time": "Time of day when NeverDry checks the deficit and irrigates if above threshold. Leave empty to disable automatic scheduling"
         }
       },
+      "confirm_zone": {
+        "title": "Unusual zone values",
+        "description": "Zone \"{zone_name}\" has values outside the typical range:\n\n{warnings}\n\nThis often means a unit mix-up (e.g. flow rate entered in L/min instead of L/h). Tick the box to save anyway, or submit without ticking to go back and correct the values.",
+        "data": {
+          "confirm": "These values are correct, save the zone"
+        }
+      },
       "add_another": {
         "title": "Add another zone?",
         "description": "You have configured {zone_count} zone(s): {zone_names}.",
@@ -89,6 +96,7 @@
           "model_params": "Edit model parameters (α, T_base, D_max)",
           "add_zone": "Add a new irrigation zone",
           "edit_zone": "Edit an irrigation zone",
+          "check_zones": "Check configured zones for unusual values",
           "remove_zone": "Remove an irrigation zone"
         }
       },
@@ -121,6 +129,13 @@
           "irrigation_time": "Daily irrigation time"
         }
       },
+      "confirm_zone": {
+        "title": "Unusual zone values",
+        "description": "Zone \"{zone_name}\" has values outside the typical range:\n\n{warnings}\n\nThis often means a unit mix-up (e.g. flow rate entered in L/min instead of L/h). Tick the box to save anyway, or submit without ticking to go back and correct the values.",
+        "data": {
+          "confirm": "These values are correct, save the zone"
+        }
+      },
       "edit_zone": {
         "title": "Edit irrigation zone",
         "data": {
@@ -146,6 +161,10 @@
           "threshold": "Irrigation threshold",
           "irrigation_time": "Daily irrigation time"
         }
+      },
+      "check_zones": {
+        "title": "Check configured zones",
+        "description": "Checked {zone_count} zone(s) — {findings_count} unusual value(s) found:\n\n{report}\n\nUse \"Edit an irrigation zone\" to correct them. Unusual values can still be legitimate (planter zones, sprinkler manifolds) — this is only a plausibility check, nothing was modified."
       },
       "remove_zone": {
         "title": "Remove irrigation zone",

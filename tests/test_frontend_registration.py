@@ -96,8 +96,13 @@ def _make_resources(items=None, loaded=True):
     return resources
 
 
-def _with_lovelace(hass, mode="storage", resources=None):
-    hass.data["lovelace"] = SimpleNamespace(mode=mode, resources=resources or _make_resources())
+def _with_lovelace(hass, mode="storage", resources=None, mode_attr="mode"):
+    """Inject a fake LovelaceData into hass.data.
+
+    ``mode_attr`` selects the dataclass field name: "mode" mirrors HA ≤ 2026.1,
+    "resource_mode" mirrors HA ≥ 2026.2 (renamed in core PR #158265).
+    """
+    hass.data["lovelace"] = SimpleNamespace(**{mode_attr: mode, "resources": resources or _make_resources()})
     return hass.data["lovelace"].resources
 
 
@@ -171,3 +176,45 @@ async def test_yaml_mode_falls_back_to_extra_js_url(frontend_stubs):
     resources.async_create_item.assert_not_awaited()
     add_extra_js_url.assert_called_once()
     assert hass.data[DOMAIN][_FRONTEND_REGISTERED] is True
+
+
+async def test_storage_mode_detected_via_resource_mode(frontend_stubs):
+    """Regression GH #99: HA 2026.2 renamed LovelaceData.mode to resource_mode.
+
+    On HA ≥ 2026.2 the old attribute is gone; the storage-mode detection must
+    read resource_mode, otherwise every install silently falls back to the
+    unreliable add_extra_js_url and the card is never loaded.
+    """
+    add_extra_js_url = frontend_stubs
+    hass = _make_hass()
+    resources = _with_lovelace(hass, mode_attr="resource_mode")
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_awaited_once()
+    add_extra_js_url.assert_not_called()
+    assert hass.data[DOMAIN][_FRONTEND_REGISTERED] is True
+
+
+async def test_yaml_mode_via_resource_mode_falls_back(frontend_stubs):
+    """YAML mode expressed through the renamed attribute also falls back."""
+    add_extra_js_url = frontend_stubs
+    hass = _make_hass()
+    resources = _with_lovelace(hass, mode="yaml", mode_attr="resource_mode")
+
+    await _async_register_frontend(hass)
+
+    resources.async_create_item.assert_not_awaited()
+    add_extra_js_url.assert_called_once()
+
+
+async def test_missing_lovelace_data_logs_fallback(frontend_stubs, caplog):
+    """The fallback path must be diagnosable from the logs (gap behind GH #99)."""
+    add_extra_js_url = frontend_stubs
+    hass = _make_hass()  # no "lovelace" key in hass.data
+
+    with caplog.at_level("WARNING", logger="never_dry"):
+        await _async_register_frontend(hass)
+
+    add_extra_js_url.assert_called_once()
+    assert any("falling back to add_extra_js_url" in r.message for r in caplog.records)

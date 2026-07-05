@@ -60,6 +60,13 @@
           "irrigation_time": "Ora del giorno in cui NeverDry verifica il deficit e irriga se supera la soglia. Lascia vuoto per disabilitare la pianificazione automatica"
         }
       },
+      "confirm_zone": {
+        "title": "Valori zona inusuali",
+        "description": "La zona \"{zone_name}\" ha valori fuori dall'intervallo tipico:\n\n{warnings}\n\nSpesso indica un errore di unità (es. portata inserita in L/min invece che L/h). Spunta la casella per salvare comunque, oppure invia senza spuntare per tornare indietro e correggere i valori.",
+        "data": {
+          "confirm": "I valori sono corretti, salva la zona"
+        }
+      },
       "add_another": {
         "title": "Aggiungere un'altra zona?",
         "description": "Hai configurato {zone_count} zona/e: {zone_names}.",
@@ -89,6 +96,7 @@
           "model_params": "Modifica i parametri del modello (α, T_base, D_max)",
           "add_zone": "Aggiungi una nuova zona di irrigazione",
           "edit_zone": "Modifica una zona di irrigazione",
+          "check_zones": "Verifica le zone configurate (valori inusuali)",
           "remove_zone": "Rimuovi una zona di irrigazione"
         }
       },
@@ -121,6 +129,13 @@
           "irrigation_time": "Orario di irrigazione giornaliero"
         }
       },
+      "confirm_zone": {
+        "title": "Valori zona inusuali",
+        "description": "La zona \"{zone_name}\" ha valori fuori dall'intervallo tipico:\n\n{warnings}\n\nSpesso indica un errore di unità (es. portata inserita in L/min invece che L/h). Spunta la casella per salvare comunque, oppure invia senza spuntare per tornare indietro e correggere i valori.",
+        "data": {
+          "confirm": "I valori sono corretti, salva la zona"
+        }
+      },
       "edit_zone": {
         "title": "Modifica zona di irrigazione",
         "data": {
@@ -146,6 +161,10 @@
           "threshold": "Soglia di irrigazione",
           "irrigation_time": "Orario di irrigazione giornaliero"
         }
+      },
+      "check_zones": {
+        "title": "Verifica zone configurate",
+        "description": "Verificate {zone_count} zone — {findings_count} valori inusuali trovati:\n\n{report}\n\nUsa \"Modifica una zona di irrigazione\" per correggerli. Valori inusuali possono comunque essere legittimi (fioriere, impianti sprinkler): è solo un controllo di plausibilità, nulla è stato modificato."
       },
       "remove_zone": {
         "title": "Rimuovi zona di irrigazione",

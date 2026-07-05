@@ -741,6 +741,40 @@ class IrrigationController:
         state = self._hass.states.get(zone.valve)
         return state is not None and state.state == "off"
 
+    def _fallback_volume_estimate(self, zone, elapsed_s: float, measured: float) -> float:
+        """Estimate delivered volume when the flow sensor measured nothing.
+
+        A session that ends (delivery timeout, hardware auto-close, stop)
+        with the valve open for ``elapsed_s`` but zero measured flow is far
+        more likely a dead/stale flow sensor than a dry pipe. Returning the
+        raw 0.0 would skip the deficit settle entirely: the deficit would
+        survive up to an hour of real watering and the scheduler would
+        immediately re-irrigate on the next cycle. Fall back to the zone's
+        configured nominal flow rate so the water is still credited.
+        """
+        if measured > 0 or elapsed_s <= 0:
+            return measured
+        if zone._flow_rate <= 0:
+            _LOGGER.warning(
+                "Zone '%s': flow sensor measured 0 L after %.0fs with the valve open"
+                " and no flow_rate configured — cannot estimate delivered volume,"
+                " deficit will NOT be adjusted",
+                zone.zone_name,
+                elapsed_s,
+            )
+            return measured
+        estimate = zone._flow_rate * elapsed_s / 60.0
+        _LOGGER.warning(
+            "Zone '%s': flow sensor measured 0 L after %.0fs with the valve open —"
+            " crediting estimated %.1fL from configured flow_rate (%.2f L/min) so"
+            " the deficit is settled",
+            zone.zone_name,
+            elapsed_s,
+            estimate,
+            zone._flow_rate,
+        )
+        return estimate
+
     async def _deliver_estimated_flow(self, zone) -> float:
         """Open valve, wait calculated duration, close valve."""
         duration = zone.duration_s
@@ -829,7 +863,9 @@ class IrrigationController:
                 await self._hass.services.async_call("switch", "turn_off", {"entity_id": zone.valve})
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return 0.0
+                # Credit the water dispensed before the stop — the smart valve
+                # was dosing at its nominal rate, capped at the armed volume.
+                return min(volume, self._fallback_volume_estimate(zone, elapsed, 0.0))
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
 
@@ -898,7 +934,7 @@ class IrrigationController:
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return delivered
+                return self._fallback_volume_estimate(zone, elapsed, delivered)
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
@@ -948,7 +984,7 @@ class IrrigationController:
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return delivered
+        return self._fallback_volume_estimate(zone, elapsed, delivered)
 
     async def _deliver_flow_rate(
         self,
@@ -981,7 +1017,7 @@ class IrrigationController:
                 await self._close_valve(zone.valve)
                 zone.set_irrigating(False)
                 zone.async_write_ha_state()
-                return delivered
+                return self._fallback_volume_estimate(zone, elapsed, delivered)
 
             await asyncio.sleep(FLOW_METER_POLL_INTERVAL_S)
             elapsed += FLOW_METER_POLL_INTERVAL_S
@@ -1031,7 +1067,7 @@ class IrrigationController:
         await self._close_valve(zone.valve)
         zone.set_irrigating(False)
         zone.async_write_ha_state()
-        return delivered
+        return self._fallback_volume_estimate(zone, elapsed, delivered)
 
     def _is_flow_rate_sensor(self, entity_id: str) -> bool:
         """Check if the sensor reports a flow rate (not cumulative volume).
