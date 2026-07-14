@@ -779,6 +779,43 @@ async def test_watchdog_fires_critical_notification(hass):
     assert notifier.is_active("watchzone", NotificationKind.WATCHDOG_TRIGGERED)
 
 
+async def test_max_open_duration_accepts_callable(hass):
+    """A callable max_open_duration_s is re-evaluated on each resolve (AI-150)."""
+    current = {"value": 0.05}
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=lambda: current["value"])
+
+    assert op._current_max_open_duration() == pytest.approx(0.05)
+    current["value"] = 7200.0
+    assert op._current_max_open_duration() == pytest.approx(7200.0)
+
+
+async def test_max_open_duration_static_still_works(hass):
+    """A plain float keeps the pre-AI-150 behaviour."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=123.0)
+    assert op._current_max_open_duration() == pytest.approx(123.0)
+
+
+async def test_watchdog_fires_with_callable_duration(hass):
+    """The watchdog honours the provider value read at open time."""
+    op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=lambda: 0.05)
+
+    async def open_sim():
+        await _yield_loop()
+        await op._handle_switch_state(_state_event("on"))
+
+    bg = asyncio.create_task(open_sim())
+    await op.open()
+    await bg
+
+    assert op.state == ValveState.OPEN
+    hass.services.async_call.reset_mock()
+
+    await asyncio.sleep(0.1)
+
+    turn_off_calls = [c for c in hass.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
+    assert len(turn_off_calls) >= 1
+
+
 async def test_watchdog_cancelled_on_normal_close(hass):
     """After a normal close, the watchdog task is cancelled and not pending."""
     op, _ = _make_operator_with_watchdog(hass, max_open_duration_s=5.0)

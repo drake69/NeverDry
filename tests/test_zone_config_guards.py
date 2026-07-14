@@ -12,9 +12,13 @@ import pytest
 from never_dry import config_flow as cf
 from never_dry.const import (
     CONF_ZONE_AREA,
+    CONF_ZONE_DELIVERY_MODE,
     CONF_ZONE_FLOW_RATE,
     CONF_ZONE_NAME,
     CONF_ZONES,
+    DELIVERY_MODE_ESTIMATED_FLOW,
+    DELIVERY_MODE_FLOW_METER,
+    DELIVERY_MODE_VOLUME_PRESET,
     UNUSUAL_AREA_MIN_M2,
     UNUSUAL_FLOW_MAX_LPM,
     UNUSUAL_FLOW_MIN_LPM,
@@ -104,6 +108,46 @@ class TestUnusualZoneValues:
         assert len(warnings) == 2
         assert "ft²" in warnings[0]
         assert "gal/h" in warnings[1]
+
+
+class TestGuardFlowDeprecationWarning:
+    """flow_meter/volume_preset without a guard flow rate get a deprecation notice."""
+
+    def test_flow_meter_without_guard_flow_flagged(self):
+        zone = {CONF_ZONE_AREA: 20.0, CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER}
+        warnings = cf._unusual_zone_values(zone, imperial=False)
+        assert len(warnings) == 1
+        assert "guard flow rate" in warnings[0]
+        assert "required" in warnings[0]
+
+    def test_volume_preset_without_guard_flow_flagged(self):
+        zone = {CONF_ZONE_AREA: 20.0, CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET}
+        warnings = cf._unusual_zone_values(zone, imperial=False)
+        assert len(warnings) == 1
+        assert "guard flow rate" in warnings[0]
+
+    def test_flow_meter_with_guard_flow_clean(self):
+        zone = {
+            CONF_ZONE_AREA: 20.0,
+            CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+            CONF_ZONE_FLOW_RATE: 3.33,
+        }
+        assert cf._unusual_zone_values(zone, imperial=False) == []
+
+    def test_estimated_flow_without_flow_rate_not_flagged(self):
+        """estimated_flow missing flow_rate is a blocking form error, not a warning."""
+        zone = {CONF_ZONE_AREA: 20.0, CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_ESTIMATED_FLOW}
+        assert cf._unusual_zone_values(zone, imperial=False) == []
+
+    def test_zero_flow_rate_flagged(self):
+        zone = {
+            CONF_ZONE_AREA: 20.0,
+            CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+            CONF_ZONE_FLOW_RATE: 0.0,
+        }
+        warnings = cf._unusual_zone_values(zone, imperial=False)
+        assert len(warnings) == 1
+        assert "guard flow rate" in warnings[0]
 
 
 class TestInitialFlowSoftConfirm:

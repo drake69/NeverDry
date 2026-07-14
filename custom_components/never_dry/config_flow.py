@@ -311,6 +311,14 @@ def _unusual_zone_values(zone: dict, imperial: bool) -> list[str]:
         else:
             warnings.append(f"area {area:.1f} m² < {UNUSUAL_AREA_MIN_M2:.0f} m²")
     flow = zone.get(CONF_ZONE_FLOW_RATE)
+    mode = zone.get(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE)
+    if mode in (DELIVERY_MODE_FLOW_METER, DELIVERY_MODE_VOLUME_PRESET) and not flow:
+        # Deprecation-style notice, not an error: gives existing installs a
+        # smooth transition window before the guard flow becomes mandatory.
+        warnings.append(
+            "guard flow rate not set — used for expected duration and safety-timeout"
+            " scaling; will become required in a future release (target: v1.0)"
+        )
     if flow is not None and flow > 0:
         if imperial:
             shown, unit = flow * _LPM_TO_GPH, "gal/h"

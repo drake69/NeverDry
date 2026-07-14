@@ -124,7 +124,10 @@ class TestVolumePresetDelivery:
                 CONF_ZONE_DELIVERY_TIMEOUT: FLOW_METER_POLL_INTERVAL_S,  # very short timeout
             },
         )
-        zone._zone_deficit = 5.0
+        # AI-150: delivery_timeout scales with the guard-flow duration; keep the
+        # deficit tiny so the configured floor stays the effective timeout.
+        zone._zone_deficit = 0.01
+        assert zone.delivery_timeout == FLOW_METER_POLL_INTERVAL_S
 
         # Valve never closes itself
         valve_state = MagicMock()
@@ -445,23 +448,25 @@ class TestDurationByMode:
         zone._zone_deficit = 5.0
         assert zone.duration_s > 0
 
-    def test_flow_meter_zero_duration(self, hass_mock, di_sensor):
+    def test_flow_meter_guard_duration(self, hass_mock, di_sensor):
+        """AI-150: flow_meter zones estimate duration from the guard flow rate."""
         zone = _make_zone(
             hass_mock,
             di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER},
         )
         zone._zone_deficit = 5.0
-        assert zone.duration_s == 0
+        assert zone.duration_s == round(zone.volume_liters / 8.0 * 60)
 
-    def test_volume_preset_zero_duration(self, hass_mock, di_sensor):
+    def test_volume_preset_guard_duration(self, hass_mock, di_sensor):
+        """AI-150: volume_preset zones estimate duration from the guard flow rate."""
         zone = _make_zone(
             hass_mock,
             di_sensor,
             **{CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET},
         )
         zone._zone_deficit = 5.0
-        assert zone.duration_s == 0
+        assert zone.duration_s == round(zone.volume_liters / 8.0 * 60)
 
 
 class TestDeliveryModeAttributes:
@@ -593,7 +598,15 @@ class TestZeroFlowTimeoutFallback:
 
     @pytest.mark.asyncio
     async def test_timeout_with_dead_flow_meter_settles_deficit(self, hass_mock, di_sensor):
-        """End-to-end reproduction of the reported bug via _irrigate_zones."""
+        """End-to-end reproduction of the reported bug via _irrigate_zones.
+
+        AI-150: delivery_timeout now scales with the guard-flow duration, so
+        the deficit is kept small enough that the configured floor stays the
+        effective timeout (a large deficit would legitimately stretch it).
+        The estimated credit at timeout exceeds the small deficit, so the
+        settle path fully resets it — the point is that the hour of real
+        watering is credited instead of being silently dropped.
+        """
         timeout_s = 2 * FLOW_METER_POLL_INTERVAL_S
         zone = _make_zone(
             hass_mock,
@@ -604,7 +617,8 @@ class TestZeroFlowTimeoutFallback:
                 CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
             },
         )
-        zone._zone_deficit = 5.0
+        zone._zone_deficit = 0.02
+        assert zone.delivery_timeout == timeout_s  # guard duration below the floor
         hass_mock.states.get = MagicMock(
             side_effect=self._stuck_states(zone, "sensor.flow_meter", "100.0", "L"),
         )
@@ -615,9 +629,7 @@ class TestZeroFlowTimeoutFallback:
         # The valve was open for the full timeout at the configured 8 L/min:
         # the settle must credit that water even though the meter read 0.
         expected_liters = 8.0 * timeout_s / 60.0
-        expected_mm = expected_liters * zone._efficiency / zone._area
-        assert zone._zone_deficit == pytest.approx(5.0 - expected_mm, abs=0.01)
-        assert zone._zone_deficit < 5.0
+        assert zone._zone_deficit == 0.0  # estimate covers the small deficit
         assert zone._total_water_delivered == pytest.approx(expected_liters, abs=0.2)
         assert zone._last_irrigated is not None
 
@@ -633,7 +645,9 @@ class TestZeroFlowTimeoutFallback:
                 CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
             },
         )
-        zone._zone_deficit = 5.0
+        # AI-150: small deficit keeps the configured floor as the effective timeout.
+        zone._zone_deficit = 0.02
+        assert zone.delivery_timeout == timeout_s
         hass_mock.states.get = MagicMock(
             side_effect=self._stuck_states(zone, "sensor.flow_meter", "100.0", "L"),
         )
@@ -655,7 +669,9 @@ class TestZeroFlowTimeoutFallback:
                 CONF_ZONE_DELIVERY_TIMEOUT: timeout_s,
             },
         )
-        zone._zone_deficit = 5.0
+        # AI-150: small deficit keeps the configured floor as the effective timeout.
+        zone._zone_deficit = 0.02
+        assert zone.delivery_timeout == timeout_s
         hass_mock.states.get = MagicMock(
             side_effect=self._stuck_states(zone, "sensor.flow_rate", "0.0", "L/min"),
         )

@@ -158,7 +158,7 @@ For each zone, the wizard asks:
 | **Efficiency override** | No | Custom efficiency (0.1–1.0). Overrides the system type default. |
 | **Plant family** | No | Type of plants in this zone — sets a seasonal crop coefficient (Kc) that adjusts water demand throughout the year. See table below. |
 | **Custom Kc** | No | Override Kc (0.1–2.0). If set, overrides the plant family seasonal profile. |
-| **Flow rate (L/min)** | Yes | Measured valve flow rate |
+| **Guard flow rate (L/min)** | For `estimated_flow` | Measured valve flow rate. Required for `estimated_flow`; strongly recommended for `flow_meter` and `volume_preset` too — it drives the expected-duration estimate and lets the safety timeout scale with large deficits (it will become required in a future release). Measure with a bucket and stopwatch. |
 | **Threshold (mm)** | No | Deficit threshold for Mode A triggering (default: 20.0 mm) |
 
 **System type defaults:**
@@ -232,7 +232,7 @@ Shows the volume of water needed for this specific zone in liters.
 |-----------|---------|
 | `zone_name` | Zone display name |
 | `volume_liters` | Water needed [L] |
-| `duration_s` | How long to run the valve [seconds] |
+| `duration_s` | Expected valve run time [seconds] — from the live flow-meter rate while irrigating (reads as remaining time), otherwise from the configured guard flow rate; 0 if neither is available |
 | `deficit_mm` | This zone's current deficit [mm] (per-zone, not shared) |
 | `plant_family` | Plant family key (e.g., "lawn", "vegetables") |
 | `kc` | Current crop coefficient (varies seasonally) |
@@ -358,7 +358,7 @@ What happens:
 3. A baseline is recorded for the flow meter (current cumulative reading, or open timestamp for rate sensors).
 4. An **auto-close monitor** starts in the background. It will close the valve via `switch.turn_off` at the **minimum** of:
    - **Volume needed** — if the zone has a flow meter, the monitor polls it and closes as soon as the delivered volume covers the current deficit-driven target (`volume_liters`). Without a flow meter but with a configured `flow_rate`, the monitor sleeps for the estimated duration `volume / flow_rate`.
-   - **Safety timeout** (`delivery_timeout`, default 1 hour) — always honoured as the upper bound, so a forgotten-open valve cannot run indefinitely.
+   - **Safety timeout** (`delivery_timeout`, default 1 hour) — always honoured as the upper bound, so a forgotten-open valve cannot run indefinitely. When the zone has a guard flow rate configured, the timeout automatically grows to `1.1 ×` the guard-flow duration estimate, so a large deficit is never cut short by the default floor.
 5. When the switch goes `on → off` (either because the user closed it, or because the monitor closed it):
    - `is_irrigating` flips back to `False`.
    - `last_irrigated` is stamped with the current time.

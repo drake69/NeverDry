@@ -171,7 +171,7 @@ V = D_zone · A / η   [L]
 | **Property** | `volume_liters` |
 | **Uses** | `_zone_deficit` (per-zone, not shared) |
 
-### 2.8 Irrigation duration per zone
+### 2.8 Expected irrigation duration per zone
 
 ```
 t = V / Q · 60   [s]
@@ -181,7 +181,28 @@ t = V / Q · 60   [s]
 |------|-------|
 | **Class** | `IrrigationZoneSensor` |
 | **Property** | `duration_s` |
-| **Parameters** | `flow_rate_lpm` (Q) |
+| **Parameters** | `flow_rate_lpm` (guard flow), live flow-meter rate |
+
+`Q` is resolved through a source chain, so the estimate is meaningful for
+every delivery mode:
+
+1. **Live flow-meter rate** — `flow_meter` mode with a rate sensor
+   (L/min, L/h, m³/h, gal/min, gal/h via `flow_utils.read_flow_rate_lpm`)
+   reading > 0. Since `volume_liters` shrinks in real time during a
+   session, the value reads as the estimated *remaining* time while
+   irrigating.
+2. **Configured guard flow rate** (`flow_rate_lpm`) — `flow_meter` at
+   rest or with a cumulative-volume meter, `volume_preset`, and
+   `estimated_flow`.
+3. **0** — no source available; only the `delivery_timeout` floor guards
+   the valve (a once-per-zone warning is logged).
+
+The related safety timeout is `delivery_timeout = max(configured floor,
+1.1 × guard-flow duration)`. It deliberately uses the guard-flow estimate
+only — never the live rate — so a momentary high meter reading cannot
+tighten the `ValveOperator` watchdog. The operator receives the timeout
+as a callable re-evaluated at every valve open (watchdog sleep and
+hardware max-duration write), not as a setup-time snapshot.
 
 ### 2.9 Resolution orders
 
@@ -319,7 +340,7 @@ Services are registered in `IrrigationController.register_services()`.
 | `efficiency` | No | Override efficiency [0.1–1.0] |
 | `plant_family` | No | Plant family → sets seasonal Kc profile |
 | `kc` | No | Override Kc [0.1–2.0] |
-| `flow_rate_lpm` | Yes | Valve flow rate [L/min] |
+| `flow_rate_lpm` | For `estimated_flow` | Guard flow rate [L/min]. Required for `estimated_flow`; recommended for `flow_meter`/`volume_preset`, where it drives the expected-duration estimate and the safety-timeout scaling (deprecation warning in the zone checker; becomes required at v1.0) |
 | `threshold` | No | Mode A trigger threshold [mm] (default 20) |
 | `delivery_mode` | No | Delivery method: `estimated_flow` (timer), `flow_meter` (sensor-monitored), `volume_preset` (smart valve with volume dosing) |
 | `flow_meter_sensor` | No | Flow measurement sensor entity (required if `delivery_mode=flow_meter`) |
