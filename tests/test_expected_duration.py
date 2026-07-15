@@ -163,6 +163,17 @@ class TestFlowMeterDuration:
         guard_warnings = [r for r in caplog.records if "guard flow rate" in r.message]
         assert len(guard_warnings) == 1
 
+    def test_zero_deficit_with_guard_flow_does_not_warn(self, di_sensor, caplog):
+        """Field false positive (2026-07-15): guard duration is 0 at the end
+        of every session because the VOLUME is 0 — with a guard flow
+        configured that must not trigger the 'no guard flow' warning."""
+        hass = _hass_with_meter(42.0, "L")
+        zone = _make_zone(di_sensor, hass, flow_rate=5.0)
+        zone._zone_deficit = 0.0
+        with caplog.at_level(logging.WARNING, logger="custom_components.never_dry"):
+            assert zone.duration_s == 0
+        assert not any("guard flow rate" in r.message for r in caplog.records)
+
     def test_imperial_live_rate(self, di_sensor):
         """gal/min live rate is normalized to L/min before use."""
         hass = _hass_with_meter(1.0, "gal/min")

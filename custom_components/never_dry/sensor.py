@@ -1149,7 +1149,14 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             if rate_lpm is not None:
                 return round(self.volume_liters / rate_lpm * 60)
         guard = self._guard_duration_s
-        if guard <= 0 and self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW and not self._no_guard_flow_warned:
+        # Warn only when the guard FLOW is missing — guard==0 also happens
+        # legitimately whenever the deficit (hence volume) is zero, e.g. at
+        # the end of every session (field false positive, 2026-07-15 12:06).
+        if (
+            self._flow_rate <= 0
+            and self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW
+            and not self._no_guard_flow_warned
+        ):
             self._no_guard_flow_warned = True
             _LOGGER.warning(
                 "Zone '%s' (%s mode) has no guard flow rate configured — expected duration"
