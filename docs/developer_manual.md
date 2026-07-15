@@ -425,6 +425,67 @@ python tests/e2e/smoke.py
 | `reset_deficit` | — | `reset` service completes without error |
 | `config_reload` | — | Config entry reloads and comes back loaded |
 
+### 7.2 Irrigation end-trigger coverage matrix
+
+An irrigation session can be terminated by **eight distinct triggers**. Every
+pair of triggers is a potential race (one fires while the other is armed), and
+each race must leave the valve closed and the deficit settled exactly once.
+This matrix maps each pair to the test(s) that cover it — empty cells are
+known coverage gaps. It is the reference for the valve driver abstraction
+(AI-123), where the safety layers change from *command-close* to
+*verify-close* and every one of these races must be revisited per driver.
+
+**Triggers:**
+
+| Code | Trigger | Where it fires |
+|------|---------|----------------|
+| `TARGET` | Volume target reached (measured, integrated, or device-native) | `_deliver_flow_meter` / `_deliver_flow_rate` loops; smart-valve self-close (`volume_preset`) |
+| `EST` | Estimated duration elapsed (guard-flow timer) | `_deliver_estimated_flow`; manual-open session monitor |
+| `TIMEOUT` | `delivery_timeout` safety limit | all delivery loops; manual safety-close |
+| `STOP` | Global emergency stop (`never_dry.stop`) | `_should_abort` in every loop |
+| `STOPZ` | Per-zone stop (`never_dry.stop_zone`) | `_stop_zone` flag in every loop |
+| `EXT` | External close: hardware auto-close, user manual off, on-device fail-safe / max-duration timer | `_valve_closed_externally`; valve state listener |
+| `WDOG` | ValveOperator software watchdog (`max_open_duration_s`) | `ValveOperator._watchdog` force `turn_off` |
+| `UNLOAD` | Config entry unload / HA restart (`controller.async_stop`) | task cancellation + settle in `finally` |
+
+**Matrix** — diagonal = trigger alone; cell (row, col) = the two triggers
+interacting (symmetric: lower triangle mirrors the upper). Test names without
+prefix live in `tests/test_delivery_modes.py`; `[C]` = `test_controller.py`,
+`[CO]` = `test_controller_with_operator.py`, `[H]` = `test_controller_handlers.py`,
+`[V]` = `test_valve_operator.py`. — = uncovered (gap).
+
+| | TARGET | EST | TIMEOUT | STOP | STOPZ | EXT | WDOG | UNLOAD |
+|---|---|---|---|---|---|---|---|---|
+| **TARGET** | `test_closes_at_target_volume` · `test_measured_flow_wins_over_estimate` · `test_meter_reset_adjusts_baseline` · `test_sends_volume_to_number_entity` | n/a¹ | `test_flow_meter_timeout_zero_flow_credits_estimate` · `test_flow_rate_timeout_zero_flow_credits_estimate` · `test_timeout_with_dead_flow_meter_settles_deficit` · `test_timeout_forces_close` | `test_stop_during_flow_meter` · `test_stop_during_flow_rate` · `test_stop_during_preset` · `[CO] test_volume_preset_stop_during_run` · `[CO] test_irrigate_zones_clears_snapshot_on_abort` | `test_stop_zone_ends_flow_meter` | `test_external_close_ends_flow_rate` | `[V] test_watchdog_cancelled_on_normal_close` | — |
+| **EST** | | `test_opens_waits_closes` · `test_dispatches_estimated_flow` · `[C] test_estimated_duration_used_when_no_flow_meter` | covered implicitly² | `[C] test_stop_interrupts_cycle` · `[C] test_no_event_on_stop` | — | `[C] test_manual_close_cancels_monitor_task` · `[C] test_manual_close_records_session_duration` | — | — |
+| **TIMEOUT** | | | `[C] test_no_target_falls_back_to_timeout` · `test_zero_flow_without_flow_rate_cannot_estimate` | — | — | — | —³ | — |
+| **STOP** | | | | `[C] test_stop_closes_all_valves` · `[CO] test_emergency_stop_closes_in_parallel` · `[C] test_stop_sets_running_false` · `[C] test_stop_is_never_throttled` | — | — | — | — |
+| **STOPZ** | | | | | `[H] TestHandleStopZone::test_closes_valve_and_clears_state` | — | — | — |
+| **EXT** | | | | | | `[C] test_manual_close_resets_deficit_no_flow_meter` · `[C] test_flow_meter_compensates_deficit` · `[C] test_manual_close_fires_event` | — | — |
+| **WDOG** | | | | | | | `[V] test_watchdog_fires_and_calls_turn_off` · `[V] test_watchdog_fires_critical_notification` · `[V] test_watchdog_not_started_when_valve_not_open` | `[V] test_watchdog_cancelled_on_unload` |
+| **UNLOAD** | | | | | | | | `[V] test_async_unload_releases_subscriptions` (operator only)⁴ |
+
+Notes:
+
+1. `TARGET` and `EST` are never armed together for the same zone: a delivery
+   mode either aims at a volume target or sleeps for the estimated duration.
+2. `EST × TIMEOUT`: the manual-session monitor sleeps for
+   `min(estimated duration, delivery_timeout)`; the estimated-duration test
+   exercises the `min()` but no test forces the timeout side to win.
+3. `TIMEOUT × WDOG`: both derive from `delivery_timeout`, but nothing tests
+   which fires first or that firing both is harmless (idempotent close).
+4. No test covers `controller.async_stop()` mid-delivery (settle on entry
+   reload / HA restart); the operator-side unload is covered.
+
+**Known gaps** (empty cells) — priority ones for the driver abstraction work:
+`STOP × WDOG`, `EXT × WDOG` (with native-volume drivers the device closes
+itself, so the watchdog must verify instead of command), `TIMEOUT × STOP/STOPZ`,
+`STOPZ × EST/EXT`, and the entire `UNLOAD` column except the watchdog cell.
+The hardware max-duration *arming* is covered separately by the
+`test_hw_max_duration_*` family in `test_valve_operator.py` (write-on-open,
+idempotency, MQTT fallback); those tests do not simulate the resulting close,
+which would surface as `EXT`.
+
 ## 8. Adding a new ET tier
 
 To add a new ET calculation method (e.g., Hargreaves-Samani):
