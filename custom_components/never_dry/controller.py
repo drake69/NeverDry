@@ -1299,6 +1299,18 @@ class IrrigationController:
         global ``_running`` flag for valves without an operator.
         """
         entity_id = event.data.get("entity_id")
+        if self._running and self._active_valve == entity_id:
+            # Commanded delivery in progress for THIS valve: any state
+            # change belongs to that session and its loop settles it.
+            # Do NOT trust the operator FSM here — on a hardware
+            # self-close (e.g. Sonoff ZFE on-device dose) the operator
+            # processes the 'off' event first and is already back to
+            # IDLE by the time this listener runs, which used to make
+            # the close look manual and fully reset the deficit while
+            # the delivery loop was about to credit the partial
+            # (field bug, 2026-07-15: 640 s delivered of 1055 s planned,
+            # deficit zeroed instead of keeping the remaining third).
+            return
         operator = self._valve_operators.get(entity_id) if entity_id else None
         if operator is not None:
             if operator.state != ValveState.IDLE:
