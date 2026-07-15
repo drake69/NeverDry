@@ -39,14 +39,6 @@ from .const import (
     EVENT_IRRIGATION_COMPLETE,
     FLOW_METER_POLL_INTERVAL_S,
     MIN_SERVICE_INTERVAL_S,
-    SERVICE_IRRIGATE_ALL,
-    SERVICE_IRRIGATE_ZONE,
-    SERVICE_MARK_IRRIGATED,
-    SERVICE_RESET,
-    SERVICE_RESET_VALVE,
-    SERVICE_SET_DEFICIT,
-    SERVICE_STOP,
-    SERVICE_STOP_ZONE,
 )
 from .valve_fsm import ValveState
 from .valve_notifier import NotificationKind, Severity, ValveNotifier
@@ -145,17 +137,23 @@ class IrrigationController:
         """Return the mapping of switch entity_id → ValveOperator."""
         return self._valve_operators
 
-    def register_services(self) -> None:
-        """Register all irrigation services with Home Assistant."""
-        self._hass.services.async_register(DOMAIN, SERVICE_RESET, self._handle_reset)
-        self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ZONE, self._handle_irrigate_zone)
-        self._hass.services.async_register(DOMAIN, SERVICE_IRRIGATE_ALL, self._handle_irrigate_all)
-        self._hass.services.async_register(DOMAIN, SERVICE_STOP, self._handle_stop)
-        self._hass.services.async_register(DOMAIN, SERVICE_STOP_ZONE, self._handle_stop_zone)
-        self._hass.services.async_register(DOMAIN, SERVICE_MARK_IRRIGATED, self._handle_mark_irrigated)
-        self._hass.services.async_register(DOMAIN, SERVICE_RESET_VALVE, self._handle_reset_valve)
-        self._hass.services.async_register(DOMAIN, SERVICE_SET_DEFICIT, self._handle_set_deficit)
+    @property
+    def zone_names(self) -> list[str]:
+        """Names of the zones this controller manages."""
+        return list(self._zones.keys())
 
+    def has_zone(self, zone_name: str) -> bool:
+        """True when this controller manages the given zone."""
+        return zone_name in self._zones
+
+    def register_services(self) -> None:
+        """Register this controller's state listeners and schedulers.
+
+        HA services are NOT registered here: they are per-domain, so a
+        second config entry would silently capture every ``never_dry.*``
+        call (GH #105). ``services.async_setup_services`` registers them
+        once and dispatches to the controller that owns the target zone.
+        """
         # Monitor valve state changes to detect manual irrigation
         valve_entities = [v for v in self._valve_to_zone if v]
         if valve_entities:

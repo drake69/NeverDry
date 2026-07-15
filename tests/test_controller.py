@@ -22,9 +22,11 @@ class TestControllerState:
         assert controller.is_running is False
         assert controller.active_valve is None
 
-    def test_register_services(self, controller, hass_mock):
+    def test_register_services_does_not_register_ha_services(self, controller, hass_mock):
+        """GH #105: HA services are domain-level (services.py), never per
+        controller — a second entry would capture every never_dry.* call."""
         controller.register_services()
-        assert hass_mock.services.async_register.call_count == 8
+        hass_mock.services.async_register.assert_not_called()
 
 
 class TestIrrigateSingleZone:

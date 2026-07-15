@@ -94,6 +94,7 @@ from .const import (
     UNUSUAL_FLOW_MAX_LPM,
 )
 from .controller import IrrigationController
+from .services import async_setup_services
 from .unit_convert import LPM_TO_GPH, LPM_TO_LPH
 
 _LOGGER = logging.getLogger(__name__)
@@ -435,7 +436,10 @@ async def async_setup_platform(
     """Set up the NeverDry sensors from YAML configuration."""
     entities, di_sensor, zone_sensors = _create_entities(hass, config)
     async_add_entities(entities, True)
-    _setup_controller(hass, config, di_sensor, zone_sensors)
+    controller = _setup_controller(hass, config, di_sensor, zone_sensors)
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN]["_controller_yaml"] = controller
+    async_setup_services(hass)
 
 
 async def async_setup_entry(
@@ -453,6 +457,10 @@ async def async_setup_entry(
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][f"_controller_{entry.entry_id}"] = controller
     hass.data[DOMAIN][f"_operators_{entry.entry_id}"] = controller.valve_operators
+    # Domain services are registered once and dispatch across ALL entries'
+    # controllers (GH #105) — never per controller, or the last entry to
+    # load would capture every never_dry.* call.
+    async_setup_services(hass)
 
 
 # ══════════════════════════════════════════════════════════
@@ -1300,7 +1308,11 @@ class ZoneYearlyWaterSensor(SensorEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
+    # WATER (not VOLUME_STORAGE): HA rejects total_increasing on
+    # volume_storage — that class means "amount currently stored", while
+    # this is a cumulative consumption total (GH #105). WATER also makes
+    # the sensor usable in the HA Energy dashboard water tracking.
+    _attr_device_class = SensorDeviceClass.WATER
     _attr_name = "Yearly water"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING

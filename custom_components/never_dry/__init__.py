@@ -21,6 +21,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_ZONE_NAME, CONF_ZONES, CONFIG_VERSION, DOMAIN
+from .services import async_unload_services
 
 
 def zone_slug(zone_name: str) -> str:
@@ -244,6 +245,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await hass.async_add_executor_job(_teardown_file_logger, handler)
         hass.data[DOMAIN].pop(entry.entry_id, None)
         hass.data[DOMAIN].pop(f"_operators_{entry.entry_id}", None)
+        # Drop the domain services when the last controller is gone.
+        async_unload_services(hass)
     return unload_ok
 
 

@@ -37,6 +37,7 @@ def _create_ha_stubs():
         PRECIPITATION_INTENSITY = "precipitation_intensity"
         VOLUME_FLOW_RATE = "volume_flow_rate"
         VOLUME_STORAGE = "volume_storage"
+        WATER = "water"
 
     sensor_mod.SensorStateClass = SensorStateClass
     sensor_mod.SensorDeviceClass = SensorDeviceClass
