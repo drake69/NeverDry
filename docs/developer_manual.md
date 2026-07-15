@@ -452,18 +452,20 @@ known coverage gaps. It is the reference for the valve driver abstraction
 interacting (symmetric: lower triangle mirrors the upper). Test names without
 prefix live in `tests/test_delivery_modes.py`; `[C]` = `test_controller.py`,
 `[CO]` = `test_controller_with_operator.py`, `[H]` = `test_controller_handlers.py`,
-`[V]` = `test_valve_operator.py`. — = uncovered (gap).
+`[V]` = `test_valve_operator.py`, `[M]` = `test_end_trigger_matrix.py`
+(race-matrix tests: each asserts the deficit decrement, the last-session
+volume/running-time coherence, and single-settle).
 
 | | TARGET | EST | TIMEOUT | STOP | STOPZ | EXT | WDOG | UNLOAD |
 |---|---|---|---|---|---|---|---|---|
-| **TARGET** | `test_closes_at_target_volume` · `test_measured_flow_wins_over_estimate` · `test_meter_reset_adjusts_baseline` · `test_sends_volume_to_number_entity` | n/a¹ | `test_flow_meter_timeout_zero_flow_credits_estimate` · `test_flow_rate_timeout_zero_flow_credits_estimate` · `test_timeout_with_dead_flow_meter_settles_deficit` · `test_timeout_forces_close` | `test_stop_during_flow_meter` · `test_stop_during_flow_rate` · `test_stop_during_preset` · `[CO] test_volume_preset_stop_during_run` · `[CO] test_irrigate_zones_clears_snapshot_on_abort` | `test_stop_zone_ends_flow_meter` | `test_external_close_ends_flow_rate` | `[V] test_watchdog_cancelled_on_normal_close` | — |
-| **EST** | | `test_opens_waits_closes` · `test_dispatches_estimated_flow` · `[C] test_estimated_duration_used_when_no_flow_meter` | covered implicitly² | `[C] test_stop_interrupts_cycle` · `[C] test_no_event_on_stop` | — | `[C] test_manual_close_cancels_monitor_task` · `[C] test_manual_close_records_session_duration` | — | — |
-| **TIMEOUT** | | | `[C] test_no_target_falls_back_to_timeout` · `test_zero_flow_without_flow_rate_cannot_estimate` | — | — | — | —³ | — |
-| **STOP** | | | | `[C] test_stop_closes_all_valves` · `[CO] test_emergency_stop_closes_in_parallel` · `[C] test_stop_sets_running_false` · `[C] test_stop_is_never_throttled` | — | — | — | — |
-| **STOPZ** | | | | | `[H] TestHandleStopZone::test_closes_valve_and_clears_state` | — | — | — |
-| **EXT** | | | | | | `[C] test_manual_close_resets_deficit_no_flow_meter` · `[C] test_flow_meter_compensates_deficit` · `[C] test_manual_close_fires_event` | — | — |
+| **TARGET** | `test_closes_at_target_volume` · `test_measured_flow_wins_over_estimate` · `test_meter_reset_adjusts_baseline` · `test_sends_volume_to_number_entity` | n/a¹ | `test_flow_meter_timeout_zero_flow_credits_estimate` · `test_flow_rate_timeout_zero_flow_credits_estimate` · `test_timeout_with_dead_flow_meter_settles_deficit` · `test_timeout_forces_close` | `test_stop_during_flow_meter` · `test_stop_during_flow_rate` · `test_stop_during_preset` · `[CO] test_volume_preset_stop_during_run` · `[CO] test_irrigate_zones_clears_snapshot_on_abort` | `test_stop_zone_ends_flow_meter` | `test_external_close_ends_flow_rate` | `[V] test_watchdog_cancelled_on_normal_close` | `[M] test_unload_mid_flow_meter_settles_measured_partial` |
+| **EST** | | `test_opens_waits_closes` · `test_dispatches_estimated_flow` · `[C] test_estimated_duration_used_when_no_flow_meter` | covered implicitly² | `[C] test_stop_interrupts_cycle` · `[C] test_no_event_on_stop` | `[M] test_stop_zone_mid_estimated_flow_credits_elapsed_fraction` | `[C] test_manual_close_cancels_monitor_task` · `[C] test_manual_close_records_session_duration` | `[M] test_watchdog_forced_close_mid_estimated_flow_credits_elapsed_fraction`⁵ | `[M] test_unload_mid_estimated_flow_credits_elapsed_fraction` |
+| **TIMEOUT** | | | `[C] test_no_target_falls_back_to_timeout` · `test_zero_flow_without_flow_rate_cannot_estimate` | `[M] test_stop_just_before_timeout_settles_once` | `[M] test_stop_zone_just_before_timeout_settles_once` | `[M] test_external_close_before_timeout_settles_estimate` | `[M] test_watchdog_close_races_delivery_timeout_single_settle`⁵ | `[M] test_unload_races_delivery_timeout_single_settle` |
+| **STOP** | | | | `[C] test_stop_closes_all_valves` · `[CO] test_emergency_stop_closes_in_parallel` · `[C] test_stop_sets_running_false` · `[C] test_stop_is_never_throttled` | `[M] test_global_stop_and_stop_zone_together_settle_once` | `[M] test_global_stop_with_valve_already_closed_externally` | `[M] test_global_stop_races_watchdog_force_close`⁵ | `[M] test_global_stop_then_unload_settles_once` |
+| **STOPZ** | | | | | `[H] TestHandleStopZone::test_closes_valve_and_clears_state` | `[M] test_stop_zone_with_valve_already_closed_externally` | `[M] test_stop_zone_races_watchdog_force_close`⁵ | `[M] test_stop_zone_then_unload_settles_once` |
+| **EXT** | | | | | | `[C] test_manual_close_resets_deficit_no_flow_meter` · `[C] test_flow_meter_compensates_deficit` · `[C] test_manual_close_fires_event` | `[M] test_external_close_then_late_watchdog_off_no_double_settle`⁵ | `[M] test_external_close_then_unload_no_double_settle` |
 | **WDOG** | | | | | | | `[V] test_watchdog_fires_and_calls_turn_off` · `[V] test_watchdog_fires_critical_notification` · `[V] test_watchdog_not_started_when_valve_not_open` | `[V] test_watchdog_cancelled_on_unload` |
-| **UNLOAD** | | | | | | | | `[V] test_async_unload_releases_subscriptions` (operator only)⁴ |
+| **UNLOAD** | | | | | | | | `[V] test_async_unload_releases_subscriptions` · `[M] test_unload_mid_flow_meter_settles_measured_partial` (controller side) |
 
 Notes:
 
@@ -472,19 +474,38 @@ Notes:
 2. `EST × TIMEOUT`: the manual-session monitor sleeps for
    `min(estimated duration, delivery_timeout)`; the estimated-duration test
    exercises the `min()` but no test forces the timeout side to win.
-3. `TIMEOUT × WDOG`: both derive from `delivery_timeout`, but nothing tests
-   which fires first or that firing both is harmless (idempotent close).
-4. No test covers `controller.async_stop()` mid-delivery (settle on entry
-   reload / HA restart); the operator-side unload is covered.
+3. `TIMEOUT × WDOG`: both derive from `delivery_timeout`; the `[M]` test
+   verifies that firing both in the same window is harmless (idempotent
+   close, single settle).
+4. `controller.async_stop()` mid-delivery (entry reload / HA restart) is
+   covered by the `[M] *_unload_*` tests; the operator-side unload by `[V]`.
+5. In `[M]` tests the watchdog side is *simulated*: the forced
+   `switch.turn_off` is represented by the valve state flipping to `off`
+   mid-loop, which is exactly how the controller perceives it. The
+   watchdog's own firing logic is covered in `test_valve_operator.py`; an
+   integration test with a real `ValveOperator` wired into
+   `_irrigate_zones` remains future work for the driver abstraction.
 
-**Known gaps** (empty cells) — priority ones for the driver abstraction work:
-`STOP × WDOG`, `EXT × WDOG` (with native-volume drivers the device closes
-itself, so the watchdog must verify instead of command), `TIMEOUT × STOP/STOPZ`,
-`STOPZ × EST/EXT`, and the entire `UNLOAD` column except the watchdog cell.
-The hardware max-duration *arming* is covered separately by the
+All previously-empty cells are now covered by `test_end_trigger_matrix.py`:
+every `[M]` test asserts the same contract — deficit decremented by exactly
+the credited volume, last-session history (volume + running time) internally
+coherent, and settle executed exactly once even when two triggers fire in the
+same window. The hardware max-duration *arming* is covered separately by the
 `test_hw_max_duration_*` family in `test_valve_operator.py` (write-on-open,
-idempotency, MQTT fallback); those tests do not simulate the resulting close,
-which would surface as `EXT`.
+idempotency, MQTT fallback); the resulting close surfaces as `EXT`.
+
+**Constants used by the `[M]` race-matrix tests:**
+
+| Constant | Value | Defined in | Description |
+|----------|-------|-----------|-------------|
+| `FLOW_METER_POLL_INTERVAL_S` | 2 s | `const.py` (product) | Poll cadence of the metered delivery loops; every race lands on a multiple of this tick |
+| `DEFAULT_DELIVERY_TIMEOUT_S` | 3600 s | `const.py` (product) | Production safety-timeout floor; the tests override it per zone to keep loops short |
+| `TIMEOUT_S` | 4 s (= 2 polls) | `test_end_trigger_matrix.py` | Per-zone `delivery_timeout` used in the tests: two poll windows, so a race can land before, inside, or at expiry |
+| `AREA` | 20 m² | `test_end_trigger_matrix.py` | Zone area; with `EFF` it converts credited liters into the expected deficit decrement (`mm = L × EFF / AREA`) |
+| `EFF` | 0.90 | `test_end_trigger_matrix.py` | Zone distribution efficiency |
+| `FLOW` | 8 L/min | `test_end_trigger_matrix.py` | Guard flow rate: drives the estimated duration, the guard-flow fallback credit (`L = FLOW × elapsed / 60`) and the timeout scaling |
+| zone deficits | 0.02–0.05 mm | per test | Deliberately tiny so the guard-scaled `delivery_timeout` stays at the configured 4 s floor (loops end in seconds, compatible with the guard-duration timeout scaling) |
+| `VALVE`, `METER` | entity ids | `test_end_trigger_matrix.py` | Scripted through the `_Env` helper: mutable valve state (`on`/`off`) simulates external/watchdog closes; `meter_step` makes the meter progress (measured credit) or stay frozen (guard-flow fallback credit) |
 
 ## 8. Adding a new ET tier
 
