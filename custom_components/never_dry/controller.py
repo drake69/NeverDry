@@ -1365,13 +1365,21 @@ class IrrigationController:
         elif old_state.state == "on" and new_state.state == "off":
             if entity_id in self._controller_closing:
                 return  # NeverDry-initiated close — not a manual event
+            if entity_id not in self._manual_valve_open:
+                # No manual session was ever tracked for this valve: the
+                # close belongs to a commanded delivery (its loop settles
+                # the session — even in the window where an emergency stop
+                # has already cleared _running/_active_valve) or it is a
+                # stray event. Treating it as manual used to fully reset
+                # the deficit (field bug, 2026-07-15).
+                return
             # Cancel the safety watchdog: the user (or the watchdog itself)
             # already closed the valve.
             task = self._manual_safety_tasks.pop(entity_id, None)
             if task and not task.done():
                 task.cancel()
             # Valve closed — compensate deficit
-            baseline = self._manual_valve_open.pop(entity_id, None)
+            baseline = self._manual_valve_open.pop(entity_id)
             zone.set_irrigating(False)
 
             delivered_for_log: float = 0.0
