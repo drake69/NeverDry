@@ -54,3 +54,7 @@ jobs:
         with:
           generate_release_notes: true
           files: never_dry.zip
+          # Tags with a prerelease suffix (v0.11.0-beta.1) must be marked as
+          # pre-release: HACS only offers them to users who enabled beta
+          # versions, everyone else stays on the latest stable release.
+          prerelease: ${{ contains(github.ref_name, '-') }}

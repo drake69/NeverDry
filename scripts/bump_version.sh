@@ -31,8 +31,10 @@ fi
 
 NEW_VERSION="$1"
 
-if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "ERROR: Version must be semver format (X.Y.Z), got: $NEW_VERSION"
+# Accept stable (X.Y.Z) and prerelease (X.Y.Z-beta.N) versions. The release
+# workflow marks tags containing '-' as GitHub pre-releases (HACS beta channel).
+if ! echo "$NEW_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
+    echo "ERROR: Version must be semver format (X.Y.Z or X.Y.Z-beta.N), got: $NEW_VERSION"
     exit 1
 fi
 
