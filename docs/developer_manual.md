@@ -439,6 +439,28 @@ To add a new ET calculation method (e.g., Hargreaves-Samani):
 
 ## 9. Versioning and releases
 
+### Branching model
+
+Two long-lived branches (adopted 2026-07-16):
+
+| Branch | Role | Rules |
+|--------|------|-------|
+| `main` | **Production.** What HACS users install: every release tag (`vX.Y.Z`) is cut from here. | Protected. No direct pushes; changes land only via reviewed PRs from `develop` (or hotfix branches). Must always be releasable. |
+| `develop` | **Integration & testing.** Where feature/fix branches merge first and where field testing on the test HA instance happens. | Feature branches (`feature/*`, `fix/*`, `docs/*`) branch off `develop` and merge back into it. Deploy to the test HA instance from here. |
+
+Flow:
+
+```
+feature/x ──┐
+fix/y ──────┼──► develop ──(field-verified, PR)──► main ──(tag vX.Y.Z)──► HACS release
+docs/z ─────┘
+```
+
+- **Merge into `develop`** as soon as a branch is green (CI + local suite); `develop` is allowed to hold work that is not yet field-verified.
+- **PR `develop` → `main`** only when the accumulated changes have been verified on the test installation. Releases stay event-driven (milestones, HACS deadlines) or monthly — never one release per bugfix.
+- **Hotfixes**: branch from `main`, fix, PR back to `main`, then merge `main` back into `develop` to keep the branches converged.
+- **Testers without a dev setup** cannot point HACS at a branch: HACS installs GitHub *releases* from `main` only. To give testers early builds, publish a **pre-release** (e.g. `v0.11.0-beta.1`) — users who enable beta versions in HACS ("Redownload" → show beta) receive it; everyone else stays on the latest stable. Manual installation (copying `custom_components/never_dry/` from a branch checkout) remains possible for developers.
+
 ### Version scheme
 
 NeverDry follows **semantic versioning** (SemVer): `MAJOR.MINOR.PATCH`.
