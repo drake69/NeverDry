@@ -60,7 +60,7 @@ If a valve doesn't respond after three attempts, NeverDry blocks that zone and s
 |--------|-------------|-------------|
 | `sensor.<zone>_volume` | L | Volume needed by the next session; attributes: `duration_s`, `deficit_mm`, `kc`, `plant_family`, `irrigating`, ... |
 | `sensor.<zone>_deficit` | mm | Zone water deficit; attributes: `valve_fsm_state`, `valve_in_maintenance`, `irrigating`, `flow_rate_lpm` |
-| `sensor.<zone>_duration` | s | Estimated duration of the next session |
+| `sensor.<zone>_duration` | s | Expected duration of the next session (live remaining-time estimate while irrigating with a flow-rate meter) |
 | `sensor.<zone>_last_irrigated` | timestamp | When the zone was last irrigated |
 | `sensor.<zone>_last_source` | — | What triggered the last irrigation (service, button, schedule, ...) |
 | `sensor.<zone>_last_volume` | L | Water delivered by the last session |
@@ -197,7 +197,7 @@ NeverDry is configured entirely through the UI — no YAML required.
 | Efficiency | No | (from type) | Override distribution efficiency [0.1–1.0] |
 | Plant family | No | — | Sets seasonal Kc profile |
 | Custom Kc | No | — | Override Kc [0.1–2.0] — use [NeverDry Planner](https://drake69.github.io/neverdry-planner/) to estimate it |
-| Flow rate | Yes | — | Valve flow rate [L/min] |
+| Guard flow rate | For timer mode | — | Valve flow rate [L/min]. Required for timer-based zones; recommended for flow-meter and volume-dosing zones too, where it drives the expected duration and the safety-timeout scaling |
 | Threshold | No | 20.0 | Mode A trigger [mm] |
 | Battery sensor | No | — | Valve battery sensor — mirrored in the zone device card |
 | Flow meter sensor | No | — | Flow meter entity — mirrored in the zone device card |
@@ -232,6 +232,14 @@ t    = V / FlowRate × 60                   [s]     irrigation duration
 - [User Manual](docs/user_manual.md)
 - [Developer Manual](docs/developer_manual.md)
 - [Project Homepage](https://drake69.github.io/NeverDry/)
+
+## Bugs & Feature Requests
+
+Found a bug or have an idea? Open an issue — reports from real gardens are what drive this project forward:
+
+- 🐛 **[Report a bug](https://github.com/drake69/NeverDry/issues/new?template=bug_report.md)** — include your HA version, NeverDry version, valve hardware, and the relevant `custom_components.never_dry` debug log lines
+- 💡 **[Request a feature](https://github.com/drake69/NeverDry/issues/new?template=feature_request.md)** — describe your irrigation setup and what you're trying to achieve
+- 💬 **[HA Community thread](https://community.home-assistant.io/t/neverdry-smart-irrigation-that-calculates-when-and-how-long-to-water-fao-56-water-balance-hacs/1013835)** — for setup questions and general discussion
 
 ## Support
 

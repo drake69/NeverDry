@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from time import monotonic
@@ -119,7 +120,7 @@ class ValveOperator:
         backoff_s: tuple[float, ...] | None = None,
         flow_zero_threshold: float = 0.05,
         notifier: ValveNotifier | None = None,
-        max_open_duration_s: float = 3600.0,
+        max_open_duration_s: float | Callable[[], float] = 3600.0,
         hw_max_duration_entity: str | None = None,
         hw_max_duration_multiplier: float = 1.0,
         hw_max_duration_topic: str | None = None,
@@ -136,6 +137,9 @@ class ValveOperator:
         self._backoff_s = backoff_s if backoff_s is not None else self.DEFAULT_BACKOFF_S
         self._flow_zero_threshold = flow_zero_threshold
         self._notifier = notifier
+        # Static float or zero-arg callable re-evaluated at every valve
+        # open, so the watchdog and the hardware timer track the current
+        # deficit instead of a setup-time snapshot.
         self._max_open_duration_s = max_open_duration_s
         self._hw_max_duration_entity = hw_max_duration_entity
         self._hw_max_duration_multiplier = hw_max_duration_multiplier
@@ -180,6 +184,12 @@ class ValveOperator:
     def latency_diagnostics(self) -> dict:
         """Return latency statistics for this valve (open and close windows)."""
         return self._latency.as_dict()
+
+    def _current_max_open_duration(self) -> float:
+        """Resolve the max-open duration, evaluating the provider if callable."""
+        if callable(self._max_open_duration_s):
+            return float(self._max_open_duration_s())
+        return float(self._max_open_duration_s)
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -556,7 +566,7 @@ class ValveOperator:
         if not has_entity and not has_topic:
             return
         self._hw_duration_set = True
-        value = round(self._max_open_duration_s * self._hw_max_duration_multiplier, 1)
+        value = round(self._current_max_open_duration() * self._hw_max_duration_multiplier, 1)
 
         if has_entity:
             try:
@@ -607,14 +617,15 @@ class ValveOperator:
 
     async def _watchdog(self) -> None:
         """Absolute safety timer: force-close the valve if it stays open too long."""
+        max_open_s = self._current_max_open_duration()
         try:
-            await asyncio.sleep(self._max_open_duration_s)
+            await asyncio.sleep(max_open_s)
         except asyncio.CancelledError:
             return
         _LOGGER.error(
             "Valve '%s' watchdog triggered after %.0f s open — forcing turn_off",
             self._zone_name,
-            self._max_open_duration_s,
+            max_open_s,
         )
         await self._call_switch("turn_off")
         if self._notifier is not None:
@@ -622,7 +633,7 @@ class ValveOperator:
                 self._zone_name,
                 NotificationKind.WATCHDOG_TRIGGERED,
                 Severity.CRITICAL,
-                context={"duration_min": int(self._max_open_duration_s / 60)},
+                context={"duration_min": int(max_open_s / 60)},
             )
 
     # ── Timer plumbing ───────────────────────────────────────────────

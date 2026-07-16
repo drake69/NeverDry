@@ -25,6 +25,7 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 
+from . import flow_utils
 from .const import (
     ANOMALY_DEFICIT_MULTIPLIER,
     ATTR_DEFICIT_MM,
@@ -54,7 +55,6 @@ from .valve_operator import OperationStatus, ValveOperator
 
 MONITORING_INTERVAL = 6 * 3600  # 6 hours in seconds
 AUTO_OPEN_GRACE_S = 3.0  # volume_preset: wait this long for smart-valve auto-open
-_GALLON_TO_LITER = 3.785411784  # US liquid gallon → liters
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1069,90 +1069,34 @@ class IrrigationController:
         zone.async_write_ha_state()
         return self._fallback_volume_estimate(zone, elapsed, delivered)
 
-    def _is_flow_rate_sensor(self, entity_id: str) -> bool:
-        """Check if the sensor reports a flow rate (not cumulative volume).
+    # Thin wrappers around the shared helpers in ``flow_utils`` — kept as
+    # methods so existing call sites and tests keep working unchanged.
 
-        Recognizes both metric (L/h, L/min, m³/h) and imperial (gal/min,
-        gal/h) units. When Home Assistant runs in US-customary mode, ZHA
-        flow sensors are exposed in gallons, so these must be detected too.
-        """
-        unit = (self._get_flow_meter_unit(entity_id) or "").lower()
-        return unit in (
-            "l/h",
-            "l/min",
-            "m³/h",
-            "gal/min",
-            "gal/h",
-        )
+    def _is_flow_rate_sensor(self, entity_id: str) -> bool:
+        """Check if the sensor reports a flow rate (not cumulative volume)."""
+        return flow_utils.is_flow_rate_sensor(self._hass, entity_id)
 
     def _get_flow_meter_unit(self, entity_id: str) -> str | None:
         """Get the unit of measurement of a flow meter sensor."""
-        state = self._hass.states.get(entity_id)
-        if state is None:
-            return None
-        return state.attributes.get("unit_of_measurement")
+        return flow_utils.get_flow_meter_unit(self._hass, entity_id)
 
     def _read_flow_meter(self, entity_id: str) -> float | None:
         """Read the current value of a flow meter sensor."""
-        state = self._hass.states.get(entity_id)
-        if state is None or state.state in ("unknown", "unavailable"):
-            return None
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            return None
+        return flow_utils.read_flow_meter(self._hass, entity_id)
 
     def _read_volume_liters(self, entity_id: str) -> float | None:
-        """Read a cumulative-volume sensor and normalize to liters in one fetch.
-
-        Reads value and unit from a single ``states.get`` so the result is
-        consistent and imperial (gallons) readings are converted to liters.
-        """
-        state = self._hass.states.get(entity_id)
-        if state is None or state.state in ("unknown", "unavailable"):
-            return None
-        try:
-            value = float(state.state)
-        except (ValueError, TypeError):
-            return None
-        return self._volume_to_liters(value, state.attributes.get("unit_of_measurement"))
+        """Read a cumulative-volume sensor and normalize to liters in one fetch."""
+        return flow_utils.read_volume_liters(self._hass, entity_id)
 
     @staticmethod
     def _rate_to_lpm(rate: float, unit: str | None) -> float:
-        """Normalize a flow-rate reading to liters per minute.
-
-        Handles metric (L/min, L/h, m³/h) and imperial (gal/min, gal/h)
-        units. When HA runs in US-customary mode the underlying ZHA sensor
-        is exposed in gallons, so the raw value must be converted before it
-        is integrated into a delivered volume.
-        """
-        u = (unit or "").lower()
-        if u == "l/min":
-            return rate
-        if u == "l/h":
-            return rate / 60.0
-        if u == "m³/h":
-            return rate * 1000.0 / 60.0
-        if u == "gal/min":
-            return rate * _GALLON_TO_LITER
-        if u == "gal/h":
-            return rate * _GALLON_TO_LITER / 60.0
-        # Unknown unit: assume already L/h (legacy default).
-        return rate / 60.0
+        """Normalize a flow-rate reading to liters per minute."""
+        return flow_utils.rate_to_lpm(rate, unit)
 
     @staticmethod
     def _volume_to_liters(value: float, unit: str | None) -> float:
-        """Normalize a cumulative-volume reading to liters.
-
-        Converts gallons → liters when the sensor is exposed in US-customary
-        units; passes metric volumes through unchanged.
-        """
-        u = (unit or "").lower()
-        if u in ("gal", "gallon", "gallons"):
-            return value * _GALLON_TO_LITER
-        if u == "m³":
-            return value * 1000.0
-        return value
+        """Normalize a cumulative-volume reading to liters."""
+        return flow_utils.volume_to_liters(value, unit)
 
     # ── Deficit live-update helper ────────────────────────
 
@@ -1174,6 +1118,7 @@ class IrrigationController:
         delivered_mm = delivered_liters * zone._efficiency / zone._area
         zone._zone_deficit = max(0.0, snapshot - delivered_mm)
         zone.async_write_ha_state()
+        zone.notify_session_listeners()
 
     # ── Valve helpers ─────────────────────────────────────
 

@@ -38,6 +38,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.typing import ConfigType
 
+from . import flow_utils
 from .const import (
     CONF_ALPHA,
     CONF_BACKFILL_DAYS,
@@ -83,6 +84,7 @@ from .const import (
     DEFAULT_T_BASE,
     DEFAULT_THRESHOLD,
     DELIVERY_MODE_ESTIMATED_FLOW,
+    DELIVERY_MODE_FLOW_METER,
     DOMAIN,
     ET_BUFFER_MIN_READINGS,
     ET_BUFFER_SIZE,
@@ -405,7 +407,9 @@ def _setup_controller(
             flow_sensor_entity_id=zs.flow_meter_sensor,
             zone_name=zs.zone_name,
             notifier=notifier,
-            max_open_duration_s=zs.delivery_timeout,
+            # Callable, not snapshot: re-evaluated at every valve open so the
+            # watchdog and hardware timer scale with the current deficit.
+            max_open_duration_s=lambda zs=zs: zs.delivery_timeout,
             hw_max_duration_entity=hw_entity,
             hw_max_duration_multiplier=hw_mult,
             hw_max_duration_topic=zs.hw_max_duration_topic,
@@ -878,6 +882,8 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._hw_max_duration_topic: str | None = zone_config.get(CONF_ZONE_HW_MAX_DURATION_TOPIC)
         self._hw_max_duration_payload: str = zone_config.get(CONF_ZONE_HW_MAX_DURATION_PAYLOAD, "{value}")
         self._irrigating = False
+        self._no_guard_flow_warned = False
+        self._session_listeners: list[Callable] = []
         self._last_irrigated: datetime | None = None
         self._last_volume_delivered: float = 0.0
         self._last_irrigation_source: str | None = None
@@ -1029,10 +1035,13 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
     def delivery_timeout(self) -> int:
         """Safety timeout in seconds for flow_meter and volume_preset modes.
 
-        Returns the greater of the configured floor and the estimated delivery
-        duration, so large deficits never hit the timeout before completion.
+        Returns the greater of the configured floor and the guard-flow
+        duration estimate, so large deficits never hit the timeout before
+        completion. Deliberately based on the guard flow only — never the
+        live meter rate — so the watchdog cannot tighten on a momentary
+        high reading.
         """
-        return max(self._delivery_timeout, round(self.duration_s * 1.1))
+        return max(self._delivery_timeout, round(self._guard_duration_s * 1.1))
 
     @property
     def hw_max_duration_topic(self) -> str | None:
@@ -1059,6 +1068,21 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             # Starting a new irrigation session
             self._session_water_delivered = 0.0
         self._irrigating = state
+        self.notify_session_listeners()
+
+    def register_session_listener(self, listener: Callable) -> None:
+        """Register a callback fired on live irrigation-session progress.
+
+        Mirrors the dryness ``register_zone_listener`` pattern: dependent
+        entities (e.g. the expected-duration sensor) subscribe so they can
+        refresh while a session depletes the deficit in real time.
+        """
+        self._session_listeners.append(listener)
+
+    def notify_session_listeners(self) -> None:
+        """Fire the session listeners (called on session start/stop/progress)."""
+        for listener in self._session_listeners:
+            listener()
 
     def set_deficit_mm(self, value: float) -> None:
         """Set zone deficit to an arbitrary value [mm] — intended for testing/debugging."""
@@ -1096,16 +1120,53 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         return self._zone_deficit * self._area / self._efficiency
 
     @property
-    def duration_s(self) -> int:
-        """Irrigation duration for this zone [s].
+    def _guard_duration_s(self) -> int:
+        """Expected duration derived from the configured guard flow rate [s].
 
-        Only meaningful for estimated_flow mode. Returns 0 for other modes.
+        This is the stable estimate used for safety scaling: it never
+        follows the live meter rate, so a momentary high reading cannot
+        tighten the watchdog. Returns 0 when no guard flow is configured.
         """
-        if self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW:
-            return 0
         if self._flow_rate <= 0:
             return 0
         return round(self.volume_liters / self._flow_rate * 60)
+
+    @property
+    def duration_s(self) -> int:
+        """Expected irrigation duration for this zone [s].
+
+        Source chain:
+        1. Live flow-meter rate (flow_meter mode, rate sensor reading > 0)
+           — since ``volume_liters`` shrinks in real time with the deficit,
+           during a session this reads as the estimated remaining time.
+        2. Configured guard flow rate — flow_meter at rest / volume-only
+           meters, volume_preset, and estimated_flow (original behaviour).
+        3. 0 — no rate source available; only the ``delivery_timeout``
+           floor guards the valve.
+        """
+        if self._delivery_mode == DELIVERY_MODE_FLOW_METER and self._flow_meter_sensor:
+            rate_lpm = flow_utils.read_flow_rate_lpm(self._hass, self._flow_meter_sensor)
+            if rate_lpm is not None:
+                return round(self.volume_liters / rate_lpm * 60)
+        guard = self._guard_duration_s
+        # Warn only when the guard FLOW is missing — guard==0 also happens
+        # legitimately whenever the deficit (hence volume) is zero, e.g. at
+        # the end of every session (field false positive, 2026-07-15 12:06).
+        if (
+            self._flow_rate <= 0
+            and self._delivery_mode != DELIVERY_MODE_ESTIMATED_FLOW
+            and not self._no_guard_flow_warned
+        ):
+            self._no_guard_flow_warned = True
+            _LOGGER.warning(
+                "Zone '%s' (%s mode) has no guard flow rate configured — expected duration"
+                " is unknown and the safety timeout stays at its %ds floor. Set the guard"
+                " flow rate in the zone options (it will become required in a future release).",
+                self._zone_name,
+                self._delivery_mode,
+                self._delivery_timeout,
+            )
+        return guard
 
     @property
     def native_value(self) -> float:
@@ -1355,8 +1416,13 @@ class ZoneDurationSensor(SensorEntity):
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
+        zone_sensor.register_session_listener(self._on_session_update)
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    def _on_session_update(self) -> None:
         if getattr(self, "hass", None):
             self.async_write_ha_state()
 
