@@ -51,10 +51,15 @@ class TestDeviceClassDeclarations:
         sensor = ZoneSessionWaterSensor(zone_orto)
         assert sensor._attr_device_class == SensorDeviceClass.VOLUME_STORAGE
 
-    def test_zone_yearly_water_volume_storage(self, di_sensor, zone_orto):
-        """Yearly water delivered [L] → HA converts to [gal] in imperial."""
+    def test_zone_yearly_water_is_water_total(self, di_sensor, zone_orto):
+        """Yearly water is a cumulative consumption total (GH #105):
+        device_class WATER + state_class total_increasing — volume_storage
+        rejects total_increasing in current HA."""
+        from homeassistant.components.sensor import SensorStateClass
+
         sensor = ZoneYearlyWaterSensor(zone_orto)
-        assert sensor._attr_device_class == SensorDeviceClass.VOLUME_STORAGE
+        assert sensor._attr_device_class == SensorDeviceClass.WATER
+        assert sensor._attr_state_class == SensorStateClass.TOTAL_INCREASING
 
     def test_zone_duration_sensor_duration(self, di_sensor, zone_orto):
         """Planned irrigation duration [s] — device_class=DURATION for correct display."""
