@@ -1,6 +1,7 @@
 """Tests for IrrigationController — valve control and irrigation cycles."""
 
 import time
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
@@ -529,19 +530,122 @@ class TestManualValveDetection:
         controller._on_valve_state_change(event)
         assert "switch.valve_orto" in controller._manual_valve_open
 
-    def test_manual_close_resets_deficit_no_flow_meter(self, controller, zone_orto, hass_mock):
-        """Manual valve close without flow meter should reset deficit."""
+    def test_manual_close_no_meter_never_full_resets(self, controller, zone_orto, hass_mock):
+        """Manual close without flow meter must NOT reset the deficit:
+        an instant open→close delivers ~0 L, so the deficit stays put.
+        Only mark_irrigated zeroes the deficit unconditionally."""
         zone_orto._zone_deficit = 15.0
 
-        # Simulate open
         open_event = self._make_valve_event("switch.valve_orto", "off", "on")
         controller._on_valve_state_change(open_event)
 
-        # Simulate close
         close_event = self._make_valve_event("switch.valve_orto", "on", "off")
         controller._on_valve_state_change(close_event)
 
-        assert zone_orto._zone_deficit == 0.0
+        assert zone_orto._zone_deficit == pytest.approx(15.0, abs=0.01)
+
+    def test_manual_close_no_meter_credits_flow_rate_estimate(self, controller, zone_orto, hass_mock):
+        """Without a flow meter the delivered volume is estimated as
+        flow_rate x elapsed and the deficit reduced proportionally.
+        Orto: 8 L/min x 300 s = 40 L on 20 m² at η=0.9 → 1.8 mm."""
+        zone_orto._zone_deficit = 15.0
+
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        # Backdate the session start by 5 minutes.
+        ts_start, deficit_pre = controller._manual_session_meta["switch.valve_orto"]
+        controller._manual_session_meta["switch.valve_orto"] = (
+            ts_start - timedelta(seconds=300),
+            deficit_pre,
+        )
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+
+        assert zone_orto._zone_deficit == pytest.approx(15.0 - 1.8, abs=0.05)
+        assert zone_orto._last_irrigation_source == "manual"
+        assert zone_orto._last_volume_delivered == pytest.approx(40.0, abs=0.5)
+        assert zone_orto._last_session_duration_s == pytest.approx(300, abs=2)
+
+    def test_manual_close_credits_water_counters(self, controller, zone_orto, hass_mock):
+        """The estimated manual volume must feed the session/total/yearly counters."""
+        zone_orto._zone_deficit = 15.0
+        total_before = zone_orto._total_water_delivered
+        yearly_before = zone_orto._yearly_water_delivered
+
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        ts_start, deficit_pre = controller._manual_session_meta["switch.valve_orto"]
+        controller._manual_session_meta["switch.valve_orto"] = (
+            ts_start - timedelta(seconds=300),
+            deficit_pre,
+        )
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+
+        assert zone_orto._session_water_delivered == pytest.approx(40.0, abs=0.5)
+        assert zone_orto._total_water_delivered - total_before == pytest.approx(40.0, abs=0.5)
+        assert zone_orto._yearly_water_delivered - yearly_before == pytest.approx(40.0, abs=0.5)
+
+    def test_manual_close_no_meter_no_flow_rate_leaves_deficit(self, hass_mock, di_sensor):
+        """No flow meter AND no flow_rate: nothing measurable — the deficit
+        must stay unchanged (never guess a full reset)."""
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Blind",
+                "valve": "switch.valve_blind",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.90,
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = 12.0
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        ctrl._on_valve_state_change(self._make_valve_event("switch.valve_blind", "off", "on"))
+        ts_start, deficit_pre = ctrl._manual_session_meta["switch.valve_blind"]
+        ctrl._manual_session_meta["switch.valve_blind"] = (
+            ts_start - timedelta(seconds=300),
+            deficit_pre,
+        )
+        ctrl._on_valve_state_change(self._make_valve_event("switch.valve_blind", "on", "off"))
+
+        assert zone._zone_deficit == 12.0
+        assert zone.is_irrigating is False
+
+    def test_manual_close_meter_zero_falls_back_to_estimate(self, hass_mock, di_sensor):
+        """Flow meter present but measuring zero: fall back to the
+        flow_rate x elapsed estimate instead of resetting the deficit.
+        8 L/min x 300 s = 40 L on 20 m² at η=0.9 → 1.8 mm."""
+        from never_dry.sensor import IrrigationZoneSensor
+
+        zone = IrrigationZoneSensor(
+            hass_mock,
+            {
+                CONF_ZONE_NAME: "Metered",
+                "valve": "switch.valve_metered",
+                CONF_ZONE_AREA: 20.0,
+                CONF_ZONE_EFFICIENCY: 0.90,
+                CONF_ZONE_FLOW_RATE: 8.0,
+                "flow_meter_sensor": "sensor.flow_meter",
+            },
+            di_sensor,
+        )
+        zone._zone_deficit = 10.0
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+        # Cumulative meter stuck at the same reading: delivered = 0 L measured.
+        meter_state = MagicMock(state="100.0", attributes={"unit_of_measurement": "L"})
+        hass_mock.states.get = lambda eid: meter_state if eid == "sensor.flow_meter" else None
+
+        ctrl._on_valve_state_change(self._make_valve_event("switch.valve_metered", "off", "on"))
+        ts_start, deficit_pre = ctrl._manual_session_meta["switch.valve_metered"]
+        ctrl._manual_session_meta["switch.valve_metered"] = (
+            ts_start - timedelta(seconds=300),
+            deficit_pre,
+        )
+        ctrl._on_valve_state_change(self._make_valve_event("switch.valve_metered", "on", "off"))
+
+        assert zone._zone_deficit == pytest.approx(10.0 - 1.8, abs=0.05)
+        assert zone._last_volume_delivered == pytest.approx(40.0, abs=0.5)
 
     def test_manual_close_fires_event(self, controller, zone_orto, hass_mock):
         """Manual valve close should fire irrigation complete event."""
@@ -911,15 +1015,15 @@ class TestValveMonitoringEdgeCases:
         ctrl._on_valve_state_change(event)
         assert ctrl._manual_valve_open["switch.valve_m"] is None
 
-        # Close: flow_start is None → should fall back to full reset
+        # Close: baseline is None → fall back to the flow_rate x elapsed
+        # estimate; an instant close delivers ~0 L, deficit unchanged.
         close_event = self._make_valve_event("switch.valve_m", "on", "off")
         # Flow meter now available at close
         avail = MagicMock()
         avail.state = "50.0"
         hass_mock.states.get = lambda eid: avail if eid == "sensor.flow" else None
         ctrl._on_valve_state_change(close_event)
-        # flow_start was None → code takes else branch → full reset
-        assert zone._zone_deficit == 0.0
+        assert zone._zone_deficit == pytest.approx(10.0, abs=0.01)
 
     def test_zero_area_no_division_error(self, hass_mock, di_sensor):
         """Zone with area=0 should not crash on manual valve close with flow meter."""
@@ -951,8 +1055,9 @@ class TestValveMonitoringEdgeCases:
         close_event = self._make_valve_event("switch.valve_na", "on", "off")
         ctrl._on_valve_state_change(close_event)
 
-        # area=0 → can't calculate mm, deficit reset to zero
-        assert zone._zone_deficit == 0.0
+        # area=0 → can't convert liters to mm: deficit must stay unchanged
+        # (never a blind reset), and no crash.
+        assert zone._zone_deficit == 10.0
 
     def test_manual_event_has_no_volume_or_duration(self, controller, zone_orto, hass_mock):
         """Manual close event should not include volume_liters or duration_s."""

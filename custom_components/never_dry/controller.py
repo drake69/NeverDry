@@ -1321,11 +1321,18 @@ class IrrigationController:
             task = self._manual_safety_tasks.pop(entity_id, None)
             if task and not task.done():
                 task.cancel()
-            # Valve closed — compensate deficit
+            # Valve closed — account the delivered water. Measured by the
+            # flow meter when possible, estimated from flow_rate x elapsed
+            # otherwise. A close NEVER fully resets the deficit: that is
+            # mark_irrigated's exclusive semantics.
             baseline = self._manual_valve_open.pop(entity_id)
             zone.set_irrigating(False)
 
-            delivered_for_log: float = 0.0
+            session_meta = self._manual_session_meta.pop(entity_id, None)
+            ts_end = datetime.now()
+            elapsed_s = (ts_end - session_meta[0]).total_seconds() if session_meta else 0.0
+
+            delivered_liters = 0.0
             if zone.flow_meter_sensor and baseline is not None:
                 is_rate = self._is_flow_rate_sensor(zone.flow_meter_sensor)
                 if is_rate:
@@ -1336,38 +1343,43 @@ class IrrigationController:
                         unit = self._get_flow_meter_unit(zone.flow_meter_sensor)
                         lpm = self._rate_to_lpm(current_rate, unit)
                         delivered_liters = lpm / 60 * duration_s
-                    else:
-                        delivered_liters = 0.0
                 else:
                     # Cumulative: simple difference (baseline already in liters)
                     flow_end = self._read_volume_liters(zone.flow_meter_sensor)
                     delivered_liters = max(0.0, flow_end - baseline) if flow_end is not None else 0.0
-
-                if delivered_liters > 0 and zone._area > 0:
-                    delivered_mm = delivered_liters / zone._area
-                    zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm * zone._efficiency)
-                    zone._last_irrigation_source = "manual"
-                    zone._last_irrigated = datetime.now()
-                    zone._last_volume_delivered = round(delivered_liters, 1)
-                    delivered_for_log = delivered_liters
-                    _LOGGER.info(
-                        "Manual irrigation measured: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
-                        zone_name,
-                        delivered_liters,
-                        zone._zone_deficit,
-                    )
-                else:
-                    zone.reset_deficit("manual")
-                    _LOGGER.info(
-                        "Manual irrigation detected (flow meter reading zero): zone='%s', deficit reset",
-                        zone_name,
-                    )
-            else:
-                # No flow meter — full deficit reset
-                zone.reset_deficit("manual")
+                # Meter measured nothing → credit the guard-flow estimate.
+                delivered_liters = self._fallback_volume_estimate(zone, elapsed_s, delivered_liters)
+            elif zone._flow_rate > 0 and elapsed_s > 0:
+                delivered_liters = zone._flow_rate * elapsed_s / 60.0
                 _LOGGER.info(
-                    "Manual irrigation detected (no flow meter): zone='%s', deficit reset",
+                    "Manual irrigation estimated: zone='%s', %.1fL from flow_rate %.2f L/min x %.0fs",
                     zone_name,
+                    delivered_liters,
+                    zone._flow_rate,
+                    elapsed_s,
+                )
+            else:
+                _LOGGER.warning(
+                    "Manual irrigation on zone '%s' cannot be quantified (no flow meter,"
+                    " no flow_rate) — deficit left unchanged; use mark_irrigated if the"
+                    " zone was fully watered",
+                    zone_name,
+                )
+
+            if delivered_liters > 0 and zone._area > 0:
+                delivered_mm = delivered_liters * zone._efficiency / zone._area
+                zone._zone_deficit = max(0.0, zone._zone_deficit - delivered_mm)
+                zone._last_irrigation_source = "manual"
+                zone._last_irrigated = ts_end
+                zone._last_volume_delivered = round(delivered_liters, 1)
+                zone._session_water_delivered = round(delivered_liters, 1)
+                zone._total_water_delivered += delivered_liters
+                zone._yearly_water_delivered += delivered_liters
+                _LOGGER.info(
+                    "Manual irrigation accounted: zone='%s', delivered=%.1fL, new deficit=%.2fmm",
+                    zone_name,
+                    delivered_liters,
+                    zone._zone_deficit,
                 )
 
             zone.async_write_ha_state()
@@ -1379,18 +1391,17 @@ class IrrigationController:
                     "deficit_mm": round(zone._zone_deficit, 2),
                 },
             )
-            session_meta = self._manual_session_meta.pop(entity_id, None)
             if session_meta is not None:
                 ts_start, deficit_pre = session_meta
-                zone._last_session_duration_s = round((datetime.now() - ts_start).total_seconds())
+                zone._last_session_duration_s = round(elapsed_s)
                 self._log_session_result(
                     zone_name=zone_name,
                     zone=zone,
                     source="manual",
                     ts_start=ts_start,
-                    ts_end=datetime.now(),
+                    ts_end=ts_end,
                     volume_target_L=None,
-                    volume_delivered_L=delivered_for_log,
+                    volume_delivered_L=delivered_liters,
                     deficit_mm_pre=deficit_pre,
                     deficit_mm_post=zone._zone_deficit,
                 )

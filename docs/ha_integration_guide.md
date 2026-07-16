@@ -376,7 +376,7 @@ def _on_valve_state_change(self, event) -> None:
 When the monitor wakes up it sends `switch.turn_off`. The resulting `on → off` transition re-enters `_on_valve_state_change`, which finalises the session (deficit, `last_irrigated`, `last_volume_delivered`, `is_irrigating=False`, `never_dry_irrigation_complete` event with `source: "manual"`). If the user closes manually first, the monitor is cancelled and never sends the service call — manual close always wins.
 
 **With flow meter**: deficit is reduced by `liters / area_m² × efficiency` mm.
-**Without flow meter, no valid baseline**: deficit is fully reset (same semantics as `mark_irrigated`), because the user did irrigate and we have no measurement to do better.
+**Without flow meter, no valid baseline, or zero reading**: the volume is estimated as `flow_rate × elapsed` from the zone's configured guard flow rate and the tracked session duration, and the deficit is reduced proportionally. A valve close never fully resets the deficit — `mark_irrigated` is the only unconditional reset path. With neither a meter nor a `flow_rate`, the deficit stays unchanged and a warning is logged.
 
 **Why the auto-close?** Without it, pressing the physical button on the valve would drain the line for as long as the user forgets — typically days, until the SWV battery runs out. Reusing the existing `delivery_timeout` keeps the configuration surface small: the same number the user picks for commanded cycles also bounds manual ones.
 

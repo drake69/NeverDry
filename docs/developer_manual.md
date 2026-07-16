@@ -278,6 +278,19 @@ All configuration keys (`CONF_*`), service names (`SERVICE_*`), system types, pl
 
 The source string column applies to both the zone's `last_irrigation_source` attribute and the `source` field of the `never_dry_irrigation_complete` HA event — they are kept in sync so an automation can filter on either. Trigger 4 sets the attribute but emits no event. The legacy fallback string `"automatic"` is only used if `_irrigate_zones` is called without a preceding `_current_source` assignment (defensive default; not reachable from production paths).
 
+#### Session accounting matrix (start × stop)
+
+Who opened the valve and who closed it are independent axes: every combination must account the water actually delivered (duration and liters) and reduce the deficit proportionally. **`mark_irrigated` is the only path that unconditionally zeroes the deficit.**
+
+| Start | Stop | Volume accounted | Deficit effect |
+|---|---|---|---|
+| NeverDry (button / service / scheduler) | NeverDry — volume target reached, estimated duration elapsed, or `delivery_timeout` | measured (flow meter) or planned volume × elapsed fraction | full delivery → 0 via `reset_deficit`; partial → `max(0, start − delivered × η / area)` in `_settle_irrigated_zones` |
+| NeverDry | External close — HA switch, Zigbee app, physical button, hardware self-close | elapsed fraction, detected by the delivery loop (`_wait_with_stop_check` / `_valve_closed_externally`); the valve-state listener event is suppressed | proportional reduction (never a full reset) |
+| NeverDry | `never_dry.stop` / `never_dry.stop_zone` | elapsed fraction | proportional reduction |
+| External open (HA switch, Zigbee app, physical button) | User closes it (any path) | flow meter (cumulative diff or rate × duration); no meter, invalid baseline, or zero reading → estimate `flow_rate × elapsed` | proportional reduction; nothing measurable (no meter **and** no `flow_rate`) → deficit left unchanged + warning |
+| External open | Auto-close monitor — volume target, estimated duration, or `delivery_timeout` | same as the row above | proportional reduction — reaches 0 only if the full target volume was actually delivered |
+| `mark_irrigated` button / service | — | derived from the current deficit (`volume_liters`) | **full reset to 0 — the only unconditional zeroing path** |
+
 **External-vs-commanded discrimination** lives in `_on_valve_state_change`. The callback fires for every state change on a tracked valve entity; the gating is:
 
 1. If a `ValveOperator` is registered for the valve and its FSM state is **not** `IDLE`, the controller is driving the valve — return.
@@ -292,8 +305,8 @@ For an external `off → on` transition:
 For an external `on → off` transition:
 - Cancel the monitor task (the OFF transition is either the user closing or the monitor's own `switch.turn_off` completing).
 - Call `zone.set_irrigating(False)`.
-- Compute the delivered volume from the flow meter (cumulative diff or rate × duration). Reduce the deficit proportionally; if no flow meter is present, the deficit is fully reset (same semantics as `mark_irrigated`, since the user did open the valve and we have no evidence to estimate otherwise).
-- Stamp `_last_irrigated`, `_last_volume_delivered`, `_last_irrigation_source = "manual"`, and fire `never_dry_irrigation_complete` with `source: "manual"`.
+- Compute the delivered volume from the flow meter (cumulative diff or rate × duration). If there is no flow meter, no valid baseline, or the meter measured zero, estimate `flow_rate × elapsed` from the configured guard flow rate and the tracked session duration. Reduce the deficit proportionally (`delivered × η / area`). The deficit is **never fully reset** on a valve close: with no flow meter *and* no `flow_rate` it is left unchanged and a warning suggests `mark_irrigated`.
+- Stamp `_last_irrigated`, `_last_volume_delivered`, credit the session/total/yearly water counters, set `_last_irrigation_source = "manual"`, and fire `never_dry_irrigation_complete` with `source: "manual"`.
 
 **`_external_session_monitor(entity_id, zone_name)`** is the auto-close brain. Started from the open detection, it must terminate the manual session at the **minimum** of:
 

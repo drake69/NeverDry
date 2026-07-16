@@ -19,6 +19,7 @@ the operator FSM state.
 """
 
 import asyncio
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -136,17 +137,22 @@ async def test_hardware_close_mid_session_keeps_residual_deficit(hass_mock, di_s
 
 
 @pytest.mark.asyncio
-async def test_genuine_manual_close_still_resets_when_idle(hass_mock, di_sensor):
+async def test_genuine_manual_close_credits_estimate_when_idle(hass_mock, di_sensor):
     """Control case: with NO commanded session running, a manual close on a
-    meterless zone still resets the deficit (unchanged behaviour)."""
+    meterless zone credits flow_rate x elapsed — it does NOT reset the
+    deficit (only mark_irrigated does). 100 L/min x 3 s = 5 L on 20 m²
+    at η=0.9 → 0.225 mm."""
     deficit = 0.5
     zone = _zone(hass_mock, di_sensor, deficit)
     _ValveEnv(hass_mock)
     ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
     ctrl._valve_operators[VALVE] = _idle_operator()
-    ctrl._manual_valve_open[VALVE] = None  # manual open was tracked earlier
+    # Manual open tracked 3 s ago.
+    ctrl._manual_valve_open[VALVE] = None
+    ctrl._manual_session_meta[VALVE] = (datetime.now() - timedelta(seconds=3), deficit)
 
     ctrl._on_valve_state_change(_off_event())
 
-    assert zone._zone_deficit == 0.0
+    assert zone._zone_deficit == pytest.approx(deficit - 0.225, abs=0.01)
     assert zone._last_irrigation_source == "manual"
+    assert zone._last_volume_delivered == pytest.approx(5.0, abs=0.1)
