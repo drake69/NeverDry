@@ -1242,6 +1242,18 @@ class IrrigationController:
         global ``_running`` flag for valves without an operator.
         """
         entity_id = event.data.get("entity_id")
+        if self._running and self._active_valve == entity_id:
+            # Commanded delivery in progress for THIS valve: any state
+            # change belongs to that session and its loop settles it.
+            # Do NOT trust the operator FSM here — on a hardware
+            # self-close (e.g. Sonoff ZFE on-device dose) the operator
+            # processes the 'off' event first and is already back to
+            # IDLE by the time this listener runs, which used to make
+            # the close look manual and fully reset the deficit while
+            # the delivery loop was about to credit the partial
+            # (field bug, 2026-07-15: 640 s delivered of 1055 s planned,
+            # deficit zeroed instead of keeping the remaining third).
+            return
         operator = self._valve_operators.get(entity_id) if entity_id else None
         if operator is not None:
             if operator.state != ValveState.IDLE:
@@ -1296,13 +1308,21 @@ class IrrigationController:
         elif old_state.state == "on" and new_state.state == "off":
             if entity_id in self._controller_closing:
                 return  # NeverDry-initiated close — not a manual event
+            if entity_id not in self._manual_valve_open:
+                # No manual session was ever tracked for this valve: the
+                # close belongs to a commanded delivery (its loop settles
+                # the session — even in the window where an emergency stop
+                # has already cleared _running/_active_valve) or it is a
+                # stray event. Treating it as manual used to fully reset
+                # the deficit (field bug, 2026-07-15).
+                return
             # Cancel the safety watchdog: the user (or the watchdog itself)
             # already closed the valve.
             task = self._manual_safety_tasks.pop(entity_id, None)
             if task and not task.done():
                 task.cancel()
             # Valve closed — compensate deficit
-            baseline = self._manual_valve_open.pop(entity_id, None)
+            baseline = self._manual_valve_open.pop(entity_id)
             zone.set_irrigating(False)
 
             delivered_for_log: float = 0.0
