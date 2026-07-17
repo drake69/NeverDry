@@ -15,6 +15,9 @@
 
 If NeverDry is useful to you, **[leave a star](https://github.com/drake69/NeverDry/stargazers)** ⭐ — it helps others find the project.
 
+> 🌱 **Vision** — what NeverDry is for, and why: [`docs/VISION.md`](docs/VISION.md).
+> 🤝 **Want to contribute?** See [`CONTRIBUTING.md`](CONTRIBUTING.md) and the [design notes](docs/design/README.md).
+
 ---
 
 ## Why NeverDry
