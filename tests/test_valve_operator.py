@@ -1192,3 +1192,81 @@ async def test_hw_max_duration_mqtt_exception_is_logged(hass, caplog):
     assert result.status == OperationStatus.OK
     assert mqtt_calls, "MQTT publish was never attempted"
     assert "failed to set hardware max_duration via MQTT" in caplog.text
+
+
+# ── Retry cap and transient-notification suppression (AI-157) ─────────
+
+
+async def test_default_retry_budget_and_derived_maintenance_threshold(hass):
+    """Defaults: 5 retries, doubling backoff, MAINTENANCE at 1 + max_retries.
+
+    The derived threshold guarantees one command's retry budget can never
+    trip MAINTENANCE mid-command: a fully-failed command reaches it exactly
+    at its definitive failure.
+    """
+    op = ValveOperator(hass=hass, switch_entity_id="switch.valve")
+    assert op._max_retries == 5
+    assert op.DEFAULT_BACKOFF_S == (1.0, 2.0, 4.0, 8.0, 16.0)
+    assert op._fsm_config.max_consecutive_failures == 6
+
+
+async def test_transient_notification_only_after_retry_budget_exhausted(hass):
+    """OPEN_FAILED on every attempt: intermediate failures stay silent,
+    the notifier fires exactly once when the command is definitively failed."""
+    from never_dry.valve_fsm import FsmConfig
+    from never_dry.valve_notifier import NotificationKind
+
+    notifier = MagicMock()
+    notifier.notify = AsyncMock()
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="capzone",
+        # High maintenance threshold: keep the test on the FAILED path.
+        fsm_config=FsmConfig(
+            has_flow_meter=False,
+            open_timeout_s=0.05,
+            close_timeout_s=0.05,
+            flow_verify_timeout_s=0.05,
+            leak_timeout_s=0.05,
+            max_consecutive_failures=10,
+        ),
+        max_retries=2,
+        backoff_s=(0.0,),
+        notifier=notifier,
+    )
+
+    result = await op.open()
+
+    assert result.status == OperationStatus.FAILED
+    assert result.retries_used == 2
+    assert notifier.notify.await_count == 1
+    kind = notifier.notify.await_args.args[1]
+    assert kind == NotificationKind.COMMAND_FAILED
+
+
+async def test_fully_failed_command_enters_maintenance_at_budget_end(hass):
+    """With the derived threshold (1 + max_retries) a command that fails
+    every attempt lands in MAINTENANCE exactly at its definitive failure."""
+    from never_dry.valve_fsm import FsmConfig
+
+    op = ValveOperator(
+        hass=hass,
+        switch_entity_id="switch.valve",
+        zone_name="maintzone",
+        fsm_config=FsmConfig(
+            has_flow_meter=False,
+            open_timeout_s=0.05,
+            close_timeout_s=0.05,
+            flow_verify_timeout_s=0.05,
+            leak_timeout_s=0.05,
+            max_consecutive_failures=3,  # = 1 + max_retries below
+        ),
+        max_retries=2,
+        backoff_s=(0.0,),
+    )
+
+    result = await op.open()
+
+    assert result.status == OperationStatus.MAINTENANCE
+    assert op.is_in_maintenance

@@ -107,7 +107,7 @@ _OPERATION_FOR_FAILURE: dict[FailureKind, str] = {
 class ValveOperator:
     """HA-aware driver for a single valve, sitting on top of a :class:`ValveFsm`."""
 
-    DEFAULT_BACKOFF_S: ClassVar[tuple[float, ...]] = (1.0, 2.0, 4.0)
+    DEFAULT_BACKOFF_S: ClassVar[tuple[float, ...]] = (1.0, 2.0, 4.0, 8.0, 16.0)
 
     def __init__(
         self,
@@ -116,7 +116,7 @@ class ValveOperator:
         flow_sensor_entity_id: str | None = None,
         zone_name: str = "",
         fsm_config: FsmConfig | None = None,
-        max_retries: int = 2,
+        max_retries: int = 5,
         backoff_s: tuple[float, ...] | None = None,
         flow_zero_threshold: float = 0.05,
         notifier: ValveNotifier | None = None,
@@ -131,7 +131,14 @@ class ValveOperator:
         self._switch_entity_id = switch_entity_id
         self._flow_sensor_entity_id = flow_sensor_entity_id
         self._zone_name = zone_name or switch_entity_id
-        self._fsm_config = fsm_config or FsmConfig(has_flow_meter=flow_sensor_entity_id is not None)
+        # Derived maintenance threshold: one command owns 1 + max_retries
+        # attempts, so the retry budget can never trip MAINTENANCE
+        # mid-command — a fully-failed command reaches it exactly at its
+        # definitive failure.
+        self._fsm_config = fsm_config or FsmConfig(
+            has_flow_meter=flow_sensor_entity_id is not None,
+            max_consecutive_failures=max_retries + 1,
+        )
         self._fsm = ValveFsm(self._fsm_config)
         self._max_retries = max_retries
         self._backoff_s = backoff_s if backoff_s is not None else self.DEFAULT_BACKOFF_S
@@ -151,6 +158,7 @@ class ValveOperator:
         self._completion: asyncio.Future[OperationResult] | None = None
         self._expected_terminal: tuple[ValveState, ...] = ()
         self._leak_recovery_attempted: bool = False
+        self._retries_left: int = 0
         self._watchdog_task: asyncio.Task | None = None
         self._hw_duration_set: bool = False
 
@@ -281,6 +289,7 @@ class ValveOperator:
         async with self._lock:
             retries = 0
             while True:
+                self._retries_left = self._max_retries - retries
                 outcome = await self._run_cycle(cmd, terminals)
                 if outcome.status == OperationStatus.OK:
                     return self._finalise(outcome, retries, start)
@@ -403,7 +412,22 @@ class ValveOperator:
         recovery first, and _escalate_stuck_open() sends CRITICAL only if
         recovery fails.  Sending CRITICAL before recovery is known causes
         spurious "Valve stuck open" alerts.
+
+        Transient failures (OPEN_FAILED, CLOSE_VERIFICATION_FAILED) are
+        also suppressed while retry attempts remain: on a flaky Zigbee
+        mesh a late confirmation is routine, and alerting on every
+        attempt produced spurious CRITICALs (GH #105). The notification
+        fires only when the retry budget is exhausted and the command is
+        definitively failed.
         """
+        if kind in _TRANSIENT_FAILURES and self._retries_left > 0:
+            _LOGGER.warning(
+                "Valve '%s' transient failure %s — retrying (%d attempt(s) left)",
+                self._zone_name,
+                kind.name,
+                self._retries_left,
+            )
+            return
         _LOGGER.error("Valve '%s' failure: %s", self._zone_name, kind.name)
         if self._notifier is None:
             return
