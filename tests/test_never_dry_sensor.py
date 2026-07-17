@@ -30,6 +30,10 @@ class TestDeficitAccumulation:
     def test_rain_reduces_deficit(self, di_sensor, hass_mock, make_state):
         """Rain should reduce accumulated deficit."""
         di_sensor._deficit = 5.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
 
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),  # T=T_base → ET=0
@@ -44,6 +48,10 @@ class TestDeficitAccumulation:
     def test_deficit_never_negative(self, di_sensor, hass_mock, make_state):
         """Deficit is clipped to zero (no negative values)."""
         di_sensor._deficit = 1.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
 
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
@@ -272,6 +280,10 @@ class TestRainDelta:
     def test_event_mode_first_rain(self, di_sensor, hass_mock, make_state):
         """First rain event should reduce deficit by the event amount."""
         di_sensor._deficit = 10.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),  # T=T_base → ET=0
             "sensor.rain": make_state(2.0),
@@ -314,6 +326,10 @@ class TestRainDelta:
         the deficit twice (regression for the value-equality dedup bug).
         """
         di_sensor._deficit = 10.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
 
         def make_rain(ts):
             s = make_state(2.0)
@@ -337,6 +353,10 @@ class TestRainDelta:
     def test_event_mode_new_event(self, di_sensor, hass_mock, make_state):
         """New rain event with different value should subtract."""
         di_sensor._deficit = 10.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
 
         # First event: 2mm
         hass_mock.states.get.side_effect = lambda eid: {
@@ -373,6 +393,10 @@ class TestRainDelta:
         }
         sensor = DrynessIndexSensor(hass_mock, config)
         sensor._deficit = 10.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        sensor._last_rain = 0.0
+        sensor._last_rain_event_ts = datetime(2020, 1, 1)
 
         # Rain total goes from 0 to 3mm
         hass_mock.states.get.side_effect = lambda eid: {
@@ -425,6 +449,10 @@ class TestRainDelta:
     def test_rain_zeroes_deficit(self, di_sensor, hass_mock, make_state):
         """Heavy rain should zero out the deficit (never goes negative)."""
         di_sensor._deficit = 3.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
             "sensor.rain": make_state(20.0),
@@ -440,6 +468,10 @@ class TestRainUnits:
     def test_rain_inches_converted_to_mm(self, di_sensor, hass_mock, make_state):
         """1 inch of rain must reduce the deficit by 25.4 mm."""
         di_sensor._deficit = 30.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),  # ET = 0
             "sensor.rain": make_state(1.0, unit="in"),
@@ -451,6 +483,10 @@ class TestRainUnits:
     def test_rain_mm_not_converted(self, di_sensor, hass_mock, make_state):
         """Rain in mm must not be multiplied by the inches factor."""
         di_sensor._deficit = 10.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
             "sensor.rain": make_state(5.0, unit="mm"),
@@ -462,6 +498,10 @@ class TestRainUnits:
     def test_rain_no_unit_treated_as_mm(self, di_sensor, hass_mock, make_state):
         """Rain sensor without unit_of_measurement is treated as mm (backward compat)."""
         di_sensor._deficit = 8.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
             "sensor.rain": make_state(3.0),  # no unit
@@ -473,6 +513,10 @@ class TestRainUnits:
     def test_half_inch_rain_converts_correctly(self, di_sensor, hass_mock, make_state):
         """0.5 in rain == 12.7 mm."""
         di_sensor._deficit = 20.0
+        # Known rain baseline (post-restore steady state): the first tick
+        # after boot fixes the baseline without crediting (2026-07-17 fix).
+        di_sensor._last_rain = 0.0
+        di_sensor._last_rain_event_ts = datetime(2020, 1, 1)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
             "sensor.rain": make_state(0.5, unit="in"),
@@ -518,3 +562,100 @@ class TestTemperatureUnitsEndToEnd:
         di._last_update = datetime.now() - timedelta(hours=1)
         di._on_sensor_change(MagicMock())
         assert di._deficit == pytest.approx(5.0, abs=0.01)
+
+
+class TestRainBaselineAcrossRestart:
+    """The rain baseline must survive restarts (field bug 2026-07-17).
+
+    _last_rain started at 0.0 on every boot, so a cumulative/24h rain
+    sensor reading was re-credited in full at the first tick after
+    restart — 14.2 mm of rain wiped every zone deficit on reboot.
+    """
+
+    def _daily_sensor(self, hass_mock):
+        from never_dry.const import (
+            CONF_RAIN_SENSOR,
+            CONF_RAIN_SENSOR_TYPE,
+            CONF_TEMP_SENSOR,
+            RAIN_TYPE_DAILY_TOTAL,
+        )
+        from never_dry.sensor import DrynessIndexSensor
+
+        return DrynessIndexSensor(
+            hass_mock,
+            {
+                CONF_TEMP_SENSOR: "sensor.temperature",
+                CONF_RAIN_SENSOR: "sensor.rain",
+                CONF_RAIN_SENSOR_TYPE: RAIN_TYPE_DAILY_TOTAL,
+            },
+        )
+
+    def test_first_reading_after_boot_fixes_baseline_without_credit(self, hass_mock, make_state):
+        """The exact field scenario: 14.2 mm of 24h rain at boot must NOT
+        be credited — it predates this boot."""
+        sensor = self._daily_sensor(hass_mock)
+        sensor._deficit = 10.0
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(14.2),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+
+        assert sensor._deficit == pytest.approx(10.0, abs=0.01)
+        assert sensor._last_rain == pytest.approx(14.2)
+
+        # New rain AFTER the baseline fix is credited normally.
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(17.2),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(7.0, abs=0.01)
+
+    def test_restored_baseline_credits_downtime_rain(self, hass_mock, make_state):
+        """With a restored baseline, rain fallen while HA was down IS credited."""
+        sensor = self._daily_sensor(hass_mock)
+        sensor._deficit = 10.0
+        sensor._last_rain = 10.0  # restored from rain_baseline_mm
+        hass_mock.states.get.side_effect = lambda eid: {
+            "sensor.temperature": make_state(9.0),
+            "sensor.rain": make_state(14.2),
+        }[eid]
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(10.0 - 4.2, abs=0.01)
+
+    def test_event_sensor_restored_event_not_recredited(self, hass_mock, make_state):
+        """Event mode: the state present at boot is the restore of an event
+        already counted before the restart — no re-credit."""
+        from never_dry.const import CONF_RAIN_SENSOR, CONF_TEMP_SENSOR
+        from never_dry.sensor import DrynessIndexSensor
+
+        sensor = DrynessIndexSensor(
+            hass_mock,
+            {CONF_TEMP_SENSOR: "sensor.temperature", CONF_RAIN_SENSOR: "sensor.rain"},
+        )
+        sensor._deficit = 10.0
+        rain_state = make_state(2.0)
+        rain_state.last_updated = datetime(2026, 6, 1, 12, 0, 0)
+        hass_mock.states.get.side_effect = lambda eid: rain_state if eid == "sensor.rain" else make_state(9.0)
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(10.0, abs=0.01)
+
+        # A genuinely NEW event (fresh timestamp) is credited.
+        rain2 = make_state(2.0)
+        rain2.last_updated = datetime(2026, 6, 1, 12, 5, 0)
+        hass_mock.states.get.side_effect = lambda eid: rain2 if eid == "sensor.rain" else make_state(9.0)
+        sensor._last_update = datetime.now() - timedelta(seconds=1)
+        sensor._on_sensor_change(MagicMock())
+        assert sensor._deficit == pytest.approx(8.0, abs=0.01)
+
+    def test_rain_baseline_exposed_in_attributes(self, hass_mock, make_state):
+        """The baseline is persisted through extra_state_attributes."""
+        sensor = self._daily_sensor(hass_mock)
+        assert "rain_baseline_mm" not in sensor.extra_state_attributes
+        sensor._last_rain = 14.2
+        assert sensor.extra_state_attributes["rain_baseline_mm"] == pytest.approx(14.2)
