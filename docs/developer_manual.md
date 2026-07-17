@@ -482,9 +482,13 @@ Notes:
 5. In `[M]` tests the watchdog side is *simulated*: the forced
    `switch.turn_off` is represented by the valve state flipping to `off`
    mid-loop, which is exactly how the controller perceives it. The
-   watchdog's own firing logic is covered in `test_valve_operator.py`; an
-   integration test with a real `ValveOperator` wired into
-   `_irrigate_zones` remains future work for the driver abstraction.
+   watchdog's own firing logic is covered in `test_valve_operator.py`. The
+   production seam is exercised end to end by
+   `[CO] test_watchdog_real_operator_mid_estimated_flow_settles_once`: a
+   real `ValveOperator` wired into `_irrigate_zones`, its watchdog task
+   actually firing and the state echo feeding both the FSM and the
+   controller listener. With the driver abstraction this test becomes the
+   per-driver regression harness for the WDOG cells.
 
 All previously-empty cells are now covered by `test_end_trigger_matrix.py`:
 every `[M]` test asserts the same contract — deficit decremented by exactly
