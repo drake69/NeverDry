@@ -16,8 +16,9 @@ import pathlib
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_ZONE_NAME, CONF_ZONES, CONFIG_VERSION, DOMAIN
@@ -221,10 +222,34 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)
 
 
+async def _async_migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Prefix legacy unique_ids with the config entry id.
+
+    Up to 0.11.0-beta.1 the core sensors used static unique_ids
+    ("et_hourly_estimate", "never_dry") and the per-zone entities were
+    scoped on the zone slug only, so a second config entry collided and
+    HA silently dropped its entities (GH #116). Every unique_id is now
+    ``<entry_id>_<legacy_id>``; this migration renames the registry
+    entries of THIS config entry in place, preserving entity_id, history
+    and user customisations. Idempotent: already-prefixed ids are left
+    untouched.
+    """
+    prefix = f"{entry.entry_id}_"
+
+    @callback
+    def _migrate(reg_entry: er.RegistryEntry) -> dict[str, str] | None:
+        if reg_entry.unique_id.startswith(prefix):
+            return None
+        return {"new_unique_id": f"{prefix}{reg_entry.unique_id}"}
+
+    await er.async_migrate_entries(hass, entry.entry_id, _migrate)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up NeverDry from a config entry (UI)."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
+    await _async_migrate_unique_ids(hass, entry)
     handler = await hass.async_add_executor_job(_setup_file_logger, hass)
     hass.data[DOMAIN][f"_log_handler_{entry.entry_id}"] = handler
     await _async_register_frontend(hass)

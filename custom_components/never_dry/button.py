@@ -63,6 +63,10 @@ def _create_buttons(hass: HomeAssistant, config: dict, entry_id: str = "yaml") -
         if zone_conf.get("valve"):
             buttons.append(StopButton(hass, zone_name, device_info))
             buttons.append(ResetMaintenanceButton(hass, zone_name, device_info))
+    # Scope every unique_id to the config entry (GH #116) — same rule as
+    # sensor._create_entities, covered by the same registry migration.
+    for button in buttons:
+        button._attr_unique_id = f"{entry_id}_{button._attr_unique_id}"
     return buttons
 
 
