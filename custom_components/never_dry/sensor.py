@@ -325,6 +325,14 @@ def _create_entities(
                 )
             )
 
+    # Scope every unique_id to the config entry: static and slug-only ids
+    # collide across entries and HA silently drops the duplicates — the
+    # second entry was born without entities (GH #116). The registry
+    # migration in __init__._async_migrate_unique_ids renames existing
+    # installations to this format.
+    for entity in entities:
+        entity._attr_unique_id = f"{entry_id}_{entity._attr_unique_id}"
+
     return entities, di_sensor, zone_sensors
 
 
