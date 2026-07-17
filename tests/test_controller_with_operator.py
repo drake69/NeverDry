@@ -592,3 +592,99 @@ async def test_volume_preset_stop_during_run(hass_mock, di_sensor):
     assert delivered == 0.0
     turn_off_calls = [c for c in hass_mock.services.async_call.call_args_list if c.args[:2] == ("switch", "turn_off")]
     assert any(c.args[2].get("entity_id") == "switch.valve_orto" for c in turn_off_calls)
+
+
+# ── Real-operator watchdog integration (AI-161, matrix WDOG cells) ────
+
+
+async def test_watchdog_real_operator_mid_estimated_flow_settles_once(hass_mock, di_sensor):
+    """A REAL ValveOperator watchdog fires mid estimated_flow delivery.
+
+    The [M] race-matrix tests simulate the watchdog as a bare state flip;
+    this test exercises the production seam end to end: FSM-driven open,
+    the watchdog task actually firing (max_open_duration_s), the forced
+    switch.turn_off, the state echo feeding both the operator FSM and the
+    controller listener, the delivery loop perceiving the off state, and
+    the idempotent _close_valve on an already-IDLE operator. Contract:
+    elapsed-fraction credit, a large residual deficit survives, exactly
+    one settle, and the close is never attributed to a manual irrigation.
+    """
+    import asyncio as _asyncio
+
+    from never_dry.valve_fsm import FsmConfig
+    from never_dry.valve_operator import ValveOperator
+
+    cfg = {
+        CONF_ZONE_NAME: "Orto",
+        CONF_ZONE_VALVE: "switch.valve_orto",
+        CONF_ZONE_AREA: 20.0,
+        CONF_ZONE_EFFICIENCY: 0.90,
+        CONF_ZONE_FLOW_RATE: 8.0,
+        CONF_ZONE_THRESHOLD: 15.0,
+        CONF_ZONE_DELIVERY_MODE: "estimated_flow",
+    }
+    zone = IrrigationZoneSensor(hass_mock, cfg, di_sensor)
+    # 0.024 mm on 20 m² at η=0.9 → 0.53 L → 4 s plan at 8 L/min; the
+    # watchdog fires at 1.5 s, so a large residual must survive.
+    zone._zone_deficit = 0.024
+    deficit_pre = zone._zone_deficit
+
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    op = ValveOperator(
+        hass=hass_mock,
+        switch_entity_id="switch.valve_orto",
+        flow_sensor_entity_id=None,
+        zone_name="Orto",
+        fsm_config=FsmConfig(
+            has_flow_meter=False,
+            open_timeout_s=0.5,
+            close_timeout_s=0.5,
+            flow_verify_timeout_s=0.5,
+            leak_timeout_s=0.5,
+            max_consecutive_failures=3,
+        ),
+        max_retries=0,
+        backoff_s=(0.01,),
+        max_open_duration_s=1.5,
+    )
+    ctrl._valve_operators = {"switch.valve_orto": op}
+
+    valve = {"state": "off"}
+
+    def _controller_event(old, new):
+        event = MagicMock()
+        event.data = {
+            "entity_id": "switch.valve_orto",
+            "old_state": MagicMock(state=old),
+            "new_state": MagicMock(state=new),
+        }
+        return event
+
+    async def _dispatch(new_state):
+        """Echo the state change to the operator FSM and the controller
+        listener — the push event always beats the loop's poll in the field."""
+        old = valve["state"]
+        valve["state"] = new_state
+        await op._handle_switch_state(MagicMock(data={"new_state": MagicMock(state=new_state)}))
+        ctrl._on_valve_state_change(_controller_event(old, new_state))
+
+    async def _service_call(domain, service, data=None, **kwargs):
+        if domain == "switch" and data and data.get("entity_id") == "switch.valve_orto":
+            new = "on" if service == "turn_on" else "off"
+            # Echo unconditionally (Z2M republishes state on every command).
+            _asyncio.get_running_loop().create_task(_dispatch(new))
+
+    hass_mock.services.async_call = AsyncMock(side_effect=_service_call)
+    hass_mock.states.get = lambda eid: MagicMock(state=valve["state"]) if eid == "switch.valve_orto" else None
+
+    await ctrl._irrigate_zones(["Orto"])
+
+    # Watchdog cut the 4 s plan at ~1.5-3 s: partial credit, single settle.
+    assert valve["state"] == "off"
+    assert zone.is_irrigating is False
+    assert 0.0 < zone._zone_deficit < deficit_pre
+    assert zone._last_volume_delivered > 0
+    assert zone._last_irrigation_source != "manual"
+    assert 1 <= zone._last_session_duration_s <= 4
+    assert op.state == ValveState.IDLE
