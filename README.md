@@ -246,9 +246,9 @@ Found a bug or have an idea? Open an issue — reports from real gardens are wha
 
 ## Support
 
-If NeverDry saves your garden (and your water bill), consider a one-time donation:
+If NeverDry saves your garden (and your water bill), consider a one-time donation — or just leave a star, it costs nothing and helps others find the project:
 
-<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>
+<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>&nbsp;&nbsp;<a href="https://github.com/drake69/NeverDry/stargazers"><img src="https://img.shields.io/badge/Star_on_GitHub-24292e?style=for-the-badge&logo=github&logoColor=white" alt="Star on GitHub" height="35"></a>
 
 ---
 
