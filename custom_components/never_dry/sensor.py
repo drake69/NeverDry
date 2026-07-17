@@ -558,7 +558,11 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._rain_type = config.get(CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE)
         self._backfill_days = config.get(CONF_BACKFILL_DAYS, DEFAULT_BACKFILL_DAYS)
         self._deficit = 0.0
-        self._last_rain = 0.0
+        # None = baseline unknown (fresh boot): the first reading fixes the
+        # baseline WITHOUT crediting. Starting at 0.0 re-credited the whole
+        # cumulative/24h rain reading at every restart — 14.2 mm of rain
+        # wiped every zone deficit on reboot (field bug, 2026-07-17).
+        self._last_rain: float | None = None
         self._last_rain_event_ts = None
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
@@ -575,6 +579,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         """Current reference deficit in mm (Kc=1.0)."""
         return self._deficit
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Expose the rain baseline so it survives restarts via restore_state."""
+        attrs: dict = {}
+        if self._last_rain is not None:
+            attrs["rain_baseline_mm"] = round(self._last_rain, 2)
+        return attrs
+
     async def async_added_to_hass(self) -> None:
         """Restore previous state and register listeners."""
         last = await self.async_get_last_state()
@@ -583,6 +595,16 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             with contextlib.suppress(ValueError, TypeError):
                 self._deficit = float(last.state)
                 restored = True
+            # Restore the rain baseline (daily_total only) so rain fallen
+            # while HA was down is still credited on the first tick. Without
+            # it the None sentinel makes the first reading a no-credit
+            # baseline fix. Event sensors are gated on the process-local
+            # event timestamp instead.
+            if self._rain_type != RAIN_TYPE_EVENT:
+                baseline = last.attributes.get("rain_baseline_mm")
+                if baseline is not None:
+                    with contextlib.suppress(ValueError, TypeError):
+                        self._last_rain = float(baseline)
 
         if not restored:
             await self._backfill_from_recorder()
@@ -667,6 +689,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             # while ignoring recomputes triggered by other sensors (temperature),
             # for which the rain state object is unchanged.
             event_ts = getattr(state, "last_updated", None)
+            if self._last_rain_event_ts is None:
+                # First observation after boot (the timestamp is process-local,
+                # never restored): the sensor state is the restore of an event
+                # that was already counted before the restart — fix the
+                # baseline without crediting it again.
+                self._last_rain_event_ts = event_ts
+                self._last_rain = rain_now
+                return 0.0
             if event_ts is not None and event_ts == self._last_rain_event_ts:
                 return 0.0  # same event already counted
             self._last_rain_event_ts = event_ts
@@ -674,6 +704,12 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             return max(0.0, rain_now)
 
         # daily_total: compute delta
+        if self._last_rain is None:
+            # Baseline unknown (fresh boot, nothing restored): fix it from
+            # the current reading without crediting — the accumulation
+            # predates this boot.
+            self._last_rain = rain_now
+            return 0.0
         rain_delta = rain_now - self._last_rain
         if rain_delta < 0:
             # Sensor reset (midnight rollover) — treat new value as fresh
