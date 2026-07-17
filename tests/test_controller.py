@@ -1,5 +1,7 @@
 """Tests for IrrigationController — valve control and irrigation cycles."""
 
+import asyncio
+import contextlib
 import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, call
@@ -1225,3 +1227,113 @@ class TestMarkIrrigatedFeedback:
 
         assert zone_orto._last_irrigated is not None
         assert zone_orto._last_volume_delivered > 0
+
+
+class TestManualSessionUnloadSettle:
+    """async_stop must settle manual sessions still open at entry unload.
+
+    The safety monitor dies with the controller and the successor has no
+    baseline for a valve it never saw open: without the unload settle the
+    delivered water would never be credited (AI-160).
+    """
+
+    def _make_valve_event(self, entity_id, old_state, new_state):
+        event = MagicMock()
+        old = MagicMock()
+        old.state = old_state
+        new = MagicMock()
+        new.state = new_state
+        event.data = {"entity_id": entity_id, "old_state": old, "new_state": new}
+        return event
+
+    def _open_manual_session(self, controller, backdate_s=300):
+        """Track a manual open on Orto and backdate it by ``backdate_s``."""
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "off", "on"))
+        ts_start, deficit_pre = controller._manual_session_meta["switch.valve_orto"]
+        controller._manual_session_meta["switch.valve_orto"] = (
+            ts_start - timedelta(seconds=backdate_s),
+            deficit_pre,
+        )
+
+    @pytest.mark.asyncio
+    async def test_unload_settles_open_manual_session(self, controller, zone_orto, hass_mock):
+        """Valve still on at unload: close it and credit the accrued estimate.
+        Orto: 8 L/min x 300 s = 40 L on 20 m² at η=0.9 → 1.8 mm."""
+        zone_orto._zone_deficit = 15.0
+        self._open_manual_session(controller)
+
+        valve_state = MagicMock(state="on")
+        hass_mock.states.get = lambda eid: valve_state if eid == "switch.valve_orto" else None
+
+        await controller.async_stop()
+
+        assert zone_orto._zone_deficit == pytest.approx(15.0 - 1.8, abs=0.05)
+        assert zone_orto._last_irrigation_source == "manual"
+        assert zone_orto._last_volume_delivered == pytest.approx(40.0, abs=0.5)
+        assert zone_orto.is_irrigating is False
+        hass_mock.services.async_call.assert_any_call(
+            "switch",
+            "turn_off",
+            {"entity_id": "switch.valve_orto"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_unload_clears_manual_tracking_state(self, controller, zone_orto, hass_mock):
+        """Baseline, meta and safety monitor must all be released on unload."""
+        zone_orto._zone_deficit = 15.0
+        self._open_manual_session(controller)
+        monitor = controller._manual_safety_tasks["switch.valve_orto"]
+
+        valve_state = MagicMock(state="on")
+        hass_mock.states.get = lambda eid: valve_state if eid == "switch.valve_orto" else None
+
+        await controller.async_stop()
+
+        assert "switch.valve_orto" not in controller._manual_valve_open
+        assert "switch.valve_orto" not in controller._manual_session_meta
+        assert "switch.valve_orto" not in controller._manual_safety_tasks
+        # Let the loop process the cancellation before asserting.
+        with contextlib.suppress(asyncio.CancelledError):
+            await monitor
+        assert monitor.cancelled() or monitor.done()
+
+    @pytest.mark.asyncio
+    async def test_unload_valve_already_off_settles_without_close(self, controller, zone_orto, hass_mock):
+        """Tracked session whose valve already reads off (close event lost,
+        e.g. Zigbee report missed): settle the accounting, send no command."""
+        zone_orto._zone_deficit = 15.0
+        self._open_manual_session(controller)
+
+        valve_state = MagicMock(state="off")
+        hass_mock.states.get = lambda eid: valve_state if eid == "switch.valve_orto" else None
+
+        await controller.async_stop()
+
+        assert zone_orto._zone_deficit == pytest.approx(15.0 - 1.8, abs=0.05)
+        hass_mock.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unload_settles_exactly_once(self, controller, zone_orto, hass_mock):
+        """A late off event after unload must not settle a second time."""
+        zone_orto._zone_deficit = 15.0
+        self._open_manual_session(controller)
+
+        valve_state = MagicMock(state="on")
+        hass_mock.states.get = lambda eid: valve_state if eid == "switch.valve_orto" else None
+
+        await controller.async_stop()
+        deficit_after_stop = zone_orto._zone_deficit
+
+        controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
+
+        assert zone_orto._zone_deficit == pytest.approx(deficit_after_stop, abs=0.001)
+
+    @pytest.mark.asyncio
+    async def test_unload_without_manual_session_is_noop(self, controller, zone_orto, hass_mock):
+        """No tracked session: unload must not touch the zone accounting."""
+        zone_orto._zone_deficit = 15.0
+
+        await controller.async_stop()
+
+        assert zone_orto._zone_deficit == 15.0
+        hass_mock.services.async_call.assert_not_called()
