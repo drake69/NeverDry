@@ -101,9 +101,13 @@
         }
       },
       "model_params": {
-        "title": "Parametri del Modello ET",
-        "description": "Regola il modello di evapotraspirazione. Le modifiche hanno effetto immediato.",
+        "title": "Sensori di sistema e modello ET",
+        "description": "Cambia i sensori di ingresso o regola il modello di evapotraspirazione. Le modifiche hanno effetto immediato.",
         "data": {
+          "temperature_sensor": "Sensore di temperatura",
+          "rain_sensor": "Sensore di pioggia",
+          "rain_sensor_type": "Tipo di sensore di pioggia",
+          "vwc_sensor": "Sensore di umidità del suolo (opzionale)",
           "alpha": "Coefficiente ET (α)",
           "t_base": "Temperatura di base",
           "d_max": "Limite massimo del deficit"

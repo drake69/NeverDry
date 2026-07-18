@@ -13,6 +13,13 @@ CONF_RAIN_SENSOR_TYPE = "rain_sensor_type"
 RAIN_TYPE_EVENT = "event"  # mm per event (tipping bucket pulse)
 RAIN_TYPE_DAILY_TOTAL = "daily_total"  # cumulative mm since midnight
 
+# A drop in a daily_total reading is a genuine reset (midnight rollover)
+# only when the new value is near zero. A drop that lands HIGHER than this
+# threshold is a rolling-window sensor (e.g. "24h rain") ageing out old
+# rain — crediting the residual as fresh rain wiped every deficit at 05:00
+# with clear skies (field bug, 2026-07-18).
+RAIN_RESET_MAX_MM = 1.0
+
 # ── ET model parameters ──────────────────────────────────
 CONF_ALPHA = "alpha"
 CONF_T_BASE = "t_base"

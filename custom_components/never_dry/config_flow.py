@@ -156,7 +156,7 @@ def _sensors_schema(is_imperial: bool) -> vol.Schema:
 
 
 def _model_params_schema(is_imperial: bool, current: dict) -> vol.Schema:
-    """ET parameters form for options flow, with stored metric values pre-filled."""
+    """System sensors + ET parameters form for options flow, pre-filled from the entry."""
     t_unit = "°F" if is_imperial else "°C"
     d_unit = "in" if is_imperial else "mm"
     t_stored = current.get(CONF_T_BASE, DEFAULT_T_BASE)
@@ -166,6 +166,28 @@ def _model_params_schema(is_imperial: bool, current: dict) -> vol.Schema:
 
     return vol.Schema(
         {
+            vol.Required(
+                CONF_TEMP_SENSOR,
+                description={"suggested_value": current.get(CONF_TEMP_SENSOR)},
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor", device_class="temperature")),
+            vol.Required(
+                CONF_RAIN_SENSOR,
+                description={"suggested_value": current.get(CONF_RAIN_SENSOR)},
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
+            vol.Optional(
+                CONF_RAIN_SENSOR_TYPE,
+                default=current.get(CONF_RAIN_SENSOR_TYPE, DEFAULT_RAIN_SENSOR_TYPE),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[RAIN_TYPE_EVENT, RAIN_TYPE_DAILY_TOTAL],
+                    translation_key="rain_sensor_type",
+                    mode="dropdown",
+                )
+            ),
+            vol.Optional(
+                CONF_VWC_SENSOR,
+                description={"suggested_value": current.get(CONF_VWC_SENSOR)},
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor")),
             vol.Optional(CONF_ALPHA, default=current.get(CONF_ALPHA, DEFAULT_ALPHA)): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=0.05,
@@ -495,6 +517,11 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             user_input = _sensors_input_to_metric(user_input, imperial)
             new_data = {**self._config_entry.data, **user_input}
+            # An optional entity field cleared by the user is simply absent
+            # from user_input — the merge above would silently keep the old
+            # value, so drop it explicitly.
+            if CONF_VWC_SENSOR not in user_input:
+                new_data.pop(CONF_VWC_SENSOR, None)
             if new_data != dict(self._config_entry.data):
                 changed = [k for k in new_data if new_data[k] != self._config_entry.data.get(k)]
                 _LOGGER.debug("Config updated via model_params — changed keys: %s", changed)
