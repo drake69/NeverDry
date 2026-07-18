@@ -836,3 +836,57 @@ class TestRainBaselineEntityGuard:
         )
         await sensor.async_added_to_hass()
         assert sensor._last_rain is None
+
+
+class TestVwcModeBypassesEtModel:
+    """With a VWC sensor configured the ET model must be fully bypassed.
+
+    Tester report 2026-07-18: the 'ET Hourly Estimate' entity kept
+    updating from temperature and the recorder backfill replayed the
+    ET/rain water balance even in VWC mode — both suggested the ET model
+    was still driving the deficit.
+    """
+
+    def test_et_entity_not_created_in_vwc_mode(self, hass_mock, base_config):
+        from never_dry.const import CONF_VWC_SENSOR
+        from never_dry.sensor import ETSensor, _create_entities
+
+        entities, _, _ = _create_entities(
+            hass_mock,
+            {**base_config, CONF_VWC_SENSOR: "sensor.soil_vwc"},
+            "entryA",
+        )
+        assert not any(isinstance(e, ETSensor) for e in entities)
+
+    def test_et_entity_created_without_vwc(self, hass_mock, base_config):
+        from never_dry.sensor import ETSensor, _create_entities
+
+        entities, _, _ = _create_entities(hass_mock, base_config, "entryA")
+        assert any(isinstance(e, ETSensor) for e in entities)
+
+    @pytest.mark.asyncio
+    async def test_backfill_skipped_in_vwc_mode(self, hass_mock, base_config):
+        from unittest.mock import AsyncMock
+
+        from never_dry.const import CONF_VWC_SENSOR
+
+        sensor = DrynessIndexSensor(
+            hass_mock,
+            {**base_config, CONF_VWC_SENSOR: "sensor.soil_vwc"},
+        )
+        sensor.async_write_ha_state = MagicMock()
+        sensor._backfill_from_recorder = AsyncMock()
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        await sensor.async_added_to_hass()
+        sensor._backfill_from_recorder.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_backfill_still_runs_without_vwc(self, hass_mock, base_config):
+        from unittest.mock import AsyncMock
+
+        sensor = DrynessIndexSensor(hass_mock, base_config)
+        sensor.async_write_ha_state = MagicMock()
+        sensor._backfill_from_recorder = AsyncMock()
+        sensor.async_get_last_state = AsyncMock(return_value=None)
+        await sensor.async_added_to_hass()
+        sensor._backfill_from_recorder.assert_awaited_once()

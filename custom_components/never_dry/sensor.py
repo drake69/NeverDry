@@ -262,9 +262,14 @@ def _create_entities(
 ) -> tuple[list[SensorEntity], DrynessIndexSensor, list[IrrigationZoneSensor]]:
     """Create sensor entities from a config dict (shared by YAML and UI)."""
     hub_device = _hub_device_info(entry_id)
-    et_sensor = ETSensor(hass, config, hub_device)
     di_sensor = DrynessIndexSensor(hass, config, hub_device)
-    entities: list[SensorEntity] = [et_sensor, di_sensor]
+    entities: list[SensorEntity] = []
+    # In VWC mode the ET model is bypassed entirely — an "ET Hourly
+    # Estimate" entity that keeps updating from temperature reads as if
+    # the model were still active (tester report, 2026-07-18).
+    if not config.get(CONF_VWC_SENSOR):
+        entities.append(ETSensor(hass, config, hub_device))
+    entities.append(di_sensor)
 
     zone_sensors: list[IrrigationZoneSensor] = []
     for zone_conf in config.get(CONF_ZONES, []):
@@ -625,7 +630,13 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
                     )
 
         if not restored:
-            await self._backfill_from_recorder()
+            if self._vwc_sensor:
+                # The backfill replays the ET/rain water balance, which is
+                # the wrong model here: the first VWC reading sets the
+                # observed deficit directly.
+                _LOGGER.info("VWC mode: skipping ET-model backfill")
+            else:
+                await self._backfill_from_recorder()
 
         tracked = [self._temp_sensor, self._rain_sensor]
         if self._vwc_sensor:
