@@ -91,6 +91,7 @@ from .const import (
     ET_TEMP_VALID_RANGE,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
+    RAIN_RESET_MAX_MM,
     RAIN_TYPE_EVENT,
     SYSTEM_TYPES,
     UNUSUAL_FLOW_MAX_LPM,
@@ -261,9 +262,14 @@ def _create_entities(
 ) -> tuple[list[SensorEntity], DrynessIndexSensor, list[IrrigationZoneSensor]]:
     """Create sensor entities from a config dict (shared by YAML and UI)."""
     hub_device = _hub_device_info(entry_id)
-    et_sensor = ETSensor(hass, config, hub_device)
     di_sensor = DrynessIndexSensor(hass, config, hub_device)
-    entities: list[SensorEntity] = [et_sensor, di_sensor]
+    entities: list[SensorEntity] = []
+    # In VWC mode the ET model is bypassed entirely — an "ET Hourly
+    # Estimate" entity that keeps updating from temperature reads as if
+    # the model were still active (tester report, 2026-07-18).
+    if not config.get(CONF_VWC_SENSOR):
+        entities.append(ETSensor(hass, config, hub_device))
+    entities.append(di_sensor)
 
     zone_sensors: list[IrrigationZoneSensor] = []
     for zone_conf in config.get(CONF_ZONES, []):
@@ -585,6 +591,10 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         attrs: dict = {}
         if self._last_rain is not None:
             attrs["rain_baseline_mm"] = round(self._last_rain, 2)
+            # The baseline is only meaningful against the sensor that
+            # produced it: on restore it is discarded if the configured
+            # rain sensor has changed in the meantime.
+            attrs["rain_baseline_entity"] = self._rain_sensor
         return attrs
 
     async def async_added_to_hass(self) -> None:
@@ -602,12 +612,31 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             # event timestamp instead.
             if self._rain_type != RAIN_TYPE_EVENT:
                 baseline = last.attributes.get("rain_baseline_mm")
-                if baseline is not None:
+                baseline_entity = last.attributes.get("rain_baseline_entity")
+                if baseline is not None and baseline_entity == self._rain_sensor:
                     with contextlib.suppress(ValueError, TypeError):
                         self._last_rain = float(baseline)
+                elif baseline is not None:
+                    # Baseline from a different (or unknown, pre-upgrade)
+                    # rain sensor: comparing it with the new sensor's scale
+                    # would credit phantom rain. Drop it — the next reading
+                    # fixes a fresh baseline without crediting.
+                    _LOGGER.info(
+                        "Rain baseline %s mm belongs to '%s', configured sensor is '%s'"
+                        " — discarding, rebaselining on next reading",
+                        baseline,
+                        baseline_entity,
+                        self._rain_sensor,
+                    )
 
         if not restored:
-            await self._backfill_from_recorder()
+            if self._vwc_sensor:
+                # The backfill replays the ET/rain water balance, which is
+                # the wrong model here: the first VWC reading sets the
+                # observed deficit directly.
+                _LOGGER.info("VWC mode: skipping ET-model backfill")
+            else:
+                await self._backfill_from_recorder()
 
         tracked = [self._temp_sensor, self._rain_sensor]
         if self._vwc_sensor:
@@ -669,8 +698,10 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         """Compute rain increment since last reading.
 
         For 'event' type: the sensor value IS the delta (mm per event).
-        For 'daily_total' type: compute delta from last reading, handling
-        midnight rollover (rain_now < last_rain → new accumulation).
+        For 'daily_total' type: compute delta from last reading. A drop in
+        the reading is a midnight rollover (new value = fresh accumulation)
+        only when it lands near zero; a drop with a high residual is a
+        rolling-window sensor ageing out old rain and credits nothing.
         Converts inches to mm when the sensor reports in imperial units.
         """
         try:
@@ -712,8 +743,24 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             return 0.0
         rain_delta = rain_now - self._last_rain
         if rain_delta < 0:
-            # Sensor reset (midnight rollover) — treat new value as fresh
-            rain_delta = rain_now
+            if rain_now <= RAIN_RESET_MAX_MM:
+                # Genuine reset (midnight rollover): the counter restarted
+                # near zero, so the new value is fresh accumulation.
+                rain_delta = rain_now
+            else:
+                # Rolling-window sensor (e.g. "24h rain") ageing out old
+                # rain: the residual is NOT new precipitation. Crediting it
+                # re-applied yesterday's whole rainfall as phantom rain
+                # (field bug, 2026-07-18: 13.2 mm credited at 05:00 with
+                # clear skies, every zone deficit wiped).
+                _LOGGER.debug(
+                    "Rain sensor '%s' dropped %.2f -> %.2f mm with high residual —"
+                    " rolling-window ageing, no rain credited",
+                    self._rain_sensor,
+                    self._last_rain,
+                    rain_now,
+                )
+                rain_delta = 0.0
         self._last_rain = rain_now
         return max(0.0, rain_delta)
 

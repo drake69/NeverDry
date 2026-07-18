@@ -219,9 +219,13 @@ class NeverDryZoneCard extends HTMLElement {
       // 1) Preferred: stable unique_id prefix.
       const uid = uidMap && uidMap[ent.entity_id];
       if (uid) {
+        // unique_ids are entry-scoped since GH #116
+        // ("<entry_id>_irrigate_<zone>"): strip the entry prefix before
+        // matching, but keep trying the raw uid for unmigrated installs.
+        const bare = uid.slice(uid.indexOf("_") + 1);
         let matched = false;
         for (const [role, prefix] of uidRoles) {
-          if (!out[role] && uid.startsWith(prefix)) {
+          if (!out[role] && (uid.startsWith(prefix) || bare.startsWith(prefix))) {
             out[role] = st;
             matched = true;
             break;
