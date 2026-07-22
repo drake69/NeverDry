@@ -91,7 +91,6 @@ from .const import (
     ET_TEMP_VALID_RANGE,
     KC_ANCHOR_DAYS,
     PLANT_FAMILIES,
-    RAIN_RESET_MAX_MM,
     RAIN_TYPE_EVENT,
     SYSTEM_TYPES,
     UNUSUAL_FLOW_MAX_LPM,
@@ -697,11 +696,16 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     def _compute_rain_delta(self) -> float:
         """Compute rain increment since last reading.
 
-        For 'event' type: the sensor value IS the delta (mm per event).
-        For 'daily_total' type: compute delta from last reading. A drop in
-        the reading is a midnight rollover (new value = fresh accumulation)
-        only when it lands near zero; a drop with a high residual is a
-        rolling-window sensor ageing out old rain and credits nothing.
+        For 'event' type: the sensor value IS the delta (mm per event), gated
+        on the sensor's last_updated timestamp so identical consecutive events
+        each count once and non-rain recomputes credit nothing.
+        For 'daily_total' (any accumulator — midnight-reset total, rolling 24h
+        window, or lifetime cumulative): credit ONLY the positive increment
+        between readings. A decrease is never precipitation — it is a reset,
+        a rolling-window age-out, or a sensor glitch — so it credits zero.
+        This single rule is correct for every accumulator without heuristics
+        and cannot resurrect old rain as phantom precipitation (field bugs
+        2026-07-18 phantom rain at 05:00 and #123 daily-total miscount).
         Converts inches to mm when the sensor reports in imperial units.
         """
         try:
@@ -734,7 +738,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             self._last_rain = rain_now
             return max(0.0, rain_now)
 
-        # daily_total: compute delta
+        # Accumulator: credit only the positive increment.
         if self._last_rain is None:
             # Baseline unknown (fresh boot, nothing restored): fix it from
             # the current reading without crediting — the accumulation
@@ -743,26 +747,19 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             return 0.0
         rain_delta = rain_now - self._last_rain
         if rain_delta < 0:
-            if rain_now <= RAIN_RESET_MAX_MM:
-                # Genuine reset (midnight rollover): the counter restarted
-                # near zero, so the new value is fresh accumulation.
-                rain_delta = rain_now
-            else:
-                # Rolling-window sensor (e.g. "24h rain") ageing out old
-                # rain: the residual is NOT new precipitation. Crediting it
-                # re-applied yesterday's whole rainfall as phantom rain
-                # (field bug, 2026-07-18: 13.2 mm credited at 05:00 with
-                # clear skies, every zone deficit wiped).
-                _LOGGER.debug(
-                    "Rain sensor '%s' dropped %.2f -> %.2f mm with high residual —"
-                    " rolling-window ageing, no rain credited",
-                    self._rain_sensor,
-                    self._last_rain,
-                    rain_now,
-                )
-                rain_delta = 0.0
+            # A drop is never precipitation: midnight reset, rolling-window
+            # age-out, or sensor glitch. Rebase and credit nothing — fresh
+            # rain is credited as the counter climbs again.
+            _LOGGER.debug(
+                "Rain sensor '%s' dropped %.2f -> %.2f mm — reset/age-out, no rain credited",
+                self._rain_sensor,
+                self._last_rain,
+                rain_now,
+            )
+            self._last_rain = rain_now
+            return 0.0
         self._last_rain = rain_now
-        return max(0.0, rain_delta)
+        return rain_delta
 
     def _update_from_model(self, dt_h: float) -> None:
         """Update deficit from ET model and precipitation (standalone).
@@ -898,17 +895,21 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         return deficit
 
     def _compute_backfill_rain_delta(self, rain_now: float, last_rain: float) -> float:
-        """Compute rain delta for backfill replay."""
+        """Compute rain delta for backfill replay (same rule as the live path).
+
+        Accumulators credit only the positive increment; a decrease is a
+        reset/age-out/glitch and credits nothing. Keeping this identical to
+        _compute_rain_delta means a restart mid-day replays the same balance
+        the live path produced.
+        """
         if self._rain_type == RAIN_TYPE_EVENT:
             if rain_now == last_rain:
                 return 0.0
             return max(0.0, rain_now)
 
-        # daily_total: negative delta = midnight rollover
+        # Accumulator: only positive increments are precipitation.
         rain_delta = rain_now - last_rain
-        if rain_delta < 0:
-            rain_delta = rain_now
-        return max(0.0, rain_delta)
+        return rain_delta if rain_delta > 0 else 0.0
 
     def reset(self) -> None:
         """Reset deficit to zero (called after irrigation)."""
