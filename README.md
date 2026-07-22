@@ -11,7 +11,14 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5)](https://github.com/hacs/integration)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 [![GitHub release](https://img.shields.io/github/v/release/drake69/NeverDry)](https://github.com/drake69/NeverDry/releases)
+[![Downloads](https://img.shields.io/github/downloads/drake69/NeverDry/latest/total?color=41BDF5&label=downloads%20%28latest%29)](https://github.com/drake69/NeverDry/releases)
 [![GitHub stars](https://img.shields.io/github/stars/drake69/NeverDry?style=social)](https://github.com/drake69/NeverDry/stargazers)
+<!-- Active installs (Home Assistant analytics). Currently no data: `never_dry` is not yet listed
+     in analytics.home-assistant.io/custom_integrations.json (below HA's listing threshold).
+     Uncomment when it appears — the badge auto-populates:
+[![Active installs](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=active%20installs&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.never_dry.total)](https://analytics.home-assistant.io/custom_integrations.json)
+-->
+
 
 If NeverDry is useful to you, **[leave a star](https://github.com/drake69/NeverDry/stargazers)** ⭐ — it helps others find the project.
 
@@ -246,9 +253,9 @@ Found a bug or have an idea? Open an issue — reports from real gardens are wha
 
 ## Support
 
-If NeverDry saves your garden (and your water bill), consider a one-time donation — or just leave a star, it costs nothing and helps others find the project:
+NeverDry is free and open source. If it's useful to you, leave a star — it costs nothing and helps others find the project:
 
-<a href="https://ko-fi.com/drake69"><img src="https://img.shields.io/badge/Support_on_Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi" height="35"></a>&nbsp;&nbsp;<a href="https://github.com/drake69/NeverDry/stargazers"><img src="https://img.shields.io/badge/Star_on_GitHub-24292e?style=for-the-badge&logo=github&logoColor=white" alt="Star on GitHub" height="35"></a>
+<a href="https://github.com/drake69/NeverDry/stargazers"><img src="https://img.shields.io/badge/Star_on_GitHub-24292e?style=for-the-badge&logo=github&logoColor=white" alt="Star on GitHub" height="35"></a>
 
 ---
 

@@ -32,21 +32,21 @@
         .hero {
             background: linear-gradient(135deg, var(--accent), #2980b9);
             color: white;
-            padding: 80px 20px 60px;
+            padding: 40px 20px 36px;
             text-align: center;
         }
         .hero h1 {
-            font-size: 3em;
+            font-size: 2.5em;
             font-weight: 700;
-            margin-bottom: 0.3em;
+            margin-bottom: 0.15em;
         }
         .hero .tagline {
-            font-size: 1.3em;
+            font-size: 1.2em;
             opacity: 0.9;
             max-width: 600px;
-            margin: 0 auto 1.5em;
+            margin: 0 auto 1em;
         }
-        .hero .badges { margin: 1.5em 0; }
+        .hero .badges { margin: 0.8em 0; }
         .hero .badges img { margin: 0 4px; vertical-align: middle; }
         .hero .cta {
             display: inline-block;
@@ -253,19 +253,37 @@
 
 <!-- Hero -->
 <section class="hero">
-    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
+    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="84" height="84" style="margin-bottom: 0.1em;">
     <h1>NeverDry</h1>
     <p class="tagline">Your garden tells you when it's thirsty. NeverDry listens — and makes sure the valve always closes.</p>
     <div class="badges">
         <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
         <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
         <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/github/downloads/drake69/NeverDry/latest/total?label=downloads&color=41BDF5&style=flat-square" alt="Downloads">
         <img src="https://img.shields.io/badge/HACS-Default-41BDF5?style=flat-square" alt="HACS">
     </div>
-    <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repository</a>
-    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Documentation</a>
-    <div style="margin-top: 1.2em; font-size: 0.95em; opacity: 0.85;">
-        If NeverDry is useful to you, <a href="https://github.com/drake69/NeverDry/stargazers" style="color: white; font-weight: 600;">leave a ⭐ on GitHub</a> — it helps others find the project.
+    <!-- Primary CTA: one-click HACS install (moved up from the Install section, 2026-07-22) -->
+    <a class="cta" href="https://my.home-assistant.io/redirect/hacs_repository/?owner=drake69&repository=NeverDry&category=integration"
+       data-vmtrc="InstallClicked" data-vmtrc-location="hero"
+       style="font-size: 1.2em; padding: 14px 40px;">Install in Home Assistant</a>
+    <div style="margin-top: 0.6em; font-size: 0.9em; opacity: 0.8;">One click via HACS — NeverDry is in the default repository.</div>
+
+    <!-- Value props: 3 benefici in riga, compatti (niente card nell'hero — 2026-07-22) -->
+    <div style="margin-top: 1.3em; display: flex; flex-wrap: wrap; gap: 0.6em 1.6em; justify-content: center; font-size: 1.05em; line-height: 1.35;">
+        <div>🌡️&nbsp;&nbsp;Waters only when the soil is dry</div>
+        <div>🛡️&nbsp;&nbsp;The valve always closes</div>
+        <div>🌧️&nbsp;&nbsp;Skips watering after rain</div>
+    </div>
+
+    <!-- Secondary links -->
+    <div style="margin-top: 1.6em;">
+        <a class="cta secondary" href="https://github.com/drake69/NeverDry" data-vmtrc="GitHubClicked" data-vmtrc-location="hero">GitHub</a>
+        <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md" data-vmtrc="DocsClicked" data-vmtrc-location="hero">Documentation</a>
+    </div>
+
+    <div style="margin-top: 1.1em; font-size: 0.8em; opacity: 0.6;">
+        Already using it? <a href="https://github.com/drake69/NeverDry/stargazers" data-vmtrc="StarClicked" data-vmtrc-location="hero" style="color: white; text-decoration: underline;">leave a ⭐</a> to help others find it.
     </div>
 </section>
 
@@ -393,7 +411,7 @@
         <div class="install-steps">
             <div style="text-align: center; margin-bottom: 2em; padding: 24px; background: var(--accent-light); border-radius: 12px;">
                 <p style="font-size: 1.05em; margin-bottom: 1em; font-weight: 600;">Install directly from HACS — one click:</p>
-                <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=drake69&repository=NeverDry&category=integration">
+                <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=drake69&repository=NeverDry&category=integration" data-vmtrc="InstallClicked" data-vmtrc-location="install-section">
                     <img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open your Home Assistant instance and open NeverDry in HACS." height="48">
                 </a>
             </div>
@@ -483,10 +501,15 @@
 <!-- Support -->
 <section class="support">
     <h2>Support the Project</h2>
-    <p>If NeverDry saves your garden and your water bill, consider a one-time donation:</p>
+    <p>NeverDry is free and open source — the best way to support it is to star it and spread the word:</p>
     <div style="display: flex; gap: 1em; justify-content: center; flex-wrap: wrap;">
-        <a class="kofi-btn" href="https://ko-fi.com/drake69">☕ Support on Ko-fi</a>
         <a class="kofi-btn" style="background: #24292e;" href="https://github.com/drake69/NeverDry/stargazers">&#11088; Star on GitHub</a>
+    </div>
+    <p style="margin-top: 1.8em; margin-bottom: 0.8em; opacity: 0.8;">Know someone with a garden and Home Assistant? Spread the word:</p>
+    <div style="display: flex; gap: 0.8em; justify-content: center; flex-wrap: wrap;">
+        <a class="kofi-btn" style="background: #1877F2; padding: 10px 22px; font-size: 1em;" href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="facebook">Share on Facebook</a>
+        <a class="kofi-btn" style="background: #FF4500; padding: 10px 22px; font-size: 1em;" href="https://www.reddit.com/submit?url=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F&title=NeverDry%20%E2%80%94%20smart%20irrigation%20for%20Home%20Assistant%20(FAO-56%20water%20balance)" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="reddit">Share on Reddit</a>
+        <a class="kofi-btn" style="background: #111111; padding: 10px 22px; font-size: 1em;" href="https://twitter.com/intent/tweet?text=NeverDry%20%E2%80%94%20smart%20irrigation%20for%20Home%20Assistant%20(FAO-56%20water%20balance)&url=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="x">Share on X</a>
     </div>
 </section>
 

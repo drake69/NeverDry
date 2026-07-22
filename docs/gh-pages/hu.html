@@ -18,10 +18,10 @@
         .lang-bar a { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.85em; margin-left: 12px; padding: 2px 8px; border-radius: 4px; transition: background 0.2s; }
         .lang-bar a:hover { background: rgba(255,255,255,0.15); }
         .lang-bar a.active { background: rgba(255,255,255,0.25); color: white; font-weight: 600; }
-        .hero { background: linear-gradient(135deg, var(--accent), #2980b9); color: white; padding: 80px 20px 60px; text-align: center; }
-        .hero h1 { font-size: 3em; font-weight: 700; margin-bottom: 0.3em; }
-        .hero .tagline { font-size: 1.3em; opacity: 0.9; max-width: 600px; margin: 0 auto 1.5em; }
-        .hero .badges { margin: 1.5em 0; }
+        .hero { background: linear-gradient(135deg, var(--accent), #2980b9); color: white; padding: 40px 20px 36px; text-align: center; }
+        .hero h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0.15em; }
+        .hero .tagline { font-size: 1.2em; opacity: 0.9; max-width: 600px; margin: 0 auto 1em; }
+        .hero .badges { margin: 0.8em 0; }
         .hero .badges img { margin: 0 4px; vertical-align: middle; }
         .hero .cta { display: inline-block; background: white; color: var(--accent); padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1em; margin: 0.5em; transition: transform 0.2s; }
         .hero .cta:hover { transform: translateY(-2px); }
@@ -73,17 +73,38 @@
 </nav>
 
 <section class="hero">
-    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="120" height="120" style="margin-bottom: 0.3em;">
+    <img src="https://raw.githubusercontent.com/drake69/NeverDry/main/custom_components/never_dry/brand/icon.png" alt="NeverDry" width="84" height="84" style="margin-bottom: 0.1em;">
     <h1>NeverDry</h1>
     <p class="tagline">Intelligens &ouml;nt&ouml;z&eacute;s a Home Assistant-hez. Tudom&aacute;nyos v&iacute;zm&eacute;rleg modell, amely tudja, mikor &eacute;s mennyi ideig kell &ouml;nt&ouml;zni a kertj&eacute;t.</p>
     <div class="badges">
         <img src="https://img.shields.io/github/actions/workflow/status/drake69/NeverDry/tests.yml?label=tests&style=flat-square" alt="Tests">
         <img src="https://img.shields.io/codecov/c/github/drake69/NeverDry?style=flat-square" alt="Coverage">
         <img src="https://img.shields.io/github/v/release/drake69/NeverDry?style=flat-square" alt="Release">
+        <img src="https://img.shields.io/github/downloads/drake69/NeverDry/latest/total?label=downloads&color=41BDF5&style=flat-square" alt="Downloads">
         <img src="https://img.shields.io/badge/HACS-Default-41BDF5?style=flat-square" alt="HACS">
     </div>
-    <a class="cta" href="https://github.com/drake69/NeverDry">GitHub Repository</a>
-    <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md">Dokument&aacute;ci&oacute;</a>
+    <!-- Primary CTA: one-click HACS install -->
+    <a class="cta" href="https://my.home-assistant.io/redirect/hacs_repository/?owner=drake69&repository=NeverDry&category=integration"
+       data-vmtrc="InstallClicked" data-vmtrc-location="hero"
+       style="font-size: 1.2em; padding: 14px 40px;">Telep&iacute;t&eacute;s a Home Assistant-be</a>
+    <div style="margin-top: 0.6em; font-size: 0.9em; opacity: 0.8;">Egy kattint&aacute;s a HACS-on kereszt&uuml;l — a NeverDry az alap&eacute;rtelmezett t&aacute;rol&oacute;ban tal&aacute;lhat&oacute;.</div>
+
+    <!-- Value props -->
+    <div style="margin-top: 1.3em; display: flex; flex-wrap: wrap; gap: 0.6em 1.6em; justify-content: center; font-size: 1.05em; line-height: 1.35;">
+        <div>🌡️&nbsp;&nbsp;Csak akkor &ouml;nt&ouml;z, ha a talaj sz&aacute;raz</div>
+        <div>🛡️&nbsp;&nbsp;A szelep mindig bez&aacute;r</div>
+        <div>🌧️&nbsp;&nbsp;Es&odblac; ut&aacute;n kihagyja az &ouml;nt&ouml;z&eacute;st</div>
+    </div>
+
+    <!-- Secondary links -->
+    <div style="margin-top: 1.6em;">
+        <a class="cta secondary" href="https://github.com/drake69/NeverDry" data-vmtrc="GitHubClicked" data-vmtrc-location="hero">GitHub</a>
+        <a class="cta secondary" href="https://github.com/drake69/NeverDry/blob/main/docs/user_manual.md" data-vmtrc="DocsClicked" data-vmtrc-location="hero">Dokument&aacute;ci&oacute;</a>
+    </div>
+
+    <div style="margin-top: 1.1em; font-size: 0.8em; opacity: 0.6;">
+        M&aacute;r haszn&aacute;lod? <a href="https://github.com/drake69/NeverDry/stargazers" data-vmtrc="StarClicked" data-vmtrc-location="hero" style="color: white; text-decoration: underline;">adj egy ⭐-ot</a>, hogy m&aacute;sok is r&aacute;tal&aacute;ljanak.
+    </div>
 </section>
 
 <section class="features">
@@ -219,10 +240,15 @@
 
 <section class="support">
     <h2>T&aacute;mogasd a Projektet</h2>
-    <p>Ha a NeverDry megmenti a kertedet &eacute;s a v&iacute;zsz&aacute;ml&aacute;t, fontold meg az adom&aacute;nyt:</p>
+    <p>A NeverDry ingyenes &eacute;s ny&iacute;lt forr&aacute;s&uacute; — a legjobb t&aacute;mogat&aacute;s, ha csillagot adsz neki &eacute;s tov&aacute;bbadod a h&iacute;r&eacute;t:</p>
     <div style="display: flex; gap: 1em; justify-content: center; flex-wrap: wrap;">
-        <a class="kofi-btn" href="https://ko-fi.com/drake69">☕ T&aacute;mogat&aacute;s Ko-fi-n</a>
         <a class="kofi-btn" style="background: #24292e;" href="https://github.com/drake69/NeverDry/stargazers">&#11088; Adj csillagot a GitHubon</a>
+    </div>
+    <p style="margin-top: 1.8em; margin-bottom: 0.8em; opacity: 0.8;">Ismersz valakit, akinek kertje &eacute;s Home Assistant-je van? Add tov&aacute;bb a h&iacute;r&eacute;t:</p>
+    <div style="display: flex; gap: 0.8em; justify-content: center; flex-wrap: wrap;">
+        <a class="kofi-btn" style="background: #1877F2; padding: 10px 22px; font-size: 1em;" href="https://www.facebook.com/sharer/sharer.php?u=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="facebook">Megoszt&aacute;s Facebookon</a>
+        <a class="kofi-btn" style="background: #FF4500; padding: 10px 22px; font-size: 1em;" href="https://www.reddit.com/submit?url=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F&title=NeverDry%20%E2%80%94%20smart%20irrigation%20for%20Home%20Assistant%20(FAO-56%20water%20balance)" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="reddit">Megoszt&aacute;s Redditen</a>
+        <a class="kofi-btn" style="background: #111111; padding: 10px 22px; font-size: 1em;" href="https://twitter.com/intent/tweet?text=NeverDry%20%E2%80%94%20smart%20irrigation%20for%20Home%20Assistant%20(FAO-56%20water%20balance)&url=https%3A%2F%2Fdrake69.github.io%2FNeverDry%2F" target="_blank" rel="noopener" data-vmtrc="ShareClicked" data-vmtrc-network="x">Megoszt&aacute;s X-en</a>
     </div>
 </section>
 
