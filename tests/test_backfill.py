@@ -198,9 +198,10 @@ class TestBackfillRainDelta:
     def test_daily_total_positive_delta(self, sensor_daily):
         assert sensor_daily._compute_backfill_rain_delta(8.0, 5.0) == 3.0
 
-    def test_daily_total_midnight_reset(self, sensor_daily):
-        # 8mm → 1mm = counter reset, delta = 1mm
-        assert sensor_daily._compute_backfill_rain_delta(1.0, 8.0) == 1.0
+    def test_daily_total_drop_credits_nothing(self, sensor_daily):
+        # 8mm → 1mm = reset/age-out: a drop is never rain, credit 0
+        # (same rule as the live path — restart replays the same balance).
+        assert sensor_daily._compute_backfill_rain_delta(1.0, 8.0) == 0.0
 
     def test_negative_rain_clamped(self, sensor_event):
         assert sensor_event._compute_backfill_rain_delta(-1.0, 0.0) == 0.0

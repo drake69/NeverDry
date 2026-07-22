@@ -417,7 +417,11 @@ class TestRainDelta:
         assert sensor._deficit == pytest.approx(5.0, abs=0.01)
 
     def test_daily_total_mode_midnight_reset(self, hass_mock, make_state):
-        """Daily total sensor resets at midnight — handle gracefully."""
+        """Daily total sensor resets at midnight — the drop credits nothing.
+
+        The day's rain was already credited as the counter climbed; the
+        reset itself is not new precipitation, so the deficit is unchanged.
+        """
         from never_dry.const import (
             CONF_RAIN_SENSOR,
             CONF_RAIN_SENSOR_TYPE,
@@ -435,7 +439,7 @@ class TestRainDelta:
         sensor._deficit = 10.0
         sensor._last_rain = 8.0  # accumulated 8mm yesterday
 
-        # Midnight reset: sensor drops to 1.0 (new day, 1mm rain)
+        # Midnight reset: sensor drops to 1.0 (new day)
         hass_mock.states.get.side_effect = lambda eid: {
             "sensor.temperature": make_state(9.0),
             "sensor.rain": make_state(1.0),
@@ -443,8 +447,9 @@ class TestRainDelta:
         sensor._last_update = datetime.now() - timedelta(seconds=1)
         sensor._on_sensor_change(MagicMock())
 
-        # Should treat 1.0 as new rain (not -7.0 delta)
-        assert sensor._deficit == pytest.approx(9.0, abs=0.01)
+        # A drop is never rain: deficit unchanged, baseline rebased to 1.0.
+        assert sensor._deficit == pytest.approx(10.0, abs=0.01)
+        assert sensor._last_rain == pytest.approx(1.0)
 
     def test_rain_zeroes_deficit(self, di_sensor, hass_mock, make_state):
         """Heavy rain should zero out the deficit (never goes negative)."""
@@ -667,8 +672,8 @@ class TestRollingWindowRainSensor:
     Field bug 2026-07-18: at 05:00 with clear skies the sensor dropped
     14.2 → 13.2 mm as yesterday's rain left the 24h window. The drop was
     read as a midnight rollover and the whole residual (13.2 mm) was
-    credited as fresh rain, wiping every zone deficit. A drop is a genuine
-    reset only when the new reading lands near zero (RAIN_RESET_MAX_MM).
+    credited as fresh rain, wiping every zone deficit. The intake now
+    credits only positive increments, so any drop credits nothing.
     """
 
     def _daily_sensor(self, hass_mock):
@@ -732,16 +737,20 @@ class TestRollingWindowRainSensor:
         assert sensor._deficit == pytest.approx(20.0, abs=0.01)
         assert sensor._last_rain == pytest.approx(0.0)
 
-    def test_midnight_reset_still_credits_new_accumulation(self, hass_mock, make_state):
-        """A true midnight rollover (drop to near zero) still credits the
-        fresh accumulation: 8.0 → 0.5 credits 0.5 mm."""
+    def test_midnight_reset_credits_increments_not_the_drop(self, hass_mock, make_state):
+        """A midnight rollover credits nothing on the drop, then credits the
+        fresh accumulation as the counter climbs: 8.0 → 0.5 (0 mm), 0.5 → 3.0
+        (2.5 mm). This is exactly the true daily-total case from #123: rain
+        that falls after the reset is credited via the positive increment."""
         sensor = self._daily_sensor(hass_mock)
         sensor._deficit = 10.0
         sensor._last_rain = 8.0
 
         self._tick(sensor, hass_mock, make_state, 0.5)
+        assert sensor._deficit == pytest.approx(10.0, abs=0.01)  # drop credits 0
 
-        assert sensor._deficit == pytest.approx(9.5, abs=0.01)
+        self._tick(sensor, hass_mock, make_state, 3.0)
+        assert sensor._deficit == pytest.approx(7.5, abs=0.01)  # +2.5 mm
 
     def test_rain_after_window_ageing_credited_normally(self, hass_mock, make_state):
         """New rain arriving after an ageing drop is credited from the
