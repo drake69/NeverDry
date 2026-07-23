@@ -438,12 +438,22 @@ class NeverDryZoneCard extends HTMLElement {
       ["mdi:cup-water", ents.volume, "Volume"],
       ["mdi:timer-sand", ents.duration, "Duration", "duration"],
     ]);
-    this._fillSection("last", t(hass, "secLast"), [
+    const _carrier = ents.deficit || ents.volume;
+    const _irrigating = !!(_carrier && _carrier.attributes && _carrier.attributes.irrigating === true);
+    const lastRows = [
       ["mdi:clock-outline", ents.lastIrrigated, "Last irrigated"],
       ["mdi:history", ents.lastDuration, "Last duration", "duration"],
       ["mdi:water-outline", ents.lastVolume, "Last volume"],
-      ["mdi:water", ents.sessionWater, "Session water"],
-    ]);
+    ];
+    // Session water is a LIVE progress indicator: when idle it is 0 (not
+    // persisted across restarts) or just duplicates Last volume, so show it
+    // only while the zone is actively irrigating. It becomes meaningful in
+    // every delivery mode once the driver abstraction reports a real-time
+    // delivered volume — measured or calculated (AI-128 / AI-186).
+    if (_irrigating) {
+      lastRows.push(["mdi:water", ents.sessionWater, "Session water"]);
+    }
+    this._fillSection("last", t(hass, "secLast"), lastRows);
     this._fillSection("totals", t(hass, "secTotals"), [
       ["mdi:water-plus", ents.yearlyWater, "Yearly water"],
       ["mdi:weather-rainy", ents.rain, "Rain"],
