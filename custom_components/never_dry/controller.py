@@ -1143,6 +1143,10 @@ class IrrigationController:
             return
         delivered_mm = delivered_liters * zone._efficiency / zone._area
         zone._zone_deficit = max(0.0, snapshot - delivered_mm)
+        # Session water must rise live during a flow-metered cycle, not only at
+        # completion — otherwise the card shows Volume/Duration counting down
+        # while Session water stays 0 (field report, flow_meter zone).
+        zone._session_water_delivered = round(delivered_liters, 1)
         zone.async_write_ha_state()
         zone.notify_session_listeners()
 
