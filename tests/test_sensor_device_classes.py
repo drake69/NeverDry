@@ -14,6 +14,7 @@ from never_dry.sensor import (
     ZoneDurationSensor,
     ZoneFlowRateSensor,
     ZoneLastDurationSensor,
+    ZoneLastIrrigatedSensor,
     ZoneLastVolumeSensor,
     ZoneRainSensor,
     ZoneSessionWaterSensor,
@@ -92,3 +93,15 @@ class TestDeviceClassDeclarations:
         """Zone area [m2] → HA converts to [ft2] in imperial."""
         sensor = ZoneAreaSensor(zone_orto)
         assert sensor._attr_device_class == SensorDeviceClass.AREA
+
+    def test_zone_last_irrigated_is_timestamp(self, di_sensor, zone_orto):
+        """Last irrigated is a TIMESTAMP sensor (localized by HA), not raw ISO."""
+        from datetime import datetime
+
+        sensor = ZoneLastIrrigatedSensor(zone_orto)
+        assert sensor._attr_device_class == SensorDeviceClass.TIMESTAMP
+        assert sensor.native_value is None
+        zone_orto._last_irrigated = datetime(2026, 7, 21, 20, 45, 0)
+        v = sensor.native_value
+        # Must be a timezone-aware datetime, not an ISO string.
+        assert isinstance(v, datetime) and v.tzinfo is not None

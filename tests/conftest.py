@@ -35,6 +35,7 @@ def _create_ha_stubs():
         DURATION = "duration"
         PRECIPITATION = "precipitation"
         PRECIPITATION_INTENSITY = "precipitation_intensity"
+        TIMESTAMP = "timestamp"
         VOLUME_FLOW_RATE = "volume_flow_rate"
         VOLUME_STORAGE = "volume_storage"
         WATER = "water"

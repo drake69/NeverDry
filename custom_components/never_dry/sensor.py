@@ -1649,6 +1649,11 @@ class _ZoneTextSensor(SensorEntity):
 class ZoneLastIrrigatedSensor(_ZoneTextSensor):
     """When the zone was last irrigated."""
 
+    # A TIMESTAMP sensor is rendered by Home Assistant in the viewer's locale
+    # (relative "2 hours ago" / localized date-time) instead of the raw ISO
+    # string a plain text sensor produced (AI-104).
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
@@ -1659,9 +1664,11 @@ class ZoneLastIrrigatedSensor(_ZoneTextSensor):
         )
 
     @property
-    def native_value(self) -> str | None:
+    def native_value(self) -> datetime | None:
         ts = self._zone_sensor._last_irrigated
-        return ts.isoformat() if ts else None
+        # A TIMESTAMP sensor must return a timezone-aware datetime; the stored
+        # value is naive local time, so attach the local zone.
+        return ts.astimezone() if ts else None
 
 
 class ZoneLastSourceSensor(_ZoneTextSensor):
