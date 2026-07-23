@@ -436,11 +436,11 @@ class NeverDryZoneCard extends HTMLElement {
     // Current state (deficit) lives in the bar above; here we group by horizon.
     this._fillSection("next", t(hass, "secNext"), [
       ["mdi:cup-water", ents.volume, "Volume"],
-      ["mdi:timer-sand", ents.duration, "Duration"],
+      ["mdi:timer-sand", ents.duration, "Duration", "duration"],
     ]);
     this._fillSection("last", t(hass, "secLast"), [
       ["mdi:clock-outline", ents.lastIrrigated, "Last irrigated"],
-      ["mdi:history", ents.lastDuration, "Last duration"],
+      ["mdi:history", ents.lastDuration, "Last duration", "duration"],
       ["mdi:water-outline", ents.lastVolume, "Last volume"],
       ["mdi:water", ents.sessionWater, "Session water"],
     ]);
@@ -511,8 +511,8 @@ class NeverDryZoneCard extends HTMLElement {
 
   _rows(items) {
     return items
-      .map(([icon, st, fallback]) => {
-        const v = fmtState(this._hass, st);
+      .map(([icon, st, fallback, fmt]) => {
+        const v = fmt === "duration" ? fmtDuration(this._hass, st) : fmtState(this._hass, st);
         if (v === null) return "";
         const label = this._label(st, fallback);
         return `
@@ -552,6 +552,20 @@ function fmtState(hass, st) {
   }
   const unit = st.attributes && st.attributes.unit_of_measurement;
   return unit ? `${st.state} ${unit}` : st.state;
+}
+
+// Format a DURATION sensor (native unit: seconds) as mm:ss, or h:mm:ss past
+// one hour — so a duration reads "17:53" instead of "1.073 s" with no mental
+// conversion. Falls back to fmtState for non-numeric / unavailable states.
+function fmtDuration(hass, st) {
+  const n = numState(st);
+  if (n === null) return fmtState(hass, st);
+  const total = Math.max(0, Math.round(n));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (x) => String(x).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 function escapeHtml(s) {
