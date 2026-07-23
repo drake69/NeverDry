@@ -1,8 +1,8 @@
 # Design — Domain Object Model
 
 **Status:** Draft
-**Date:** 2026-07-05 (updated 2026-07-06 with review feedback from GH #74)
-**Related:** GH #74 (actuator abstraction discussion), GH #94 (`valve.*` support), GH #95 (master valve/pump)
+**Date:** 2026-07-05 (updated 2026-07-06 with review feedback from GH #74; 2026-07-23 aligned with the water-balance reference model)
+**Related:** GH #74 (actuator abstraction discussion), GH #94 (`valve.*` support), GH #95 (master valve/pump), [Water-Balance Reference Model](design_water_balance_reference_model.md) (where the deficit lives)
 
 ## Purpose
 
@@ -16,8 +16,8 @@ as the codebase evolves. For the current module/data-flow architecture see
 
 | Object | Responsibility | Key attributes |
 |---|---|---|
-| **System** | Global model and shared infrastructure | α (ET sensitivity), D_max, global sensors (temperature, rain), *declares* the master valve/pump |
-| **Zone** | Irrigation unit; translates the model into water demand | Kc / plant family, area, sun exposure; cycle & soak rule; translates mm → liters |
+| **System** | Shared **feeds** and global model params | α (ET sensitivity), D_max, the temperature + rain sensors it broadcasts to zones; *declares* the master valve/pump. **The deficit is not held here — it lives per-zone** (see Water-Balance Reference Model) |
+| **Zone** | Irrigation unit; owns its deficit and translates it into water demand | Kc / plant family, area, sun exposure; cycle & soak rule; **its own deficit** (`+ET·Kc·Δt − rain − irrigation`, new zone starts at 0); translates mm → liters |
 | **Scheduler** | The *when* — and the concurrency policy | Time windows, sequences, calendars; serial vs parallel zone runs, interleaving during soak |
 | **ZoneDriver** | The *how* — actuation of one zone's water demand | Entity adapter (`valve.*`/`switch.*`), delivery mode (native volume in liters vs time in seconds via flow rate), flow rate, zero-flow guard; returns a **DeliveryResult** |
 | **MasterDriver** | Coordination of shared hydraulics (pump / master valve) | ON when any ZoneDriver is active, OFF when none; configurable off-delay; no notion of liters |
@@ -29,9 +29,10 @@ latency/timeout, and the safety layers (watchdog, close on error/stop/restart).
 ## Translation chain
 
 ```
-System     computes the deficit (mm)            α, D_max, FAO-56 water balance
+System     provides the ET + rain feeds         α, D_max, temperature + rain sensors
    │
-Zone       translates mm → liters (via area)    applies cycle & soak
+Zone       accumulates its own deficit (mm)      +ET·Kc·Δt − rain − irrigation; new zone starts at 0
+   │        then translates mm → liters (area)   applies cycle & soak
    │
 ZoneDriver translates liters → actuation        native volume if supported,
    │                                            else seconds via flow rate
@@ -57,7 +58,7 @@ classDiagram
         +d_max : mm
         +temperature_sensor
         +rain_sensor
-        +compute_deficit() mm
+        +broadcast(et_h, rain)
     }
 
     class Zone {
@@ -66,7 +67,8 @@ classDiagram
         +sun_exposure
         +threshold_mm
         +cycle_soak_rule
-        +deficit_mm
+        +deficit_mm : own state, starts at 0
+        +accumulate(et_h, kc, rain)
         +water_demand() liters
         +settle(result : DeliveryResult)
     }
@@ -112,7 +114,7 @@ classDiagram
 
     Driver <|-- ZoneDriver
     Driver <|-- MasterDriver
-    System "1" o-- "*" Zone : owns model for
+    System "1" o-- "*" Zone : feeds ET+rain to
     System "1" o-- "0..1" MasterDriver : declares
     Zone "1" --> "1" ZoneDriver : requests liters
     ZoneDriver ..> DeliveryResult : returns
@@ -128,6 +130,19 @@ a `DeliveryResult`; the `Scheduler` never touches drivers — it only decides *w
 `ping()` lives in the abstract `Driver`, so both specializations inherit it.
 
 ## Design decisions
+
+### The deficit lives in the Zone; the System holds feeds, not state
+
+The System is not a global deficit. It owns the two shared **feeds** — the
+temperature sensor (→ ET) and the rain sensor — and broadcasts them; each Zone
+accumulates **its own** deficit (`+ET·Kc·Δt − rain − irrigation`). Irrigating a
+zone resets only that zone. A new zone starts at 0 rather than inheriting a
+global reference, which drifts high under per-zone irrigation. The old global
+"Dryness Index" accumulator is retired as ET state (kept only as an interim
+system-level value for the single-probe VWC mode). The full rationale, reference
+frames, and the retire/keep table are in the
+[Water-Balance Reference Model](design_water_balance_reference_model.md)
+(decisions D1–D5).
 
 ### Master valve/pump: declared in System, executed by a Driver
 
@@ -218,8 +233,8 @@ about a dead valve *before* the next scheduled run, not from a failed one.
 
 | Object | Current state |
 |---|---|
-| System | ✅ explicit: config entry globals, `ETSensor`, `DrynessIndexSensor` |
-| Zone | ✅ explicit: `IrrigationZoneSensor`, per-zone config (Kc, area, sun exposure). Cycle & soak: not implemented |
+| System | ✅ explicit: config entry globals, `ETSensor`, `DrynessIndexSensor` — now the **feed hub / broadcaster** (temperature + rain → `et_h`, `rain_delta` → zones). Its `_deficit` accumulator is being **retired as ET state** and survives only as the interim VWC-system value (Water-Balance Reference Model, D2/D5) |
+| Zone | ✅ explicit: `IrrigationZoneSensor`, per-zone config (Kc, area, sun exposure). `_zone_deficit` is **authoritative**; a new zone **starts at 0** (D4), not seeded from the global. Cycle & soak: not implemented |
 | Scheduler | ⚠️ implicit and minimal: deficit-triggered daily cycle inside `IrrigationController`; no cron/sequences/calendars (deliberately — that is Irrigation Unlimited's territory). Concurrency is de-facto serial, not an explicit policy |
 | ZoneDriver | ⚠️ exists but internal: `ValveOperator` (FSM, safety layers, latency tracker) + valve/switch adapter (GH #74/#94); native volume delivery in progress. Delivered liters returned as a bare float — no DeliveryResult qualifier yet |
 | MasterDriver | ❌ not implemented (GH #95) |

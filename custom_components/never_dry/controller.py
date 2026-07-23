@@ -233,29 +233,32 @@ class IrrigationController:
     # ── Scheduled irrigation ────────────────────────────────
 
     def _make_scheduled_handler(self, zone_name: str):
-        """Create a time-triggered handler for a specific zone."""
+        """Create a time-triggered handler for a specific zone.
+
+        Scheduled mode irrigates **at the scheduled hour regardless of the
+        threshold** — that is the whole point of a schedule. The dose is
+        whatever deficit has accumulated (``_irrigate_zones`` sizes the volume
+        from the zone deficit), so the zone is topped back up even when the
+        deficit is below the reactive threshold. The only skip is a zone with
+        nothing to refill (deficit <= 0). The threshold stays a *reactive*-mode
+        concept. See AI-183.
+        """
 
         @callback
         def _handler(now) -> None:
             zone = self._zones.get(zone_name)
             if zone is None:
                 return
-            threshold = zone.extra_state_attributes.get(
-                "threshold_mm",
-                DEFAULT_THRESHOLD,
-            )
             _LOGGER.info(
-                "Scheduled check fired: zone='%s', deficit=%.1fmm, threshold=%.1fmm",
+                "Scheduled check fired: zone='%s', deficit=%.1fmm",
                 zone_name,
                 zone._zone_deficit,
-                threshold,
             )
-            if zone._zone_deficit < threshold:
+            if zone._zone_deficit <= 0:
                 _LOGGER.info(
-                    "Scheduled check: zone='%s' deficit=%.1fmm < threshold=%.1fmm — no irrigation needed",
+                    "Scheduled check: zone='%s' deficit=%.1fmm — nothing to refill, skipping",
                     zone_name,
                     zone._zone_deficit,
-                    threshold,
                 )
                 return
             if self._running:
@@ -265,10 +268,9 @@ class IrrigationController:
                 )
                 return
             _LOGGER.info(
-                "Scheduled irrigation triggered: zone='%s', deficit=%.1fmm, threshold=%.1fmm",
+                "Scheduled irrigation triggered: zone='%s', deficit=%.1fmm (topping up regardless of threshold)",
                 zone_name,
                 zone._zone_deficit,
-                threshold,
             )
             self._current_source = "scheduled"
             self._irrigation_task = self._hass.async_create_task(

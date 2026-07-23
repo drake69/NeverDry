@@ -191,6 +191,8 @@ The Kc values are interpolated linearly between seasons. The hemisphere is auto-
 
 After each zone, you are asked whether to add another zone or complete setup. You can add as many zones as you need.
 
+> **A zone added later starts at zero deficit.** A brand-new zone begins as if freshly watered and builds its deficit up from there as the weather dries it out — it does not copy the current deficit of your existing zones. This is intentional: it avoids a new zone spuriously reporting "irrigation due" the moment you add it. If you *want* all your zones to share the same starting point, click **"Mark irrigated"** on each zone — this resets a zone's deficit to zero without opening the valve, aligning them all.
+
 ### Step 4: Verify
 
 After setup, check that these entities exist in **Settings → Devices & Services → Entities**:
@@ -244,6 +246,32 @@ Shows the volume of water needed for this specific zone in liters.
 | `flow_rate_lpm` | Valve flow rate |
 | `threshold_mm` | Mode A trigger threshold |
 | `irrigating` | `true` if this zone is currently being irrigated |
+
+### Water totals: Rain Yearly and Water Yearly
+
+Each zone reports two yearly water totals, both in **liters** so the numbers are
+informative for that specific zone (a wider zone catches more rain from the same
+sky).
+
+- **Rain Yearly [L]** — the rain this zone received this year. Rain is a system
+  quantity measured once in millimeters, then projected onto each zone by its
+  area: `Rain Yearly [L] = accumulated rain [mm] × zone area [m²]` (1 mm over
+  1 m² = 1 liter).
+- **Water Yearly [L]** — the total water this zone received this year:
+  `Water Yearly = Rain Yearly + irrigation delivered`.
+
+**How the accumulation works.** The rain millimeters are accumulated by NeverDry
+from your configured rain sensor as rain falls, and the total **resets on 1
+January** (calendar-year accumulation). Because NeverDry can only count rain from
+the moment it is installed, the **first year is partial**: it accumulates from
+the installation date up to 31 December, and only from the following 1 January
+onward does it cover a full calendar year. Irrigation is counted the same way —
+per calendar year — so a freshly installed system starts both totals building
+up from the install date.
+
+If you want these totals to reflect rain that fell *before* NeverDry was
+installed, that historical rain cannot be reconstructed from a live sensor; the
+totals are only guaranteed correct from the install date forward.
 
 ## 7. Irrigation logic — how it all works
 
