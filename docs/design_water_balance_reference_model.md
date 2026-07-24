@@ -81,8 +81,10 @@ mm repeated on every card:
 
 - **Rain Yearly [L]** (per zone) = `yearly_rain_mm x area_m2` — the liters this
   zone caught from the shared rain. Same mm, different liters by area.
-- **Water Yearly [L]** (per zone) = `Rain Yearly + irrigation delivered` — the
-  total water the zone received this year (rain + irrigation).
+- **Irrigated Yearly [L]** (per zone) = irrigation delivered this year — the
+  water you *applied* (a pure consumption figure; device_class WATER feeds the
+  HA Energy dashboard, so rain is deliberately excluded). Rain is Rain Yearly;
+  a user who wants the grand total sums the two.
 
 The old per-zone `_total_rain` lifetime accumulator is removed: it drifted
 between zones by creation time and inflated on intake bugs (a field install read

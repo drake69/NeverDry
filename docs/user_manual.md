@@ -247,18 +247,19 @@ Shows the volume of water needed for this specific zone in liters.
 | `threshold_mm` | Mode A trigger threshold |
 | `irrigating` | `true` if this zone is currently being irrigated |
 
-### Water totals: Rain Yearly and Water Yearly
+### Water totals: Rain Yearly and Irrigated Yearly
 
-Each zone reports two yearly water totals, both in **liters** so the numbers are
-informative for that specific zone (a wider zone catches more rain from the same
-sky).
+Each zone reports two yearly totals in **liters**, kept as two clean, separate
+figures rather than one mixed number:
 
 - **Rain Yearly [L]** — the rain this zone received this year. Rain is a system
   quantity measured once in millimeters, then projected onto each zone by its
   area: `Rain Yearly [L] = accumulated rain [mm] × zone area [m²]` (1 mm over
   1 m² = 1 liter).
-- **Water Yearly [L]** — the total water this zone received this year:
-  `Water Yearly = Rain Yearly + irrigation delivered`.
+- **Irrigated Yearly [L]** — the water **you** delivered by irrigation this year
+  (irrigation only, rain excluded). This is the meaningful *consumption* figure
+  and feeds the Home Assistant Energy dashboard's water tracking. To get the
+  grand total of water the zone received, add the two.
 
 **How the accumulation works.** The rain millimeters are accumulated by NeverDry
 from your configured rain sensor as rain falls, and the total **resets on 1
@@ -657,7 +658,7 @@ The card groups the zone's entities by time horizon:
 - **Deficit vs threshold** — a bar showing how close the zone is to needing water
 - **Next session** — planned volume and run duration
 - **Last session** — last irrigated, duration, volume, and water delivered
-- **Totals** — yearly water and cumulative rain
+- **Totals** — Rain Yearly and Irrigated Yearly (liters, per zone)
 - **Parameters** — threshold, flow rate, area, Kc, efficiency, mode
 - **Actions** — *Irrigate now*, *Mark as irrigated*, and *Reset valve* as real buttons
 

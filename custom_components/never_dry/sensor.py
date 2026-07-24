@@ -1503,11 +1503,12 @@ class ZoneSessionWaterSensor(SensorEntity):
 
 
 class ZoneYearlyWaterSensor(SensorEntity):
-    """Total water this zone received this year [L] = rain + irrigation.
+    """Water this zone received from irrigation this year [L].
 
-    The rain contribution is the shared yearly rain scaled by the zone area
-    (mm x m2 = L); the irrigation contribution is the liters this zone
-    delivered. Resets automatically on January 1st.
+    Irrigation only — the water you delivered, which is the meaningful
+    *consumption* figure (device_class WATER feeds the HA Energy dashboard;
+    mixing in rain, which you did not consume, would inflate it). Rain is
+    reported separately by Rain Yearly. Resets automatically on January 1st.
     """
 
     _attr_has_entity_name = True
@@ -1516,7 +1517,7 @@ class ZoneYearlyWaterSensor(SensorEntity):
     # this is a cumulative consumption total (GH #105). WATER also makes
     # the sensor usable in the HA Energy dashboard water tracking.
     _attr_device_class = SensorDeviceClass.WATER
-    _attr_name = "Water Yearly"
+    _attr_name = "Irrigated Yearly"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:calendar-clock"
@@ -1540,8 +1541,10 @@ class ZoneYearlyWaterSensor(SensorEntity):
 
     @property
     def native_value(self) -> float:
-        rain_liters = self._zone_sensor._dryness.yearly_rain * self._zone_sensor._area
-        return round(rain_liters + self._zone_sensor._yearly_water_delivered, 1)
+        # Irrigation water delivered by this zone only — rain is deliberately
+        # NOT included (that is Rain Yearly). Keeping this a pure consumption
+        # figure is what makes the WATER device_class / Energy dashboard correct.
+        return round(self._zone_sensor._yearly_water_delivered, 1)
 
 
 # ══════════════════════════════════════════════════════════

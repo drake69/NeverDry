@@ -227,9 +227,11 @@ class TestYearlyRain:
         assert small.native_value == pytest.approx(50.0)
         assert big.native_value == pytest.approx(200.0)
 
-    def test_water_yearly_is_rain_plus_irrigation(self, di_sensor):
-        di_sensor._yearly_rain = 4.0  # 200 L over 50 m2
+    def test_irrigated_yearly_is_irrigation_only(self, di_sensor):
+        """Irrigated Yearly is the delivered irrigation only — rain excluded
+        (WATER device_class = consumption; rain is Rain Yearly)."""
+        di_sensor._yearly_rain = 4.0  # must NOT be added
         zone = _make_zone(di_sensor, area=50.0)
         zone._yearly_water_delivered = 120.0
         water = ZoneYearlyWaterSensor(zone)
-        assert water.native_value == pytest.approx(320.0)  # 200 + 120
+        assert water.native_value == pytest.approx(120.0)
