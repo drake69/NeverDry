@@ -273,9 +273,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = entry.data
     await _async_migrate_unique_ids(hass, entry)
-    _async_remove_legacy_rain_entities(hass, entry)
     handler = await hass.async_add_executor_job(_setup_file_logger, hass)
     hass.data[DOMAIN][f"_log_handler_{entry.entry_id}"] = handler
+    # After the file logger is attached, so the removals are visible in the
+    # NeverDry activity log; still before platforms create the new entities.
+    _async_remove_legacy_rain_entities(hass, entry)
     await _async_register_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
