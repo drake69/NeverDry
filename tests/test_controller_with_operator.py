@@ -303,6 +303,20 @@ def test_update_deficit_realtime_is_idempotent(hass_mock, di_sensor):
     assert zone._zone_deficit == 0.0
 
 
+def test_update_deficit_realtime_updates_session_water(hass_mock, di_sensor):
+    """Session water rises live during a flow-metered cycle (field report:
+    Volume/Duration counted down while Session water stayed 0)."""
+    zone = _make_zone_orto(hass_mock, di_sensor)
+    zone._zone_deficit = 12.0
+    zone._deficit_at_irrigation_start = 12.0
+    ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+
+    ctrl._update_deficit_realtime(zone, 5.0)
+    assert zone._session_water_delivered == pytest.approx(5.0)
+    ctrl._update_deficit_realtime(zone, 12.5)
+    assert zone._session_water_delivered == pytest.approx(12.5)
+
+
 def test_update_deficit_realtime_skipped_when_no_active_cycle(hass_mock, di_sensor):
     """Without a snapshot the helper must leave the deficit untouched."""
     zone = _make_zone_orto(hass_mock, di_sensor)

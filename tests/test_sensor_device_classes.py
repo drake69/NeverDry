@@ -1,18 +1,20 @@
 """Regression tests: every sensor that participates in SI/imperial conversion
 must declare the correct device_class so that Home Assistant can auto-convert
-the displayed unit (mm→in, L→gal, L/min→gal/min, mm/h→in/h, m²→ft²).
+the displayed unit (mm→in, L→gal, L/min→gal/min, mm/h→in/h, m2→ft2).
 
 If a device_class is accidentally removed, HA silently stops converting units
 for users who have Home Assistant configured in imperial mode.
 """
 
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import UnitOfVolume
 from never_dry.sensor import (
     ZoneAreaSensor,
     ZoneDeficitSensor,
     ZoneDurationSensor,
     ZoneFlowRateSensor,
     ZoneLastDurationSensor,
+    ZoneLastIrrigatedSensor,
     ZoneLastVolumeSensor,
     ZoneRainSensor,
     ZoneSessionWaterSensor,
@@ -41,10 +43,11 @@ class TestDeviceClassDeclarations:
         deficit = ZoneDeficitSensor(zone_orto)
         assert deficit._attr_device_class == SensorDeviceClass.PRECIPITATION
 
-    def test_zone_rain_sensor_precipitation(self, di_sensor, zone_orto):
-        """Zone cumulative rain [mm] → HA converts to [in] in imperial."""
+    def test_zone_rain_sensor_is_water_liters(self, di_sensor, zone_orto):
+        """Rain Yearly is per-zone liters (mm x area): WATER, not PRECIPITATION."""
         rain = ZoneRainSensor(zone_orto)
-        assert rain._attr_device_class == SensorDeviceClass.PRECIPITATION
+        assert rain._attr_device_class == SensorDeviceClass.WATER
+        assert rain._attr_native_unit_of_measurement == UnitOfVolume.LITERS
 
     def test_zone_session_water_volume_storage(self, di_sensor, zone_orto):
         """Session water delivered [L] → HA converts to [gal] in imperial."""
@@ -87,6 +90,18 @@ class TestDeviceClassDeclarations:
         assert sensor._attr_device_class == SensorDeviceClass.PRECIPITATION
 
     def test_zone_area_sensor_area(self, di_sensor, zone_orto):
-        """Zone area [m²] → HA converts to [ft²] in imperial."""
+        """Zone area [m2] → HA converts to [ft2] in imperial."""
         sensor = ZoneAreaSensor(zone_orto)
         assert sensor._attr_device_class == SensorDeviceClass.AREA
+
+    def test_zone_last_irrigated_is_timestamp(self, di_sensor, zone_orto):
+        """Last irrigated is a TIMESTAMP sensor (localized by HA), not raw ISO."""
+        from datetime import datetime
+
+        sensor = ZoneLastIrrigatedSensor(zone_orto)
+        assert sensor._attr_device_class == SensorDeviceClass.TIMESTAMP
+        assert sensor.native_value is None
+        zone_orto._last_irrigated = datetime(2026, 7, 21, 20, 45, 0)
+        v = sensor.native_value
+        # Must be a timezone-aware datetime, not an ISO string.
+        assert isinstance(v, datetime) and v.tzinfo is not None

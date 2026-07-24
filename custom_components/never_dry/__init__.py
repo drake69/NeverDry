@@ -245,6 +245,29 @@ async def _async_migrate_unique_ids(hass: HomeAssistant, entry: ConfigEntry) -> 
     await er.async_migrate_entries(hass, entry.entry_id, _migrate)
 
 
+@callback
+def _async_remove_legacy_rain_entities(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Remove the pre-rework per-zone rain entities.
+
+    The per-zone rain sensor moved from lifetime millimetres (device_class
+    precipitation) to yearly litres (device_class water) and got a new
+    unique_id (``rain_zone_`` -> ``rain_yearly_zone_``). Deleting the old
+    entity here means the user never sees an ``unavailable`` orphan, and the
+    new entity starts with no statistics so Home Assistant's "unit of
+    measurement changed" repair never fires. The old lifetime-mm history
+    (a field install read 6418 mm) is intentionally discarded.
+    """
+    registry = er.async_get(hass)
+    for reg_entry in list(er.async_entries_for_config_entry(registry, entry.entry_id)):
+        uid = reg_entry.unique_id or ""
+        if "rain_zone_" in uid and "rain_yearly_zone_" not in uid:
+            registry.async_remove(reg_entry.entity_id)
+            _LOGGER.info(
+                "Removed legacy rain entity %s (replaced by Rain Yearly)",
+                reg_entry.entity_id,
+            )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up NeverDry from a config entry (UI)."""
     hass.data.setdefault(DOMAIN, {})
@@ -252,6 +275,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_migrate_unique_ids(hass, entry)
     handler = await hass.async_add_executor_job(_setup_file_logger, hass)
     hass.data[DOMAIN][f"_log_handler_{entry.entry_id}"] = handler
+    # After the file logger is attached, so the removals are visible in the
+    # NeverDry activity log; still before platforms create the new entities.
+    _async_remove_legacy_rain_entities(hass, entry)
     await _async_register_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))

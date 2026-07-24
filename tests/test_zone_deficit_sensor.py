@@ -1,5 +1,6 @@
 """Tests for ZoneDeficitSensor and zone deficit seeding."""
 
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +12,12 @@ from never_dry.const import (
     CONF_ZONE_THRESHOLD,
     CONF_ZONE_VALVE,
 )
-from never_dry.sensor import IrrigationZoneSensor, ZoneDeficitSensor
+from never_dry.sensor import (
+    IrrigationZoneSensor,
+    ZoneDeficitSensor,
+    ZoneRainSensor,
+    ZoneYearlyWaterSensor,
+)
 
 
 def _make_hass():
@@ -107,22 +113,24 @@ class TestZoneDeficitSensorValue:
 
 
 class TestZoneDeficitSeeding:
-    """Test that new zones seed deficit from global Dryness Index."""
+    """A new zone (no restored state) starts at zero — it does NOT inherit the
+    global reference deficit. That global drifts high under per-zone irrigation
+    (it only resets when ALL zones are irrigated together) and gave new zones a
+    spurious 'irrigation due' (#123, Rasen 2.1). See
+    docs/design_water_balance_reference_model.md (D4)."""
 
     @pytest.mark.asyncio
-    async def test_seed_from_dryness_index(self, di_sensor):
-        """New zone (no restore) should seed deficit from DI * Kc."""
+    async def test_new_zone_starts_at_zero_ignoring_dryness_index(self, di_sensor):
+        """New zone (no restore) starts at 0 even when the global DI is high."""
         zone = _make_zone(di_sensor)
-        di_sensor._deficit = 8.0
-        # Simulate async_added_to_hass with no previous state
+        di_sensor._deficit = 8.0  # inflated global — must NOT leak into the zone
         zone.async_get_last_state = AsyncMock(return_value=None)
         await zone.async_added_to_hass()
-        # Kc=1.0 (no plant family), so zone deficit = 8.0
-        assert zone._zone_deficit == pytest.approx(8.0, abs=0.1)
+        assert zone._zone_deficit == 0.0
 
     @pytest.mark.asyncio
     async def test_restore_overrides_seed(self, di_sensor):
-        """Restored state should be used instead of seeding."""
+        """Restored state is used instead of the zero start."""
         zone = _make_zone(di_sensor)
         di_sensor._deficit = 8.0
         last_state = MagicMock()
@@ -130,15 +138,6 @@ class TestZoneDeficitSeeding:
         zone.async_get_last_state = AsyncMock(return_value=last_state)
         await zone.async_added_to_hass()
         assert zone._zone_deficit == pytest.approx(3.5, abs=0.01)
-
-    @pytest.mark.asyncio
-    async def test_seed_zero_when_dryness_zero(self, di_sensor):
-        """If DI is 0, new zone deficit should also be 0."""
-        zone = _make_zone(di_sensor)
-        di_sensor._deficit = 0.0
-        zone.async_get_last_state = AsyncMock(return_value=None)
-        await zone.async_added_to_hass()
-        assert zone._zone_deficit == 0.0
 
 
 class TestZoneDeficitSensorAttributes:
@@ -196,3 +195,43 @@ class TestZoneDeficitSensorAttributes:
         attrs = deficit.extra_state_attributes
         assert attrs["valve_fsm_state"] == "maintenance"
         assert attrs["valve_in_maintenance"] is True
+
+
+class TestYearlyRain:
+    """Rain is a system yearly total [mm]; each zone shows it in liters via its
+    own area (mm x m2 = L), and Water Yearly = rain + irrigation.
+    See docs/design_water_balance_reference_model.md (D3)."""
+
+    def test_accrue_and_year_reset(self, di_sensor):
+        di_sensor._yearly_rain = 0.0
+        di_sensor._yearly_rain_year = datetime.now().year
+        di_sensor._accrue_yearly_rain(3.0)
+        di_sensor._accrue_yearly_rain(2.0)
+        assert di_sensor._yearly_rain == pytest.approx(5.0)
+        # A stale year → the next accrual resets before adding.
+        di_sensor._yearly_rain_year -= 1
+        di_sensor._accrue_yearly_rain(1.0)
+        assert di_sensor._yearly_rain == pytest.approx(1.0)
+        assert di_sensor._yearly_rain_year == datetime.now().year
+
+    def test_rain_yearly_is_liters_via_area(self, di_sensor):
+        di_sensor._yearly_rain = 4.0  # mm
+        zone = _make_zone(di_sensor, area=50.0)
+        rain = ZoneRainSensor(zone)
+        assert rain.native_value == pytest.approx(200.0)  # 4 mm x 50 m2 = 200 L
+
+    def test_all_zones_same_mm_but_liters_scale_with_area(self, di_sensor):
+        di_sensor._yearly_rain = 5.0
+        small = ZoneRainSensor(_make_zone(di_sensor, name="Small", area=10.0))
+        big = ZoneRainSensor(_make_zone(di_sensor, name="Big", area=40.0))
+        assert small.native_value == pytest.approx(50.0)
+        assert big.native_value == pytest.approx(200.0)
+
+    def test_irrigated_yearly_is_irrigation_only(self, di_sensor):
+        """Irrigated Yearly is the delivered irrigation only — rain excluded
+        (WATER device_class = consumption; rain is Rain Yearly)."""
+        di_sensor._yearly_rain = 4.0  # must NOT be added
+        zone = _make_zone(di_sensor, area=50.0)
+        zone._yearly_water_delivered = 120.0
+        water = ZoneYearlyWaterSensor(zone)
+        assert water.native_value == pytest.approx(120.0)

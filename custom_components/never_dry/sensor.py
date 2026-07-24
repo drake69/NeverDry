@@ -571,6 +571,12 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         self._last_rain_event_ts = None
         self._last_update = datetime.now()
         self._zone_listeners: list[Callable] = []
+        # Rain that fell this calendar year [mm] — a SYSTEM quantity (one sky
+        # over the whole garden), so every zone mirrors the same "Rain Yearly"
+        # value instead of keeping its own drifting per-zone counter. Resets on
+        # 1 Jan. See docs/design_water_balance_reference_model.md (D3).
+        self._yearly_rain: float = 0.0
+        self._yearly_rain_year: int = datetime.now().year
         self._temp_buffer = SensorBuffer(ET_BUFFER_SIZE, valid_range=ET_TEMP_VALID_RANGE)
         if device_info:
             self._attr_device_info = device_info
@@ -585,9 +591,25 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
         return self._deficit
 
     @property
+    def yearly_rain(self) -> float:
+        """Rain that fell this calendar year [mm] — shared by all zones."""
+        return self._yearly_rain
+
+    def _accrue_yearly_rain(self, rain_mm: float) -> None:
+        """Add credited rain to the yearly total, resetting on a new year."""
+        year = datetime.now().year
+        if year != self._yearly_rain_year:
+            self._yearly_rain = 0.0
+            self._yearly_rain_year = year
+        self._yearly_rain += rain_mm
+
+    @property
     def extra_state_attributes(self) -> dict:
         """Expose the rain baseline so it survives restarts via restore_state."""
-        attrs: dict = {}
+        attrs: dict = {
+            "yearly_rain_mm": round(self._yearly_rain, 2),
+            "yearly_rain_year": self._yearly_rain_year,
+        }
         if self._last_rain is not None:
             attrs["rain_baseline_mm"] = round(self._last_rain, 2)
             # The baseline is only meaningful against the sensor that
@@ -627,6 +649,14 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
                         baseline_entity,
                         self._rain_sensor,
                     )
+            # Restore the yearly rain total; reset it if the calendar year
+            # rolled over while HA was down.
+            with contextlib.suppress(ValueError, TypeError):
+                self._yearly_rain_year = int(last.attributes.get("yearly_rain_year", self._yearly_rain_year))
+                self._yearly_rain = float(last.attributes.get("yearly_rain_mm", 0.0))
+                if datetime.now().year != self._yearly_rain_year:
+                    self._yearly_rain = 0.0
+                    self._yearly_rain_year = datetime.now().year
 
         if not restored:
             if self._vwc_sensor:
@@ -656,6 +686,8 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
             self._broadcast_to_zones(0.0, 0.0, 0.0)
         else:
             rain_delta = self._compute_rain_delta()
+            if rain_delta > 0:
+                self._accrue_yearly_rain(rain_delta)
 
             # Push temp into the buffer (converted to °C if sensor reports °F);
             # invalid/unavailable readings are rejected, median stays stable.
@@ -996,7 +1028,6 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         # idempotent and the end-of-cycle settle never double-counts.
         # ``None`` outside an active cycle.
         self._deficit_at_irrigation_start: float | None = None
-        self._total_rain: float = 0.0
         self._total_water_delivered: float = 0.0
         self._yearly_water_delivered: float = 0.0
         self._yearly_water_year: int = datetime.now().year
@@ -1046,8 +1077,6 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                     self._last_irrigation_source = last.attributes.get("last_irrigation_source")
                     self._last_session_duration_s = int(last.attributes.get("last_session_duration_s", 0))
             with contextlib.suppress(ValueError, TypeError):
-                self._total_rain = float(last.attributes.get("total_rain_mm", 0.0))
-            with contextlib.suppress(ValueError, TypeError):
                 self._total_water_delivered = float(last.attributes.get("total_water_delivered_l", 0.0))
             with contextlib.suppress(ValueError, TypeError):
                 self._yearly_water_delivered = float(last.attributes.get("yearly_water_delivered_l", 0.0))
@@ -1058,9 +1087,18 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
                     self._yearly_water_delivered = 0.0
                     self._yearly_water_year = datetime.now().year
         else:
-            # New zone: seed deficit from global Dryness Index * Kc
-            kc = self._get_current_kc()
-            self._zone_deficit = self._dryness.deficit * kc
+            # New zone (no restored state): start at zero rather than
+            # inheriting the global reference deficit. The global is an ET
+            # accumulator that only resets when ALL zones are irrigated
+            # together (controller), so under per-zone irrigation it drifts
+            # high and would hand a brand-new zone a spurious "irrigation
+            # due" (#123, Rasen 2.1 read 11 mm while its identical sibling
+            # was at 0). Starting at 0 accepts a small first-cycle bias — a
+            # fresh zone may under-read the real deficit until ET accumulates
+            # — which self-corrects on the first irrigation. Frame-agnostic:
+            # no dependency on the reference deficit or sibling state.
+            # See docs/design_water_balance_reference_model.md (D4).
+            self._zone_deficit = 0.0
 
     def _get_latitude(self) -> float:
         """Get latitude from HA config, default to 45.0 (northern)."""
@@ -1082,8 +1120,6 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             self._zone_deficit = self._dryness.deficit * kc
         else:
             kc = self._get_current_kc()
-            if rain > 0:
-                self._total_rain += rain
             self._zone_deficit = max(
                 0.0,
                 min(self._zone_deficit + et_h * kc * dt_h - rain, self._d_max),
@@ -1295,7 +1331,6 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             "deficit_mm": round(self._zone_deficit, 2),
             "irrigating": self._irrigating,
         }
-        attrs["total_rain_mm"] = round(self._total_rain, 2)
         attrs["total_water_delivered_l"] = round(self._total_water_delivered, 1)
         attrs["yearly_water_delivered_l"] = round(self._yearly_water_delivered, 1)
         attrs["yearly_water_year"] = self._yearly_water_year
@@ -1378,12 +1413,18 @@ class ZoneDeficitSensor(SensorEntity):
 
 
 class ZoneRainSensor(SensorEntity):
-    """Cumulative rain received by this zone [mm]."""
+    """Rain this zone received this calendar year [L].
+
+    Rain is a system quantity — the same mm of sky over the whole garden — but
+    shown per zone in LITERS via the zone area (mm x m2 = L), so the number is
+    informative for THIS zone instead of an identical mm repeated on every
+    card. Resets on 1 Jan. Source: the hub's yearly rain [mm].
+    """
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.PRECIPITATION
-    _attr_name = "Rain"
-    _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
+    _attr_device_class = SensorDeviceClass.WATER
+    _attr_name = "Rain Yearly"
+    _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:weather-rainy"
 
@@ -1394,7 +1435,13 @@ class ZoneRainSensor(SensorEntity):
     ) -> None:
         self._zone_sensor = zone_sensor
         slug = zone_sensor.zone_name.lower().replace(" ", "_")
-        self._attr_unique_id = f"rain_zone_{slug}"
+        # unique_id deliberately changed from the old "rain_zone_" when the
+        # sensor switched from lifetime mm (device_class precipitation) to
+        # per-zone yearly liters (device_class water): a fresh id makes HA
+        # create a new entity with no prior statistics, sidestepping the
+        # "unit of measurement changed" repair. The old rain_zone_ entity
+        # orphans (its broken lifetime mm history is discarded).
+        self._attr_unique_id = f"rain_yearly_zone_{slug}"
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
@@ -1406,7 +1453,8 @@ class ZoneRainSensor(SensorEntity):
 
     @property
     def native_value(self) -> float:
-        return round(self._zone_sensor._total_rain, 2)
+        # mm x m2 = liters this zone caught from the shared yearly rain.
+        return round(self._zone_sensor._dryness.yearly_rain * self._zone_sensor._area, 1)
 
 
 # ══════════════════════════════════════════════════════════
@@ -1455,9 +1503,12 @@ class ZoneSessionWaterSensor(SensorEntity):
 
 
 class ZoneYearlyWaterSensor(SensorEntity):
-    """Water delivered by irrigation this year [L].
+    """Water this zone received from irrigation this year [L].
 
-    Resets automatically on January 1st.
+    Irrigation only — the water you delivered, which is the meaningful
+    *consumption* figure (device_class WATER feeds the HA Energy dashboard;
+    mixing in rain, which you did not consume, would inflate it). Rain is
+    reported separately by Rain Yearly. Resets automatically on January 1st.
     """
 
     _attr_has_entity_name = True
@@ -1466,7 +1517,7 @@ class ZoneYearlyWaterSensor(SensorEntity):
     # this is a cumulative consumption total (GH #105). WATER also makes
     # the sensor usable in the HA Energy dashboard water tracking.
     _attr_device_class = SensorDeviceClass.WATER
-    _attr_name = "Yearly water"
+    _attr_name = "Irrigated Yearly"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:calendar-clock"
@@ -1490,6 +1541,9 @@ class ZoneYearlyWaterSensor(SensorEntity):
 
     @property
     def native_value(self) -> float:
+        # Irrigation water delivered by this zone only — rain is deliberately
+        # NOT included (that is Rain Yearly). Keeping this a pure consumption
+        # figure is what makes the WATER device_class / Energy dashboard correct.
         return round(self._zone_sensor._yearly_water_delivered, 1)
 
 
@@ -1604,6 +1658,11 @@ class _ZoneTextSensor(SensorEntity):
 class ZoneLastIrrigatedSensor(_ZoneTextSensor):
     """When the zone was last irrigated."""
 
+    # A TIMESTAMP sensor is rendered by Home Assistant in the viewer's locale
+    # (relative "2 hours ago" / localized date-time) instead of the raw ISO
+    # string a plain text sensor produced (AI-104).
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
@@ -1614,9 +1673,11 @@ class ZoneLastIrrigatedSensor(_ZoneTextSensor):
         )
 
     @property
-    def native_value(self) -> str | None:
+    def native_value(self) -> datetime | None:
         ts = self._zone_sensor._last_irrigated
-        return ts.isoformat() if ts else None
+        # A TIMESTAMP sensor must return a timezone-aware datetime; the stored
+        # value is naive local time, so attach the local zone.
+        return ts.astimezone() if ts else None
 
 
 class ZoneLastSourceSensor(_ZoneTextSensor):

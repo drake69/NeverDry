@@ -233,8 +233,18 @@ class TestReactiveHandler:
 
 
 class TestScheduledHandler:
-    def test_below_threshold_no_irrigation(self, controller, zone_orto, hass_mock):
-        zone_orto._zone_deficit = 5.0
+    def test_below_threshold_still_irrigates(self, controller, zone_orto, hass_mock):
+        # Scheduled mode tops up at the scheduled hour regardless of the
+        # threshold: a below-threshold deficit still irrigates (AI-183).
+        zone_orto._zone_deficit = 5.0  # below the default 20 mm threshold
+        handler = controller._make_scheduled_handler("Orto")
+        hass_mock.async_create_task = MagicMock(return_value=MagicMock())
+        handler(MagicMock())
+        hass_mock.async_create_task.assert_called_once()
+
+    def test_zero_deficit_no_irrigation(self, controller, zone_orto, hass_mock):
+        # Nothing to refill → skip. This is now the only skip condition.
+        zone_orto._zone_deficit = 0.0
         handler = controller._make_scheduled_handler("Orto")
         hass_mock.async_create_task = MagicMock()
         handler(MagicMock())

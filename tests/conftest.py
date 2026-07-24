@@ -35,6 +35,7 @@ def _create_ha_stubs():
         DURATION = "duration"
         PRECIPITATION = "precipitation"
         PRECIPITATION_INTENSITY = "precipitation_intensity"
+        TIMESTAMP = "timestamp"
         VOLUME_FLOW_RATE = "volume_flow_rate"
         VOLUME_STORAGE = "volume_storage"
         WATER = "water"
@@ -128,6 +129,7 @@ def _create_ha_stubs():
     entity_registry_mod = ModuleType("homeassistant.helpers.entity_registry")
     entity_registry_mod.async_get = MagicMock(return_value=MagicMock())
     entity_registry_mod.async_entries_for_device = MagicMock(return_value=[])
+    entity_registry_mod.async_entries_for_config_entry = MagicMock(return_value=[])
     entity_registry_mod.async_migrate_entries = AsyncMock()
     entity_registry_mod.RegistryEntry = MagicMock
 
