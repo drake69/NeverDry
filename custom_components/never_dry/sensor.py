@@ -1435,7 +1435,13 @@ class ZoneRainSensor(SensorEntity):
     ) -> None:
         self._zone_sensor = zone_sensor
         slug = zone_sensor.zone_name.lower().replace(" ", "_")
-        self._attr_unique_id = f"rain_zone_{slug}"
+        # unique_id deliberately changed from the old "rain_zone_" when the
+        # sensor switched from lifetime mm (device_class precipitation) to
+        # per-zone yearly liters (device_class water): a fresh id makes HA
+        # create a new entity with no prior statistics, sidestepping the
+        # "unit of measurement changed" repair. The old rain_zone_ entity
+        # orphans (its broken lifetime mm history is discarded).
+        self._attr_unique_id = f"rain_yearly_zone_{slug}"
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)

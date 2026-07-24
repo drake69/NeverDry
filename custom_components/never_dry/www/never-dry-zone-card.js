@@ -118,7 +118,7 @@ function valveMeta(state) {
 const ROLE_SUFFIX = {
   volume: "_volume",
   deficit: "_deficit",
-  rain: "_rain",
+  rain: "_rain_yearly",
   threshold: "_threshold",
   sessionWater: "_session_water",
   yearlyWater: "_yearly_water",
@@ -146,7 +146,7 @@ const ROLE_SUFFIX = {
 const UID_PREFIX = {
   volume: "irrigation_zone_",
   deficit: "deficit_zone_",
-  rain: "rain_zone_",
+  rain: "rain_yearly_zone_",
   threshold: "threshold_zone_",
   sessionWater: "session_water_zone_",
   yearlyWater: "yearly_water_zone_",
