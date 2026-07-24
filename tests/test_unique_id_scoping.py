@@ -113,3 +113,33 @@ class TestRegistryMigration:
         migrated = MagicMock()
         migrated.unique_id = "entryA_never_dry"
         assert cb(migrated) is None
+
+    def test_remove_legacy_rain_entities_removes_only_old_rain(self, hass_mock):
+        """Cleanup removes the pre-rework rain_zone_ entity, keeps the rest."""
+        from never_dry import _async_remove_legacy_rain_entities
+
+        entry = MagicMock()
+        entry.entry_id = "entryA"
+
+        def _e(uid, eid):
+            m = MagicMock()
+            m.unique_id = uid
+            m.entity_id = eid
+            return m
+
+        entries = [
+            _e("entryA_rain_zone_orto", "sensor.orto_rain"),  # legacy -> remove
+            _e("entryA_rain_yearly_zone_orto", "sensor.orto_rain_yearly"),  # new -> keep
+            _e("entryA_deficit_zone_orto", "sensor.orto_deficit"),  # keep
+        ]
+        registry = MagicMock()
+        removed = []
+        registry.async_remove.side_effect = removed.append
+
+        with (
+            patch("never_dry.er.async_get", return_value=registry),
+            patch("never_dry.er.async_entries_for_config_entry", return_value=entries),
+        ):
+            _async_remove_legacy_rain_entities(hass_mock, entry)
+
+        assert removed == ["sensor.orto_rain"]
