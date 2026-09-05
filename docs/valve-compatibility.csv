@@ -1,0 +1,4 @@
+vendor,model,firmware,datecode,via,valve_domain,flow_rate,volume_session,volume_aggregate,history,needs_config,caveat,lod,reported_by,issue,date
+SONOFF,SWV,1.0.4,20240820,Z2M 2.13,switch,m3/h,yes,daily,no,none,,,maintainer,,2026-06-01
+SONOFF,SWV-ZFE,1.0.7,20260317,Z2M 2.13,switch,no,yes,hourly,on_request,history,,,maintainer,,2026-07-01
+SONOFF,SWV-ZFE,1.1.0,20260724,Z2M 2.13,switch,no,yes,hourly,on_request,history,unit_change,,maintainer,,2026-08-01
