@@ -45,14 +45,18 @@ dosing below.
 
 ## Verified valves
 
-| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | History | Needs YAML? | LoD | By |
-|---|---|---|---|---|---|---|---|---|---|
-| SONOFF **SWV** | 1.0.4 (20240820) | Z2M 2.13 | `switch.*` | ✅ m³/h | ✅ session + daily | ❌ | ❌ none | — | maintainer |
-| SONOFF **SWV-ZFE** | 1.0.7 (20260317) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | ⚠️ for history | — | maintainer |
-| SONOFF **SWV-ZFE** | 1.1.0 (20260724) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | ⚠️ for history | — | maintainer |
+<!-- BEGIN GENERATED TABLE: edit valve-compatibility.csv, then run tools/build_valve_table.py -->
+| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | History | Needs config? | Verdict | Why | LoD | By |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| SONOFF **SWV** | 1.0.4 (20240820) | Z2M 2.13 | `switch.*` | m3/h | ✅ session + daily | ❌ | ❌ none | **good** | flow rate in m3/h, session counter | - | maintainer |
+| SONOFF **SWV-ZFE** | 1.0.7 (20260317) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | history | **good** | session counter | - | maintainer |
+| SONOFF **SWV-ZFE** | 1.1.0 (20260724) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | history | **partial** | session counter, but the firmware can change its own counter units | - | maintainer |
+
+**Verdict**, derived from the columns, never typed: *good* = delivery measurement available with no extra setup · *partial* = delivery measurement available, but with a documented caveat or extra step · *timer-only* = no delivery measurement, so NeverDry runs it on a clock
+<!-- END GENERATED TABLE -->
 
 ✅ works out of the box · ⚠️ reachable, with a documented step · ❌ not available ·
-— not measured yet
+- not measured yet
 
 **Read this table with two things in mind.** It is indexed by **firmware, not model**:
 the two SWV-ZFE rows are the same product and differ, which is the whole reason the
