@@ -492,19 +492,55 @@ def test_no_user_facing_string_names_an_internal_key():
     )
 
 
+# A label naming a field, in English, fits well inside this. The longest one in the
+# source is 73 characters. Past it, in the file where the wording is authored, the
+# text has stopped being a name.
+_LABEL_LIMIT = 90
+
+# A translation is allowed to be longer than its English counterpart, because languages
+# are. What it may not be is a different *kind* of string. German runs the longest here
+# and its worst case is 1.29 times English, on exactly the same construction; the defect
+# this test exists for, a description pasted into the label slot, was about seven times
+# its English counterpart. Those are not the same phenomenon and one threshold cannot
+# separate them, which is why a translation has to fail both tests to be reported.
+_TRANSLATION_RATIO = 1.6
+
+
 def test_a_label_is_a_name_not_a_paragraph():
     """A label names the field; the explanation belongs in data_description.
 
     The Italian file had the whole design-flow-rate description pasted into the
-    label slot — 493 characters where the form expects two words — so the
-    field announced itself with a paragraph while every neighbour had a name.
+    label slot, 493 characters where the form expects two words, so the field
+    announced itself with a paragraph while every neighbour had a name.
+
+    The length alone cannot decide this. An absolute limit calibrated on English calls
+    a German label a paragraph for being German: the first contributed German file
+    tripped this test with a label that was the same construction as the English one,
+    word for word, only spelled in a language whose words are longer. So the source
+    files answer to the limit, and a translation answers to its own English counterpart
+    as well: it is reported only when it is both long in absolute terms and much longer
+    than the string it translates.
     """
+    english = {where: text for where, text in _user_facing_strings(json.loads(_EN_JSON.read_text()))}
+
     offenders: list[str] = []
     for path in _ALL_DOCS:
         data = json.loads(path.read_text())
+        is_source = path in (_STRINGS, _EN_JSON)
         for where, text in _user_facing_strings(data):
-            if ".data." in where and len(text) > 90:
+            if ".data." not in where or len(text) <= _LABEL_LIMIT:
+                continue
+            if is_source:
                 offenders.append(f"{path.name}: {where} is {len(text)} characters")
+                continue
+            counterpart = english.get(where)
+            if not counterpart:
+                offenders.append(f"{path.name}: {where} is {len(text)} characters and has no English counterpart")
+            elif len(text) > _TRANSLATION_RATIO * len(counterpart):
+                offenders.append(
+                    f"{path.name}: {where} is {len(text)} characters against {len(counterpart)} in English "
+                    f"({len(text) / len(counterpart):.1f}x): that is a description, not a label"
+                )
     assert not offenders, "labels that are paragraphs:\n  " + "\n  ".join(offenders)
 
 
