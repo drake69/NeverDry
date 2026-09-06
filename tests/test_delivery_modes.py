@@ -1,5 +1,7 @@
 """Tests for the three valve delivery modes."""
 
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -938,6 +940,66 @@ class TestTimeoutCapIsVisibleWhereItApplies:
         assert zone.timeout_caps_duration is False
 
 
+# ---------------------------------------------------------------------------
+# The card's own languages, read from the card. Never a literal.
+#
+# This block replaces an assertion that counted occurrences and compared the total
+# to 2. It broke the first time somebody contributed a third language, and it broke
+# on the contributor's pull request rather than on ours: the translation was complete
+# and correct, and the test was counting to a number the project had outgrown.
+#
+# Counting was the weaker check anyway. A total of three is satisfied by one language
+# holding a code twice and another not holding it at all. What matters is presence in
+# each dictionary, which is what the parametrised test below asserts.
+
+_CARD = Path(__file__).resolve().parents[1] / "custom_components/never_dry/www/never-dry-zone-card.js"
+_WARNING_CODES = {"timeout_caps_duration", "no_guard_flow", "valve_unreachable"}
+
+
+def _balanced_block(src: str, opening: int) -> str:
+    """Return ``src`` from the brace at ``opening`` through its matching close.
+
+    Quoted strings are skipped while counting, so a brace inside a label cannot end the
+    object early.
+    """
+    depth, i, quote = 0, opening, ""
+    while i < len(src):
+        ch = src[i]
+        if quote:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'`":
+            quote = ch
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return src[opening : i + 1]
+        i += 1
+    raise AssertionError(f"unbalanced braces in {_CARD.name}")
+
+
+def _card_object(name: str) -> str:
+    """The body of ``const <name> = { ... }`` in the card."""
+    src = _CARD.read_text(encoding="utf-8")
+    return _balanced_block(src, src.index(f"const {name} = {{") + len(f"const {name} = "))
+
+
+def _card_languages() -> list[str]:
+    """Every language the card ships, in the order it declares them."""
+    return re.findall(r"\n  (\w+): \{", _card_object("I18N"))
+
+
+def _card_dictionary(language: str) -> str:
+    """The body of one language block inside ``I18N``."""
+    body = _card_object("I18N")
+    return _balanced_block(body, body.index(f"\n  {language}: {{") + len(f"\n  {language}: "))
+
+
 class TestWarningsAreCodesNotSentences:
     """The zone publishes what is wrong as codes; the card owns the wording.
 
@@ -983,17 +1045,14 @@ class TestWarningsAreCodesNotSentences:
         zone._zone_deficit = 10.0
         assert zone.active_warnings == []
 
-    def test_every_code_has_a_string_in_both_languages(self):
+    @pytest.mark.parametrize("language", _card_languages())
+    @pytest.mark.parametrize("code", sorted(_WARNING_CODES))
+    def test_every_code_has_a_string_in_every_language(self, code, language):
         """A code the card cannot name would render as the raw code to a user."""
-        import re
-        from pathlib import Path
-
-        card = Path(__file__).resolve().parents[1] / "custom_components/never_dry/www/never-dry-zone-card.js"
-        js = card.read_text(encoding="utf-8")
-        codes = {"timeout_caps_duration", "no_guard_flow", "valve_unreachable"}
-        for code in codes:
-            found = len(re.findall(rf"\bwarn_{code}\s*:", js))
-            assert found == 2, f"warn_{code} appears {found} times, expected one per language"
+        assert f"warn_{code}" in _card_dictionary(language), (
+            f"warn_{code} has no wording in the card's '{language}' dictionary; "
+            f"a zone raising it would show the raw code to a user of that language"
+        )
 
     # `monkeypatch`, not a hand-rolled swap: patching the property on the class and
     # then *deleting* it in a finally removes the real one, and every later test in
