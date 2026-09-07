@@ -410,6 +410,7 @@
         "name": "Velocità del vento a 2 m"
       },
       "last_source": {
+        "name": "Ultima origine",
         "state": {
           "scheduled": "Programmata",
           "reactive": "Soglia di deficit",
@@ -419,6 +420,188 @@
           "automatic": "Automatica",
           "mark_irrigated": "Segnata come irrigata",
           "service_reset": "Azzeramento"
+        }
+      },
+      "et_hourly_estimate": {
+        "name": "Stima ET oraria"
+      },
+      "dryness_index": {
+        "name": "Indice di secchezza"
+      },
+      "volume": {
+        "name": "Volume"
+      },
+      "deficit": {
+        "name": "Deficit"
+      },
+      "duration": {
+        "name": "Durata"
+      },
+      "last_duration": {
+        "name": "Ultima durata"
+      },
+      "last_irrigated": {
+        "name": "Ultima irrigazione"
+      },
+      "last_volume": {
+        "name": "Ultimo volume"
+      },
+      "session_water": {
+        "name": "Acqua sessione"
+      },
+      "rain_yearly": {
+        "name": "Pioggia annuale"
+      },
+      "irrigated_yearly": {
+        "name": "Irrigata nell'anno"
+      },
+      "flow_rate": {
+        "name": "Portata di progetto"
+      },
+      "measured_flow": {
+        "name": "Portata misurata"
+      },
+      "meter_resolution": {
+        "name": "Risoluzione contatore"
+      },
+      "irrigation_mode": {
+        "name": "Modalità irrigazione"
+      },
+      "irrigation_time": {
+        "name": "Orario irrigazione"
+      },
+      "threshold": {
+        "name": "Soglia"
+      },
+      "area": {
+        "name": "Area"
+      },
+      "efficiency": {
+        "name": "Efficienza"
+      },
+      "kc": {
+        "name": "Kc"
+      },
+      "linked_valve": {
+        "name": "Valvola"
+      },
+      "linked_battery": {
+        "name": "Batteria"
+      },
+      "linked_water_meter": {
+        "name": "Contatore acqua"
+      }
+    },
+    "button": {
+      "irrigate": {
+        "name": "Irriga"
+      },
+      "stop": {
+        "name": "Ferma"
+      },
+      "mark_irrigated": {
+        "name": "Segna come irrigata"
+      },
+      "reset_valve": {
+        "name": "Reimposta valvola"
+      },
+      "valve_test": {
+        "name": "Test valvola (1 min)"
+      },
+      "reset_yearly_rain": {
+        "name": "Azzera pioggia annuale"
+      },
+      "reset_yearly_water": {
+        "name": "Azzera acqua annuale"
+      }
+    }
+  },
+  "services": {
+    "reset": {
+      "name": "Azzera il deficit",
+      "description": "Azzera il deficit idrico del suolo (di solito dopo che l'irrigazione è terminata)."
+    },
+    "reset_yearly_rain": {
+      "name": "Azzera la pioggia annuale",
+      "description": "Azzera il totale della pioggia da inizio anno (per tutto l'impianto). Il totale è un valore unico condiviso dal sensore \"Pioggia annuale\" di ogni zona e normalmente si azzera da solo il 1 gennaio. Serve a cancellare un valore sbagliato, per esempio dopo aver cambiato tipo di sensore di pioggia, senza aspettare l'anno nuovo o reinstallare. Le statistiche storiche restano intatte."
+    },
+    "reset_yearly_water": {
+      "name": "Azzera l'acqua annuale",
+      "description": "Azzera per ogni zona il totale dell'acqua irrigata da inizio anno. Ogni zona ha il proprio contatore annuale e normalmente si azzera il 1 gennaio; questo li cancella tutti in una volta. Il totale erogato di sempre per zona e le statistiche storiche restano intatti."
+    },
+    "irrigate_zone": {
+      "name": "Irriga una zona",
+      "description": "Avvia l'irrigazione di una singola zona. Come viene misurata l'acqua dipende dalla modalità di erogazione della zona: a tempo, a volume letto dal contatore, oppure passando un obiettivo di volume a una valvola intelligente che si dosa da sola.",
+      "fields": {
+        "zone_name": {
+          "name": "Nome della zona",
+          "description": "Il nome della zona da irrigare (come configurato)."
+        }
+      }
+    },
+    "irrigate_all": {
+      "name": "Irriga tutte le zone",
+      "description": "Irriga in sequenza tutte le zone configurate. Ogni zona usa la propria modalità di erogazione. Una pausa fra una zona e l'altra lascia stabilizzare la pressione. Il deficit viene azzerato quando tutte le zone hanno finito."
+    },
+    "stop": {
+      "name": "Arresto di emergenza",
+      "description": "Chiude immediatamente tutte le valvole. Serve a interrompere un ciclo di irrigazione in corso."
+    },
+    "stop_zone": {
+      "name": "Ferma una zona",
+      "description": "Ferma l'irrigazione di una singola zona, lasciando le altre in funzione.",
+      "fields": {
+        "zone_name": {
+          "name": "Nome della zona",
+          "description": "La zona la cui irrigazione va fermata."
+        }
+      }
+    },
+    "mark_irrigated": {
+      "name": "Segna la zona come irrigata",
+      "description": "Registra che una zona è stata bagnata a mano, così il modello accredita l'acqua e smette di chiederla. Da usare dopo aver innaffiato con la canna.",
+      "fields": {
+        "zone_name": {
+          "name": "Nome della zona",
+          "description": "La zona da segnare come irrigata. Lascia vuoto per tutte le zone."
+        }
+      }
+    },
+    "set_deficit": {
+      "name": "Imposta il deficit",
+      "description": "Imposta il deficit idrico di una zona a un valore scelto. Serve a correggere il modello dopo qualcosa che non ha potuto vedere, come una bagnatura abbondante a mano o un periodo con il sensore di pioggia fuori uso.",
+      "fields": {
+        "deficit_mm": {
+          "name": "Deficit (mm)",
+          "description": "Valore di deficit da impostare, in mm. Deve essere >= 0."
+        },
+        "zone_name": {
+          "name": "Nome della zona",
+          "description": "La zona da aggiornare. Lascia vuoto per aggiornarle tutte."
+        }
+      }
+    },
+    "reset_valve": {
+      "name": "Reimposta la valvola (sblocca la manutenzione)",
+      "description": "Toglie una zona dalla manutenzione e le permette di tornare a irrigare. Una zona finisce in manutenzione dopo ripetuti guasti della valvola, e ci resta finché qualcuno non ha guardato la valvola.",
+      "fields": {
+        "zone_name": {
+          "name": "Nome della zona",
+          "description": "La zona la cui valvola va sbloccata."
+        }
+      }
+    },
+    "test_valve": {
+      "name": "Test della valvola (assistito)",
+      "description": "Apre la valvola di una zona per un tempo stabilito e misura quanto eroga davvero, così la portata misurata si può confrontare con quella per cui la zona è stata progettata. Guarda la zona mentre gira.",
+      "fields": {
+        "zone_name": {
+          "name": "Zona",
+          "description": "La zona da provare."
+        },
+        "duration_min": {
+          "name": "Durata",
+          "description": "Minuti per cui tenere aperta la valvola. Un minuto dà una misura inaffidabile: un contatore che scatta a litri interi in quel tempo si muove appena, e una portata calcolata su uno o due scatti descrive la risoluzione del contatore, non la zona. Le prove più lunghe costano acqua, ma sono l'unico modo per misurare una zona lenta."
         }
       }
     }

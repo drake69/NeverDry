@@ -98,7 +98,7 @@ class MarkIrrigatedButton(ButtonEntity):
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = "Mark irrigated"
+        self._attr_translation_key = "mark_irrigated"
         self._attr_unique_id = f"mark_irrigated_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -122,7 +122,7 @@ class IrrigateButton(ButtonEntity):
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = "Irrigate"
+        self._attr_translation_key = "irrigate"
         self._attr_unique_id = f"irrigate_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -152,7 +152,7 @@ class ValveTestButton(ButtonEntity):
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = "Valve test (1 min)"
+        self._attr_translation_key = "valve_test"
         self._attr_unique_id = f"valve_test_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -175,7 +175,7 @@ class StopButton(ButtonEntity):
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = "Stop"
+        self._attr_translation_key = "stop"
         self._attr_unique_id = f"stop_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -199,7 +199,7 @@ class ResetMaintenanceButton(ButtonEntity):
         self._hass = hass
         self._zone_name = zone_name
         slug = zone_name.lower().replace(" ", "_")
-        self._attr_name = "Reset valve"
+        self._attr_translation_key = "reset_valve"
         self._attr_unique_id = f"reset_valve_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -221,7 +221,7 @@ class ResetYearlyRainButton(ButtonEntity):
 
     def __init__(self, hass: HomeAssistant, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
-        self._attr_name = "Reset yearly rain"
+        self._attr_translation_key = "reset_yearly_rain"
         self._attr_unique_id = "reset_yearly_rain"
         if device_info:
             self._attr_device_info = device_info
@@ -239,7 +239,7 @@ class ResetYearlyWaterButton(ButtonEntity):
 
     def __init__(self, hass: HomeAssistant, device_info: DeviceInfo | None = None) -> None:
         self._hass = hass
-        self._attr_name = "Reset yearly water"
+        self._attr_translation_key = "reset_yearly_water"
         self._attr_unique_id = "reset_yearly_water"
         if device_info:
             self._attr_device_info = device_info

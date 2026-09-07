@@ -149,7 +149,7 @@
         "data": {
           "temperature_sensor": "Temperatur-Sensor",
           "rain_sensor": "Regen-Sensor",
-          "rain_sensor_type": "Regen-Sensor Art",     
+          "rain_sensor_type": "Regen-Sensor Art",
           "alpha": "ET Koeffizient (α) — nur einfaches Modell",
           "t_base": "Basis Temperatur — nur einfaches Modell",
           "d_max": "Obergrenze des Defizit-Maßwerts",
@@ -410,6 +410,7 @@
         "name": "Windgeschwindigkeit bei 2 m"
       },
       "last_source": {
+        "name": "Letzte Auslösung",
         "state": {
           "scheduled": "Zeitplan",
           "reactive": "Defizitschwelle",
@@ -419,6 +420,188 @@
           "automatic": "Automatisch",
           "mark_irrigated": "Als bewässert markiert",
           "service_reset": "Reset"
+        }
+      },
+      "et_hourly_estimate": {
+        "name": "ET-Schätzung pro Stunde"
+      },
+      "dryness_index": {
+        "name": "Trockenheitsindex"
+      },
+      "volume": {
+        "name": "Volumen"
+      },
+      "deficit": {
+        "name": "Defizit"
+      },
+      "duration": {
+        "name": "Dauer"
+      },
+      "last_duration": {
+        "name": "Letzte Dauer"
+      },
+      "last_irrigated": {
+        "name": "Zuletzt bewässert"
+      },
+      "last_volume": {
+        "name": "Letztes Volumen"
+      },
+      "session_water": {
+        "name": "Wassermenge der Bewässerung"
+      },
+      "rain_yearly": {
+        "name": "Jahresniederschlag"
+      },
+      "irrigated_yearly": {
+        "name": "Bewässert im Jahr"
+      },
+      "flow_rate": {
+        "name": "Auslegungsdurchfluss"
+      },
+      "measured_flow": {
+        "name": "Gemessener Durchfluss"
+      },
+      "meter_resolution": {
+        "name": "Auflösung des Wasserzählers"
+      },
+      "irrigation_mode": {
+        "name": "Bewässerungsmodus"
+      },
+      "irrigation_time": {
+        "name": "Bewässerungszeit"
+      },
+      "threshold": {
+        "name": "Schwellenwert"
+      },
+      "area": {
+        "name": "Fläche"
+      },
+      "efficiency": {
+        "name": "Wirkungsgrad"
+      },
+      "kc": {
+        "name": "Kc"
+      },
+      "linked_valve": {
+        "name": "Ventil"
+      },
+      "linked_battery": {
+        "name": "Batterie"
+      },
+      "linked_water_meter": {
+        "name": "Wasserzähler"
+      }
+    },
+    "button": {
+      "irrigate": {
+        "name": "Bewässern"
+      },
+      "stop": {
+        "name": "Stopp"
+      },
+      "mark_irrigated": {
+        "name": "Als bewässert markieren"
+      },
+      "reset_valve": {
+        "name": "Ventil zurücksetzen"
+      },
+      "valve_test": {
+        "name": "Ventiltest (1 Min)"
+      },
+      "reset_yearly_rain": {
+        "name": "Jahresniederschlag zurücksetzen"
+      },
+      "reset_yearly_water": {
+        "name": "Jahreswassermenge zurücksetzen"
+      }
+    }
+  },
+  "services": {
+    "reset": {
+      "name": "Defizit zurücksetzen",
+      "description": "Setzt das Bodenwasserdefizit auf null (üblicherweise nach Abschluss der Bewässerung)."
+    },
+    "reset_yearly_rain": {
+      "name": "Jahresniederschlag zurücksetzen",
+      "description": "Setzt den Jahresniederschlag auf null (anlagenweit). Der Wert ist eine einzige Größe, die der Sensor \"Jahresniederschlag\" jeder Zone teilt, und wird am 1. Januar von selbst zurückgesetzt. Damit lässt sich ein falscher Wert löschen, etwa nach einem Wechsel des Regensensortyps, ohne auf das neue Jahr zu warten oder neu zu installieren. Historische Statistiken bleiben unberührt."
+    },
+    "reset_yearly_water": {
+      "name": "Jahreswassermenge zurücksetzen",
+      "description": "Setzt die seit Jahresbeginn bewässerte Wassermenge für jede Zone auf null. Jede Zone führt ihren eigenen Jahreszähler, der am 1. Januar zurückgesetzt wird; hier werden alle auf einmal gelöscht. Die Gesamtmenge je Zone und historische Statistiken bleiben unberührt."
+    },
+    "irrigate_zone": {
+      "name": "Zone bewässern",
+      "description": "Startet die Bewässerung einer einzelnen Zone. Wie das Wasser gemessen wird, hängt von der Abgabeart der Zone ab: über die Zeit, über ein am Wasserzähler abgelesenes Volumen, oder indem einem smarten Ventil ein Zielvolumen übergeben wird, das es selbst dosiert.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Der Name der zu bewässernden Zone (wie konfiguriert)."
+        }
+      }
+    },
+    "irrigate_all": {
+      "name": "Alle Zonen bewässern",
+      "description": "Bewässert alle konfigurierten Zonen nacheinander. Jede Zone nutzt ihre eigene Abgabeart. Eine Pause zwischen den Zonen lässt den Druck sich stabilisieren. Das Defizit wird zurückgesetzt, wenn alle Zonen fertig sind."
+    },
+    "stop": {
+      "name": "Not-Aus",
+      "description": "Schließt sofort alle Bewässerungsventile. Damit lässt sich ein laufender Bewässerungszyklus abbrechen."
+    },
+    "stop_zone": {
+      "name": "Zone stoppen",
+      "description": "Stoppt die Bewässerung einer einzelnen Zone; die übrigen Zonen laufen weiter.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die Zone, deren Bewässerung gestoppt werden soll."
+        }
+      }
+    },
+    "mark_irrigated": {
+      "name": "Zone als bewässert markieren",
+      "description": "Hält fest, dass eine Zone von Hand gegossen wurde, damit das Modell das Wasser anrechnet und nicht weiter danach verlangt. Nach dem Gießen mit dem Schlauch zu verwenden.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die als bewässert zu markierende Zone. Leer lassen für alle Zonen."
+        }
+      }
+    },
+    "set_deficit": {
+      "name": "Defizit setzen",
+      "description": "Setzt das Wasserdefizit einer Zone auf einen gewählten Wert. Damit lässt sich das Modell korrigieren, wenn etwas geschehen ist, das es nicht sehen konnte, etwa kräftiges Gießen von Hand oder eine Zeit ohne Regensensor.",
+      "fields": {
+        "deficit_mm": {
+          "name": "Defizit (mm)",
+          "description": "Zielwert des Defizits in mm. Muss >= 0 sein."
+        },
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die zu aktualisierende Zone. Leer lassen, um alle Zonen zu aktualisieren."
+        }
+      }
+    },
+    "reset_valve": {
+      "name": "Ventil zurücksetzen (Wartung aufheben)",
+      "description": "Holt eine Zone aus der Wartung und lässt sie wieder bewässern. Eine Zone geht nach wiederholten Ventilfehlern in Wartung und bleibt dort, bis jemand das Ventil angesehen hat.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die Zone, deren Ventil entsperrt werden soll."
+        }
+      }
+    },
+    "test_valve": {
+      "name": "Ventiltest (beaufsichtigt)",
+      "description": "Öffnet das Ventil einer Zone für eine festgelegte Zeit und misst, was sie tatsächlich abgibt, damit sich der gemessene Durchfluss mit dem Auslegungswert vergleichen lässt. Die Zone dabei im Auge behalten.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone",
+          "description": "Die zu prüfende Zone."
+        },
+        "duration_min": {
+          "name": "Dauer",
+          "description": "Minuten, die das Ventil offen bleibt. Eine Minute ergibt eine unzuverlässige Messung: ein Zähler, der in ganzen Litern springt, bewegt sich in dieser Zeit kaum, und ein aus ein oder zwei Sprüngen berechneter Durchfluss beschreibt die Auflösung des Zählers statt der Zone. Längere Läufe kosten Wasser, sind aber die einzige Möglichkeit, eine langsame Zone überhaupt zu messen."
         }
       }
     }

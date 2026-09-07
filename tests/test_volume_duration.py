@@ -205,7 +205,7 @@ class TestZoneMetadata:
 
     def test_name(self, di_sensor):
         zone = _make_zone(di_sensor, name="Orto")
-        assert zone._attr_name == "Volume"
+        assert zone._attr_translation_key == "volume"
 
     def test_unique_id(self, di_sensor):
         zone = _make_zone(di_sensor, name="Orto")

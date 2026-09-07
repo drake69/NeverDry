@@ -48,7 +48,7 @@ class TestZoneDeficitSensorProperties:
     def test_name(self, di_sensor):
         zone = _make_zone(di_sensor)
         deficit = ZoneDeficitSensor(zone)
-        assert deficit._attr_name == "Deficit"
+        assert deficit._attr_translation_key == "deficit"
 
     def test_unique_id(self, di_sensor):
         zone = _make_zone(di_sensor, name="Giardino Melino")

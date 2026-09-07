@@ -397,7 +397,7 @@ class TestSensorAttributes:
         assert di_sensor._attr_native_unit_of_measurement == "mm"
 
     def test_name(self, di_sensor):
-        assert di_sensor._attr_name == "Dryness Index"
+        assert di_sensor._attr_translation_key == "dryness_index"
 
     def test_icon(self, di_sensor):
         assert di_sensor._attr_icon == "mdi:water-percent-alert"

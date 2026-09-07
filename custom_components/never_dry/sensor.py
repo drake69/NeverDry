@@ -448,19 +448,19 @@ def _hub_device_info(entry_id: str) -> DeviceInfo:
 #: Which derived quantities are worth an entity, per running method. Only the
 #: ones that method actually computes: an entity stuck at unknown teaches the
 #: user to ignore the whole diagnostic group.
-_MODEL_INPUT_ENTITIES: dict[str, tuple[tuple[str, str, str, str], ...]] = {
+_MODEL_INPUT_ENTITIES: dict[str, tuple[tuple[str, str, str], ...]] = {
     "hargreaves": (
-        ("derived_diurnal_range_c", "Diurnal temperature range", "°C", "mdi:thermometer-lines"),
-        ("derived_temp_max_c", "Daily maximum temperature", "°C", "mdi:thermometer-high"),
-        ("derived_temp_min_c", "Daily minimum temperature", "°C", "mdi:thermometer-low"),
+        ("derived_diurnal_range_c", "°C", "mdi:thermometer-lines"),
+        ("derived_temp_max_c", "°C", "mdi:thermometer-high"),
+        ("derived_temp_min_c", "°C", "mdi:thermometer-low"),
     ),
     "penman_monteith": (
-        ("derived_diurnal_range_c", "Diurnal temperature range", "°C", "mdi:thermometer-lines"),
-        ("derived_temp_max_c", "Daily maximum temperature", "°C", "mdi:thermometer-high"),
-        ("derived_temp_min_c", "Daily minimum temperature", "°C", "mdi:thermometer-low"),
-        ("derived_solar_mj", "Daily solar radiation", "MJ/m²", "mdi:white-balance-sunny"),
-        ("derived_net_radiation_mj", "Net radiation", "MJ/m²", "mdi:sun-angle"),
-        ("derived_wind_2m_m_s", "Wind speed at 2 m", "m/s", "mdi:weather-windy"),
+        ("derived_diurnal_range_c", "°C", "mdi:thermometer-lines"),
+        ("derived_temp_max_c", "°C", "mdi:thermometer-high"),
+        ("derived_temp_min_c", "°C", "mdi:thermometer-low"),
+        ("derived_solar_mj", "MJ/m²", "mdi:white-balance-sunny"),
+        ("derived_net_radiation_mj", "MJ/m²", "mdi:sun-angle"),
+        ("derived_wind_2m_m_s", "m/s", "mdi:weather-windy"),
     ),
 }
 
@@ -493,8 +493,8 @@ def _create_entities(
     entities.append(WaterBalanceMethodSensor(di_sensor, hub_device))
     # The derived quantities, as entities so they get history: the way to judge
     # a computed radiation is to watch it follow the weather for a week.
-    for key, name, unit, icon in _MODEL_INPUT_ENTITIES.get(type(di_sensor._model).method_id, ()):
-        entities.append(ModelInputSensor(di_sensor, key, name, unit, icon, device_info=hub_device))
+    for key, unit, icon in _MODEL_INPUT_ENTITIES.get(type(di_sensor._model).method_id, ()):
+        entities.append(ModelInputSensor(di_sensor, key, unit, icon, device_info=hub_device))
 
     zone_sensors: list[IrrigationZoneSensor] = []
     for zone_conf in config.get(CONF_ZONES, []):
@@ -529,7 +529,7 @@ def _create_entities(
                 ZoneLinkedSensor(
                     hass,
                     zone_conf[CONF_ZONE_VALVE],
-                    "Valve",
+                    "linked_valve",
                     "mdi:valve",
                     f"linked_valve_{slug}",
                     zone_device,
@@ -540,7 +540,7 @@ def _create_entities(
                 ZoneLinkedSensor(
                     hass,
                     zone_conf[CONF_ZONE_BATTERY_SENSOR],
-                    "Battery",
+                    "linked_battery",
                     "mdi:battery",
                     f"linked_battery_{slug}",
                     zone_device,
@@ -551,7 +551,7 @@ def _create_entities(
                 ZoneLinkedSensor(
                     hass,
                     zone_conf[CONF_ZONE_FLOW_METER_SENSOR],
-                    "Water meter",
+                    "linked_water_meter",
                     "mdi:gauge",
                     f"linked_flow_{slug}",
                     zone_device,
@@ -772,7 +772,7 @@ class ETSensor(SensorEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_name = "ET Hourly Estimate"
+    _attr_translation_key = "et_hourly_estimate"
     _attr_unique_id = "et_hourly_estimate"
     _attr_device_class = SensorDeviceClass.PRECIPITATION_INTENSITY
     _attr_native_unit_of_measurement = UnitOfVolumetricFlux.MILLIMETERS_PER_HOUR
@@ -849,7 +849,7 @@ class DrynessIndexSensor(SensorEntity, RestoreEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_name = "Dryness Index"
+    _attr_translation_key = "dryness_index"
     _attr_unique_id = "never_dry"
     _attr_device_class = SensorDeviceClass.PRECIPITATION
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
@@ -1948,7 +1948,7 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._zone.counters.yearly_water_year = datetime.now().year
 
         slug = self._zone_name.lower().replace(" ", "_")
-        self._attr_name = "Volume"
+        self._attr_translation_key = "volume"
         self._attr_unique_id = f"irrigation_zone_{slug}"
         if device_info:
             self._attr_device_info = device_info
@@ -2766,7 +2766,7 @@ class ZoneDeficitSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.PRECIPITATION
-    _attr_name = "Deficit"
+    _attr_translation_key = "deficit"
     _attr_native_unit_of_measurement = UnitOfLength.MILLIMETERS
     # Native precision in mm; HA scales up the decimals automatically when the
     # user's unit system converts to inches (issue #139).
@@ -2834,7 +2834,7 @@ class ZoneRainSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.WATER
-    _attr_name = "Rain Yearly"
+    _attr_translation_key = "rain_yearly"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:weather-rainy"
@@ -2881,7 +2881,7 @@ class ZoneSessionWaterSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.VOLUME_STORAGE
-    _attr_name = "Session water"
+    _attr_translation_key = "session_water"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:water-pump"
@@ -2928,7 +2928,7 @@ class ZoneYearlyWaterSensor(SensorEntity):
     # this is a cumulative consumption total (GH #105). WATER also makes
     # the sensor usable in the HA Energy dashboard water tracking.
     _attr_device_class = SensorDeviceClass.WATER
-    _attr_name = "Irrigated Yearly"
+    _attr_translation_key = "irrigated_yearly"
     _attr_native_unit_of_measurement = UnitOfVolume.LITERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:calendar-clock"
@@ -2968,7 +2968,7 @@ class ZoneDurationSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.DURATION
-    _attr_name = "Duration"
+    _attr_translation_key = "duration"
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:timer"
@@ -3005,7 +3005,7 @@ class ZoneLastDurationSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.DURATION
-    _attr_name = "Last duration"
+    _attr_translation_key = "last_duration"
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:timer"
@@ -3054,14 +3054,14 @@ class _ZoneTextSensor(SensorEntity):
     def __init__(
         self,
         zone_sensor: IrrigationZoneSensor,
-        name: str,
+        translation_key: str,
         icon: str,
         unique_suffix: str,
         device_info: DeviceInfo | None = None,
         diagnostic: bool = False,
     ) -> None:
         self._zone_sensor = zone_sensor
-        self._attr_name = name
+        self._attr_translation_key = translation_key
         self._attr_icon = icon
         slug = zone_sensor.zone_name.lower().replace(" ", "_")
         self._attr_unique_id = f"{unique_suffix}_{slug}"
@@ -3084,7 +3084,7 @@ class ZoneLastIrrigatedSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Last irrigated",
+            "last_irrigated",
             "mdi:clock-outline",
             "last_irrigated_zone",
             device_info,
@@ -3130,7 +3130,7 @@ class ZoneLastSourceSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Last source",
+            "last_source",
             "mdi:information-outline",
             "last_source_zone",
             device_info,
@@ -3169,7 +3169,7 @@ class ZoneFlowRateSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Design flow rate",
+            "flow_rate",
             "mdi:gauge",
             "flow_rate_zone",
             device_info,
@@ -3218,7 +3218,7 @@ class ZoneMeasuredFlowSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Measured flow rate",
+            "measured_flow",
             "mdi:gauge-full",
             "measured_flow_zone",
             device_info,
@@ -3313,7 +3313,7 @@ class ZoneMeterResolutionSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Water meter resolution",
+            "meter_resolution",
             "mdi:ruler",
             "meter_resolution_zone",
             device_info,
@@ -3363,7 +3363,7 @@ class ZoneLastVolumeSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Last volume",
+            "last_volume",
             "mdi:water",
             "last_volume_zone",
             device_info,
@@ -3380,7 +3380,7 @@ class ZoneIrrigationModeSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Irrigation mode",
+            "irrigation_mode",
             "mdi:cog",
             "irrigation_mode_zone",
             device_info,
@@ -3398,7 +3398,7 @@ class ZoneIrrigationTimeSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Irrigation time",
+            "irrigation_time",
             "mdi:clock-time-six",
             "irrigation_time_zone",
             device_info,
@@ -3422,7 +3422,7 @@ class ZoneThresholdSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Threshold",
+            "threshold",
             "mdi:target",
             "threshold_zone",
             device_info,
@@ -3443,7 +3443,7 @@ class ZoneAreaSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Area",
+            "area",
             "mdi:texture-box",
             "area_zone",
             device_info,
@@ -3461,7 +3461,7 @@ class ZoneEfficiencySensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Efficiency",
+            "efficiency",
             "mdi:percent",
             "efficiency_zone",
             device_info,
@@ -3479,7 +3479,7 @@ class ZoneKcSensor(_ZoneTextSensor):
     def __init__(self, zone_sensor, device_info=None):
         super().__init__(
             zone_sensor,
-            "Kc",
+            "kc",
             "mdi:leaf",
             "kc_zone",
             device_info,
@@ -3614,7 +3614,6 @@ class ModelInputSensor(SensorEntity):
         self,
         hub: DrynessIndexSensor,
         key: str,
-        name: str,
         unit: str,
         icon: str,
         precision: int = 2,
@@ -3625,7 +3624,7 @@ class ModelInputSensor(SensorEntity):
 
         self._hub = hub
         self._key = key
-        self._attr_name = name
+        self._attr_translation_key = f"model_input_{key}"
         self._attr_unique_id = f"model_input_{key}"
         self._attr_native_unit_of_measurement = unit
         self._attr_icon = icon
@@ -3671,14 +3670,14 @@ class ZoneLinkedSensor(SensorEntity):
         self,
         hass: HomeAssistant,
         source_entity_id: str,
-        name: str,
+        translation_key: str,
         icon: str,
         unique_id: str,
         device_info: DeviceInfo | None = None,
     ) -> None:
         self._hass = hass
         self._source_entity_id = source_entity_id
-        self._attr_name = name
+        self._attr_translation_key = translation_key
         self._attr_icon = icon
         self._attr_unique_id = unique_id
         if device_info:

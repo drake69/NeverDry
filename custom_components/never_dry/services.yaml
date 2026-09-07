@@ -1,92 +1,36 @@
 reset:
-  name: Reset deficit
-  description: Reset the soil water deficit to zero (typically called after irrigation completes).
 
 reset_yearly_rain:
-  name: Reset yearly rain
-  description: >
-    Reset the year-to-date rain total to zero (system-wide). The total is a
-    single value shared by every zone's "Rain Yearly" sensor and normally
-    resets on its own on 1 January. Use this to clear a wrong value — for
-    example after switching rain sensor type — without waiting for the new
-    year or reinstalling. Historical statistics are left untouched.
-
 reset_yearly_water:
-  name: Reset yearly water
-  description: >
-    Reset the year-to-date irrigated-water total to zero for every zone. Each
-    zone keeps its own yearly counter and normally resets on 1 January; this
-    clears them all at once. The lifetime total delivered per zone and
-    historical statistics are left untouched.
-
 irrigate_zone:
-  name: Irrigate zone
-  description: >
-    Start irrigation for a single zone. The irrigation method depends on the
-    zone's configured delivery mode: estimated_flow (timer-based), flow_meter
-    (sensor-monitored), or volume_preset (smart valve with volume dosing).
   fields:
     zone_name:
-      name: Zone name
-      description: The name of the zone to irrigate (as configured).
       required: true
       example: "Vegetable Garden"
       selector:
         text:
 
 irrigate_all:
-  name: Irrigate all zones
-  description: >
-    Irrigate all configured zones sequentially. Each zone uses its own
-    delivery mode. A pause between zones allows pressure stabilization.
-    The deficit is reset after all zones complete.
-
 stop:
-  name: Emergency stop
-  description: >
-    Immediately close all irrigation valves. Use this to abort an
-    irrigation cycle in progress.
-
 stop_zone:
-  name: Stop zone
-  description: >
-    Stop irrigation for a single zone and close its valve. Other zones
-    keep irrigating. Works for both a running irrigation cycle and a
-    manual/hardware-driven valve open.
   fields:
     zone_name:
-      name: Zone name
-      description: The zone whose irrigation should be stopped.
       required: true
       example: "Vegetable Garden"
       selector:
         text:
 
 mark_irrigated:
-  name: Mark zone as irrigated
-  description: >
-    Signal that a zone has been watered manually or by an external system.
-    Resets the zone deficit to zero without operating any valve.
-    If no zone is specified, all zones are marked as irrigated.
   fields:
     zone_name:
-      name: Zone name
-      description: The zone to mark as irrigated. Leave empty for all zones.
       required: false
       example: "Vegetable Garden"
       selector:
         text:
 
 set_deficit:
-  name: Set deficit
-  description: >
-    Set the soil water deficit to a specific value in mm.
-    Intended for testing, debugging, and manual correction of the water balance.
-    If zone_name is omitted, all zones and the reference sensor are updated.
   fields:
     deficit_mm:
-      name: Deficit (mm)
-      description: Target deficit value in mm. Must be >= 0.
       required: true
       example: 5.0
       selector:
@@ -96,51 +40,27 @@ set_deficit:
           step: 0.1
           unit_of_measurement: mm
     zone_name:
-      name: Zone name
-      description: The zone to update. Leave empty to update all zones.
       required: false
       example: "Orto"
       selector:
         text:
 
 reset_valve:
-  name: Reset valve (unlock maintenance)
-  description: >
-    Reset the valve FSM from MAINTENANCE back to IDLE. Use this after
-    repeated close-verification failures to allow the zone to irrigate again.
-    The valve must be physically closed before resetting.
   fields:
     zone_name:
-      name: Zone name
-      description: The zone whose valve should be unlocked.
       required: true
       example: "Vegetable Garden"
       selector:
         text:
 
 test_valve:
-  name: Valve test (supervised)
-  description: >-
-    Open one zone's valve for a fixed time and measure what actually moves: the
-    delivered volume, the real flow rate, the meter's smallest step and how often
-    it reports. Uses no configured value in its arithmetic — it exists to check
-    those. Water will run, so do not call it unattended.
   fields:
     zone_name:
-      name: Zone
-      description: The zone to test.
       required: true
       example: Giardino Ortensia
       selector:
         text:
     duration_min:
-      name: Duration
-      description: >-
-        Minutes to keep the valve open. One minute makes for an unreliable
-        measurement: a counter that steps in whole litres barely moves in that
-        time, and a rate computed from one or two steps describes the counter's
-        resolution rather than the zone. Longer runs cost water but are the only
-        way to measure a slow zone at all.
       required: false
       default: 5
       selector:
