@@ -606,6 +606,34 @@
       }
     }
   },
+  "common": {
+    "notification_command_failed_title": "Valve command failed",
+    "notification_command_failed_body": "Zone '{zone}': {operation} failed ({error_detail}).",
+    "notification_unreachable_passive_title": "Valve unreachable",
+    "notification_unreachable_passive_body": "Zone '{zone}' valve has been unavailable for {duration}.",
+    "notification_unreachable_at_irrigation_title": "Valve unreachable at irrigation time",
+    "notification_unreachable_at_irrigation_body": "Could not start irrigation for zone '{zone}': valve unavailable ({reason}). Check the valve battery and the Zigbee mesh before retrying.",
+    "notification_flow_meter_dead_title": "Water meter not reporting",
+    "notification_flow_meter_dead_body": "Zone '{zone}' water meter is not reporting ({detail}). Irrigation ran on the design flow rate instead of being skipped, so the volume is estimated rather than measured. Check the meter entity: a silent meter is far more likely than a dry pipe.",
+    "notification_delivery_uncredited_title": "Water delivered could not be credited",
+    "notification_delivery_uncredited_body": "Zone '{zone}' delivered water that could not be measured ({detail}) and has no design flow rate to estimate it with, so its deficit is unchanged and the zone will be watered again on the next cycle. Set the zone's design flow rate, or fix the meter.",
+    "notification_stuck_open_title": "Valve stuck open: shut off mains water",
+    "notification_stuck_open_body": "Zone '{zone}' valve switch reports OFF but water is still flowing ({flow}). The integration has already attempted recovery and triggered an emergency stop for every other zone. **Manually shut off your main water valve now** and inspect the affected valve before resuming irrigation.",
+    "notification_leak_detected_title": "Leak detected",
+    "notification_leak_detected_body": "Flow detected while every valve is closed. Last reading: {flow}.",
+    "notification_zone_disabled_title": "Zone disabled",
+    "notification_zone_disabled_body": "Zone '{zone}' auto-disabled after {failures} consecutive failures.",
+    "notification_battery_low_title": "Battery low",
+    "notification_battery_low_body": "Battery for {sensor_name} is at {percent}%.",
+    "notification_irrigation_ineffective_title": "Irrigation appears ineffective",
+    "notification_irrigation_ineffective_body": "Zone '{zone}': soil moisture did not rise after the last irrigation.",
+    "notification_model_drift_title": "Model drift detected",
+    "notification_model_drift_body": "Zone '{zone}': moisture/model correlation has dropped to {correlation}.",
+    "notification_water_me_now_title": "Manual irrigation suggested",
+    "notification_water_me_now_body": "Zone '{zone}': deficit {deficit} above threshold; water by hand.",
+    "notification_watchdog_triggered_title": "Valve force-closed by safety watchdog",
+    "notification_watchdog_triggered_body": "Zone '{zone}' valve was open for more than {duration_min} min with no close command received. NeverDry forced it closed as a safety measure. Check that the automation or delivery logic is working correctly."
+  },
   "issues": {
     "soil_probe_needs_a_zone": {
       "title": "NeverDry: which zone is the soil probe in?",

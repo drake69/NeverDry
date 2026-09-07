@@ -606,6 +606,34 @@
       }
     }
   },
+  "common": {
+    "notification_command_failed_title": "Comando alla valvola fallito",
+    "notification_command_failed_body": "Zona '{zone}': {operation} non riuscito ({error_detail}).",
+    "notification_unreachable_passive_title": "Valvola non raggiungibile",
+    "notification_unreachable_passive_body": "La valvola della zona '{zone}' non risponde da {duration}.",
+    "notification_unreachable_at_irrigation_title": "Valvola non raggiungibile all'ora dell'irrigazione",
+    "notification_unreachable_at_irrigation_body": "Non è stato possibile avviare l'irrigazione della zona '{zone}': valvola non disponibile ({reason}). Controlla la batteria della valvola e la rete Zigbee prima di riprovare.",
+    "notification_flow_meter_dead_title": "Il contatore non riporta",
+    "notification_flow_meter_dead_body": "Il contatore della zona '{zone}' non riporta ({detail}). L'irrigazione è andata avanti sulla portata di progetto invece di essere saltata, quindi il volume è stimato e non misurato. Controlla l'entità del contatore: un contatore muto è molto più probabile di un tubo asciutto.",
+    "notification_delivery_uncredited_title": "L'acqua erogata non è stata accreditata",
+    "notification_delivery_uncredited_body": "La zona '{zone}' ha erogato acqua che non è stato possibile misurare ({detail}) e non ha una portata di progetto con cui stimarla, quindi il suo deficit è rimasto invariato e la zona verrà irrigata di nuovo al ciclo successivo. Imposta la portata di progetto della zona, oppure ripara il contatore.",
+    "notification_stuck_open_title": "Valvola bloccata aperta: chiudi l'acqua di rete",
+    "notification_stuck_open_body": "L'interruttore della valvola della zona '{zone}' risulta spento ma l'acqua scorre ancora ({flow}). L'integrazione ha già tentato il recupero e ha fermato d'emergenza tutte le altre zone. **Chiudi subito a mano la valvola principale** e controlla la valvola interessata prima di riprendere a irrigare.",
+    "notification_leak_detected_title": "Perdita rilevata",
+    "notification_leak_detected_body": "Rilevato flusso mentre tutte le valvole sono chiuse. Ultima lettura: {flow}.",
+    "notification_zone_disabled_title": "Zona disabilitata",
+    "notification_zone_disabled_body": "Zona '{zone}' disabilitata automaticamente dopo {failures} guasti consecutivi.",
+    "notification_battery_low_title": "Batteria scarica",
+    "notification_battery_low_body": "La batteria di {sensor_name} è al {percent}%.",
+    "notification_irrigation_ineffective_title": "L'irrigazione sembra inefficace",
+    "notification_irrigation_ineffective_body": "Zona '{zone}': l'umidità del suolo non è salita dopo l'ultima irrigazione.",
+    "notification_model_drift_title": "Rilevata deriva del modello",
+    "notification_model_drift_body": "Zona '{zone}': la correlazione fra umidità e modello è scesa a {correlation}.",
+    "notification_water_me_now_title": "Irrigazione manuale consigliata",
+    "notification_water_me_now_body": "Zona '{zone}': deficit {deficit} sopra la soglia; innaffia a mano.",
+    "notification_watchdog_triggered_title": "Valvola chiusa d'autorità dal watchdog di sicurezza",
+    "notification_watchdog_triggered_body": "La valvola della zona '{zone}' è rimasta aperta per più di {duration_min} min senza ricevere un comando di chiusura. NeverDry l'ha chiusa d'autorità per sicurezza. Verifica che l'automazione o la logica di erogazione funzionino correttamente."
+  },
   "issues": {
     "soil_probe_needs_a_zone": {
       "title": "NeverDry: in quale zona si trova la sonda del suolo?",

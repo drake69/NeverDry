@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from never_dry.valve_notifier import (
-    _TEMPLATES,
     NotificationKind,
     Severity,
     ValveNotifier,
+    _resolve,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -224,16 +224,21 @@ async def test_notification_id_falls_back_for_empty_zone(notifier, hass):
     assert payload["notification_id"] == "never_dry_global_leak_detected"
 
 
-# ── Templates coverage ──────────────────────────────────────────────
+# ── Catalogue coverage ──────────────────────────────────────────────
 
 
-def test_every_kind_has_a_template():
-    """Every NotificationKind must have a registered template."""
+async def test_every_kind_resolves_to_text(hass):
+    """Every NotificationKind must come back with a title and a body from the catalogue.
+
+    The lookup falls back to the bare identifier when a key is absent, so asserting the title
+    is merely non-empty would pass on a notification that reads ``stuck_open`` at the user.
+    The identifier is therefore what this refuses.
+    """
+    hass.config.language = "en"
     for kind in NotificationKind:
-        assert kind in _TEMPLATES
-        tpl = _TEMPLATES[kind]
-        assert tpl.title
-        assert tpl.body
+        title, body = await _resolve(hass, kind)
+        assert title and title != kind.value, f"{kind.value}: no title in the catalogue"
+        assert body, f"{kind.value}: no body in the catalogue"
 
 
 @pytest.mark.parametrize(

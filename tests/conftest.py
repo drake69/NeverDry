@@ -79,6 +79,21 @@ def _create_ha_stubs():
     event_mod.async_track_time_change = MagicMock()
     event_mod.async_track_time_interval = MagicMock()
 
+    # homeassistant.helpers.translation
+    # Returns the English catalogue read straight from strings.json, so a test that exercises
+    # a notification asserts the text a user would actually be shown rather than a mock.
+    translation_mod = ModuleType("homeassistant.helpers.translation")
+
+    async def _async_get_translations(hass, language, category, integrations=None):
+        import json
+        from pathlib import Path as _Path
+
+        strings = _Path(__file__).resolve().parent.parent / "custom_components" / "never_dry" / "strings.json"
+        section = json.loads(strings.read_text(encoding="utf-8")).get(category, {})
+        return {f"component.never_dry.{category}.{key}": value for key, value in section.items()}
+
+    translation_mod.async_get_translations = _async_get_translations
+
     # homeassistant.helpers.restore_state
     restore_mod = ModuleType("homeassistant.helpers.restore_state")
     restore_mod.RestoreEntity = type(
@@ -246,6 +261,7 @@ def _create_ha_stubs():
         "homeassistant.helpers.entity_platform": entity_platform_mod,
         "homeassistant.helpers.entity_registry": entity_registry_mod,
         "homeassistant.helpers.event": event_mod,
+        "homeassistant.helpers.translation": translation_mod,
         "homeassistant.helpers.restore_state": restore_mod,
         "homeassistant.helpers.device_registry": device_registry_mod,
         "homeassistant.helpers.storage": storage_mod,
