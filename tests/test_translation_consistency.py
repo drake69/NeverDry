@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 from pathlib import Path
 
 from never_dry import const
@@ -628,3 +629,69 @@ def test_every_language_matches_the_source_of_truth():
                 problems.append(f"{path.name}: {key} is empty — it renders as nothing")
 
     assert not problems, "translations out of step with strings.json:\n  " + "\n  ".join(problems)
+
+
+def test_no_placeholder_sits_inside_single_quotes():
+    """``'{zone}'`` is refused, the same way hassfest refuses it.
+
+    Quoting is punctuation, and punctuation is the part of a sentence a translator is
+    supposed to own: a placeholder wrapped in ASCII single quotes freezes an English
+    convention into every language that inherits the string. Home Assistant rejects the
+    shape outright, so this is not a matter of taste. Double quotes are left alone, which
+    is the line hassfest itself draws.
+
+    It is here rather than left to CI because hassfest runs on a pull request and this runs
+    in a second. Eleven notification bodies carried it for as long as they were literals in
+    the source, where no check could see them, and were caught only once they moved into the
+    catalogue. The next one should cost a test run, not a red pull request.
+    """
+    offenders: list[str] = []
+    for path in _ALL_DOCS:
+        document = json.loads(path.read_text(encoding="utf-8"))
+
+        def walk(node, where=""):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    yield from walk(value, f"{where}.{key}" if where else key)
+            elif isinstance(node, str) and re.search(r"'\{\w+\}'", node):
+                yield where
+
+        offenders += [f"{path.name}: {where}" for where in walk(document)]
+
+    assert not offenders, (
+        "placeholders wrapped in single quotes, which hassfest refuses and a translator "
+        "cannot punctuate their own way:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_a_translation_carries_the_same_placeholders_as_its_english():
+    """``{probe}`` must survive translation as ``{probe}``.
+
+    A placeholder is machinery, not vocabulary: Home Assistant substitutes by name, so a
+    translated one is never filled and the user reads the braces. The German file shipped
+    ``{Sonde}`` for ``{probe}`` and nobody could have noticed, because hassfest validates
+    only ``strings.json`` and ``translations/en.json`` for a custom integration and never
+    looks at the other languages at all.
+
+    That asymmetry is the point of putting the check here. Every shipped language is read,
+    and both directions are reported: a placeholder invented in a translation would be just
+    as unfillable as one that was renamed.
+    """
+    english = _leaf_paths(json.loads(_EN_JSON.read_text(encoding="utf-8")))
+    problems: list[str] = []
+
+    for path in _LANG_DOCS:
+        if path == _EN_JSON:
+            continue
+        for where, text in _leaf_paths(json.loads(path.read_text(encoding="utf-8"))).items():
+            source = english.get(where)
+            if not isinstance(source, str) or not isinstance(text, str):
+                continue
+            expected = set(re.findall(r"\{(\w+)\}", source))
+            got = set(re.findall(r"\{(\w+)\}", text))
+            for name in sorted(expected - got):
+                problems.append(f"{path.name}: {where} loses {{{name}}}, which will never be filled in")
+            for name in sorted(got - expected):
+                problems.append(f"{path.name}: {where} invents {{{name}}}, which nothing substitutes")
+
+    assert not problems, "placeholders altered in translation:\n  " + "\n  ".join(problems)

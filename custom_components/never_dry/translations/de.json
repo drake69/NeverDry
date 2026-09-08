@@ -149,7 +149,7 @@
         "data": {
           "temperature_sensor": "Temperatur-Sensor",
           "rain_sensor": "Regen-Sensor",
-          "rain_sensor_type": "Regen-Sensor Art",     
+          "rain_sensor_type": "Regen-Sensor Art",
           "alpha": "ET Koeffizient (α) — nur einfaches Modell",
           "t_base": "Basis Temperatur — nur einfaches Modell",
           "d_max": "Obergrenze des Defizit-Maßwerts",
@@ -410,6 +410,7 @@
         "name": "Windgeschwindigkeit bei 2 m"
       },
       "last_source": {
+        "name": "Letzte Auslösung",
         "state": {
           "scheduled": "Zeitplan",
           "reactive": "Defizitschwelle",
@@ -420,8 +421,218 @@
           "mark_irrigated": "Als bewässert markiert",
           "service_reset": "Reset"
         }
+      },
+      "et_hourly_estimate": {
+        "name": "ET-Schätzung pro Stunde"
+      },
+      "dryness_index": {
+        "name": "Trockenheitsindex"
+      },
+      "volume": {
+        "name": "Volumen"
+      },
+      "deficit": {
+        "name": "Defizit"
+      },
+      "duration": {
+        "name": "Dauer"
+      },
+      "last_duration": {
+        "name": "Letzte Dauer"
+      },
+      "last_irrigated": {
+        "name": "Zuletzt bewässert"
+      },
+      "last_volume": {
+        "name": "Letztes Volumen"
+      },
+      "session_water": {
+        "name": "Wassermenge der Bewässerung"
+      },
+      "rain_yearly": {
+        "name": "Jahresniederschlag"
+      },
+      "irrigated_yearly": {
+        "name": "Bewässert im Jahr"
+      },
+      "flow_rate": {
+        "name": "Auslegungsdurchfluss"
+      },
+      "measured_flow": {
+        "name": "Gemessener Durchfluss"
+      },
+      "meter_resolution": {
+        "name": "Auflösung des Wasserzählers"
+      },
+      "irrigation_mode": {
+        "name": "Bewässerungsmodus"
+      },
+      "irrigation_time": {
+        "name": "Bewässerungszeit"
+      },
+      "threshold": {
+        "name": "Schwellenwert"
+      },
+      "area": {
+        "name": "Fläche"
+      },
+      "efficiency": {
+        "name": "Wirkungsgrad"
+      },
+      "kc": {
+        "name": "Kc"
+      },
+      "linked_valve": {
+        "name": "Ventil"
+      },
+      "linked_battery": {
+        "name": "Batterie"
+      },
+      "linked_water_meter": {
+        "name": "Wasserzähler"
+      }
+    },
+    "button": {
+      "irrigate": {
+        "name": "Bewässern"
+      },
+      "stop": {
+        "name": "Stopp"
+      },
+      "mark_irrigated": {
+        "name": "Als bewässert markieren"
+      },
+      "reset_valve": {
+        "name": "Ventil zurücksetzen"
+      },
+      "valve_test": {
+        "name": "Ventiltest (1 Min)"
+      },
+      "reset_yearly_rain": {
+        "name": "Jahresniederschlag zurücksetzen"
+      },
+      "reset_yearly_water": {
+        "name": "Jahreswassermenge zurücksetzen"
       }
     }
+  },
+  "services": {
+    "reset": {
+      "name": "Defizit zurücksetzen",
+      "description": "Setzt das Bodenwasserdefizit auf null (üblicherweise nach Abschluss der Bewässerung)."
+    },
+    "reset_yearly_rain": {
+      "name": "Jahresniederschlag zurücksetzen",
+      "description": "Setzt den Jahresniederschlag auf null (anlagenweit). Der Wert ist eine einzige Größe, die der Sensor \"Jahresniederschlag\" jeder Zone teilt, und wird am 1. Januar von selbst zurückgesetzt. Damit lässt sich ein falscher Wert löschen, etwa nach einem Wechsel des Regensensortyps, ohne auf das neue Jahr zu warten oder neu zu installieren. Historische Statistiken bleiben unberührt."
+    },
+    "reset_yearly_water": {
+      "name": "Jahreswassermenge zurücksetzen",
+      "description": "Setzt die seit Jahresbeginn bewässerte Wassermenge für jede Zone auf null. Jede Zone führt ihren eigenen Jahreszähler, der am 1. Januar zurückgesetzt wird; hier werden alle auf einmal gelöscht. Die Gesamtmenge je Zone und historische Statistiken bleiben unberührt."
+    },
+    "irrigate_zone": {
+      "name": "Zone bewässern",
+      "description": "Startet die Bewässerung einer einzelnen Zone. Wie das Wasser gemessen wird, hängt von der Abgabeart der Zone ab: über die Zeit, über ein am Wasserzähler abgelesenes Volumen, oder indem einem smarten Ventil ein Zielvolumen übergeben wird, das es selbst dosiert.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Der Name der zu bewässernden Zone (wie konfiguriert)."
+        }
+      }
+    },
+    "irrigate_all": {
+      "name": "Alle Zonen bewässern",
+      "description": "Bewässert alle konfigurierten Zonen nacheinander. Jede Zone nutzt ihre eigene Abgabeart. Eine Pause zwischen den Zonen lässt den Druck sich stabilisieren. Das Defizit wird zurückgesetzt, wenn alle Zonen fertig sind."
+    },
+    "stop": {
+      "name": "Not-Aus",
+      "description": "Schließt sofort alle Bewässerungsventile. Damit lässt sich ein laufender Bewässerungszyklus abbrechen."
+    },
+    "stop_zone": {
+      "name": "Zone stoppen",
+      "description": "Stoppt die Bewässerung einer einzelnen Zone; die übrigen Zonen laufen weiter.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die Zone, deren Bewässerung gestoppt werden soll."
+        }
+      }
+    },
+    "mark_irrigated": {
+      "name": "Zone als bewässert markieren",
+      "description": "Hält fest, dass eine Zone von Hand gegossen wurde, damit das Modell das Wasser anrechnet und nicht weiter danach verlangt. Nach dem Gießen mit dem Schlauch zu verwenden.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die als bewässert zu markierende Zone. Leer lassen für alle Zonen."
+        }
+      }
+    },
+    "set_deficit": {
+      "name": "Defizit setzen",
+      "description": "Setzt das Wasserdefizit einer Zone auf einen gewählten Wert. Damit lässt sich das Modell korrigieren, wenn etwas geschehen ist, das es nicht sehen konnte, etwa kräftiges Gießen von Hand oder eine Zeit ohne Regensensor.",
+      "fields": {
+        "deficit_mm": {
+          "name": "Defizit (mm)",
+          "description": "Zielwert des Defizits in mm. Muss >= 0 sein."
+        },
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die zu aktualisierende Zone. Leer lassen, um alle Zonen zu aktualisieren."
+        }
+      }
+    },
+    "reset_valve": {
+      "name": "Ventil zurücksetzen (Wartung aufheben)",
+      "description": "Holt eine Zone aus der Wartung und lässt sie wieder bewässern. Eine Zone geht nach wiederholten Ventilfehlern in Wartung und bleibt dort, bis jemand das Ventil angesehen hat.",
+      "fields": {
+        "zone_name": {
+          "name": "Zonenname",
+          "description": "Die Zone, deren Ventil entsperrt werden soll."
+        }
+      }
+    },
+    "test_valve": {
+      "name": "Ventiltest (beaufsichtigt)",
+      "description": "Öffnet das Ventil einer Zone für eine festgelegte Zeit und misst, was sie tatsächlich abgibt, damit sich der gemessene Durchfluss mit dem Auslegungswert vergleichen lässt. Die Zone dabei im Auge behalten.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone",
+          "description": "Die zu prüfende Zone."
+        },
+        "duration_min": {
+          "name": "Dauer",
+          "description": "Minuten, die das Ventil offen bleibt. Eine Minute ergibt eine unzuverlässige Messung: ein Zähler, der in ganzen Litern springt, bewegt sich in dieser Zeit kaum, und ein aus ein oder zwei Sprüngen berechneter Durchfluss beschreibt die Auflösung des Zählers statt der Zone. Längere Läufe kosten Wasser, sind aber die einzige Möglichkeit, eine langsame Zone überhaupt zu messen."
+        }
+      }
+    }
+  },
+  "common": {
+    "notification_command_failed_title": "Ventilbefehl fehlgeschlagen",
+    "notification_command_failed_body": "Zone {zone}: {operation} fehlgeschlagen ({error_detail}).",
+    "notification_unreachable_passive_title": "Ventil nicht erreichbar",
+    "notification_unreachable_passive_body": "Das Ventil der Zone {zone} ist seit {duration} nicht verfügbar.",
+    "notification_unreachable_at_irrigation_title": "Ventil zur Bewässerungszeit nicht erreichbar",
+    "notification_unreachable_at_irrigation_body": "Die Bewässerung der Zone {zone} konnte nicht gestartet werden: Ventil nicht verfügbar ({reason}). Prüfe die Ventilbatterie und das Zigbee-Netz, bevor du es erneut versuchst.",
+    "notification_flow_meter_dead_title": "Wasserzähler meldet nichts",
+    "notification_flow_meter_dead_body": "Der Wasserzähler der Zone {zone} meldet nichts ({detail}). Die Bewässerung lief mit dem Auslegungsdurchfluss weiter, statt übersprungen zu werden, das Volumen ist also geschätzt und nicht gemessen. Prüfe die Zähler-Entität: ein stummer Zähler ist weit wahrscheinlicher als ein trockenes Rohr.",
+    "notification_delivery_uncredited_title": "Abgegebenes Wasser konnte nicht angerechnet werden",
+    "notification_delivery_uncredited_body": "Die Zone {zone} hat Wasser abgegeben, das nicht gemessen werden konnte ({detail}), und hat keinen Auslegungsdurchfluss zur Schätzung, ihr Defizit bleibt also unverändert und die Zone wird im nächsten Zyklus erneut bewässert. Trage den Auslegungsdurchfluss der Zone ein oder repariere den Zähler.",
+    "notification_stuck_open_title": "Ventil klemmt offen: Hauptwasserhahn schließen",
+    "notification_stuck_open_body": "Der Ventilschalter der Zone {zone} meldet AUS, es fließt aber weiterhin Wasser ({flow}). Die Integration hat bereits eine Wiederherstellung versucht und für alle anderen Zonen einen Not-Aus ausgelöst. **Schließe jetzt von Hand den Hauptwasserhahn** und prüfe das betroffene Ventil, bevor die Bewässerung fortgesetzt wird.",
+    "notification_leak_detected_title": "Leck erkannt",
+    "notification_leak_detected_body": "Durchfluss erkannt, obwohl alle Ventile geschlossen sind. Letzter Messwert: {flow}.",
+    "notification_zone_disabled_title": "Zone deaktiviert",
+    "notification_zone_disabled_body": "Zone {zone} nach {failures} aufeinanderfolgenden Fehlern automatisch deaktiviert.",
+    "notification_battery_low_title": "Batterie schwach",
+    "notification_battery_low_body": "Die Batterie von {sensor_name} liegt bei {percent}%.",
+    "notification_irrigation_ineffective_title": "Bewässerung scheint wirkungslos",
+    "notification_irrigation_ineffective_body": "Zone {zone}: die Bodenfeuchte ist nach der letzten Bewässerung nicht gestiegen.",
+    "notification_model_drift_title": "Modellabweichung erkannt",
+    "notification_model_drift_body": "Zone {zone}: die Korrelation zwischen Feuchte und Modell ist auf {correlation} gefallen.",
+    "notification_water_me_now_title": "Manuelle Bewässerung empfohlen",
+    "notification_water_me_now_body": "Zone {zone}: Defizit {deficit} über dem Schwellenwert; von Hand gießen.",
+    "notification_watchdog_triggered_title": "Ventil vom Sicherheits-Watchdog zwangsgeschlossen",
+    "notification_watchdog_triggered_body": "Das Ventil der Zone {zone} war länger als {duration_min} min offen, ohne einen Schließbefehl zu erhalten. NeverDry hat es aus Sicherheitsgründen zwangsweise geschlossen. Prüfe, ob die Automatisierung oder die Abgabelogik korrekt arbeitet."
   },
   "issues": {
     "soil_probe_needs_a_zone": {
@@ -430,7 +641,7 @@
         "step": {
           "confirm": {
             "title": "In welcher Zone befindet sich der Bodenfeuchte-Sensor?",
-            "description": "Der Bodenfeuchte-Sensor '{Sonde}' ist global deklariert, daher wird dieser derzeit von allen Zonen gelesen. Ein Sensor misst an einer einzigen Stelle Erde, mit der Art von Bepflanzung in der dieser steckt und deren Bewässerungsverlauf – der Wert ist nicht auf eine unabhängig davon bewässerte Zone übertragbar. \n\nTeile NeverDry mit, in welcher Zone dieser steckt. In der Zwischenzeit hat sich nichts geändert: Die Zonen verhalten sich genau wie zuvor und bleiben unverändert, bis eine Rückmeldung erfolgt ist.",
+            "description": "Der Bodenfeuchte-Sensor `{probe}` ist global deklariert, daher wird dieser derzeit von allen Zonen gelesen. Ein Sensor misst an einer einzigen Stelle Erde, mit der Art von Bepflanzung in der dieser steckt und deren Bewässerungsverlauf – der Wert ist nicht auf eine unabhängig davon bewässerte Zone übertragbar. \n\nTeile NeverDry mit, in welcher Zone dieser steckt. In der Zwischenzeit hat sich nichts geändert: Die Zonen verhalten sich genau wie zuvor und bleiben unverändert, bis eine Rückmeldung erfolgt ist.",
             "data": {
               "zone": "In welcher Zone befindet sich der Bodenfeuchte-Sensor?"
             },

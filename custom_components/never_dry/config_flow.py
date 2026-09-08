@@ -967,8 +967,15 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def _create_entry(self) -> config_entries.ConfigFlowResult:
         """Create the config entry with all collected data."""
         self._data[CONF_ZONES] = self._zones
-        title = f"NeverDry ({len(self._zones)} zone{'s' if len(self._zones) != 1 else ''})"
-        return self.async_create_entry(title=title, data=self._data)
+        # The entry title is stored once, in whatever language the installer happened to be
+        # using, and never revisited: Home Assistant does not translate it and does not
+        # recompute it. Both of the things the old title carried were therefore wrong by
+        # construction - the English word "zone", and a count that froze at creation and
+        # went stale the moment a zone was added (#225). What is left is the brand name,
+        # which needs no translation and cannot go out of date. A user running more than one
+        # installation can rename the entry, which was always the only thing that survived
+        # a rename anyway.
+        return self.async_create_entry(title="NeverDry", data=self._data)
 
     @staticmethod
     @callback

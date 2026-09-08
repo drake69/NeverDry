@@ -29,6 +29,9 @@ from enum import StrEnum
 from typing import ClassVar
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.translation import async_get_translations
+
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,94 +68,38 @@ class Severity(StrEnum):
     CRITICAL = "critical"
 
 
-# ── Templates ─────────────────────────────────────────────────────────
+# ── Text ────────────────────────────────────────────────────
+
+# The title and body of every notification live in the translation catalogue, under
+# ``common``, as ``notification_<kind>_title`` and ``notification_<kind>_body``.
+#
+# ``common`` rather than ``issues`` on purpose. A repair issue is a statement about the
+# *installation*: a setting is deprecated, a credential expired, go and check something in
+# your configuration. What arrives here is a statement about the *garden*: a valve is stuck
+# open and water is running. Filing the second under the catalogue built for the first would
+# make the text translatable at the cost of saying something untrue about what it is, and it
+# would put "shut off your mains" on the same page as housekeeping. The condition itself
+# belongs in an entity the user can automate on; this catalogue only holds the words.
+#
+# The category is not free choice either: hassfest validates ``strings.json`` against a
+# closed schema, so a ``notifications`` key of our own fails CI. ``common`` is the neutral
+# bucket that schema does provide.
+_TEXT_PREFIX = f"component.{DOMAIN}.common.notification_"
 
 
-@dataclass(frozen=True)
-class _Template:
-    """Static title + body template for one :class:`NotificationKind`."""
+async def _resolve(hass: HomeAssistant, kind: NotificationKind) -> tuple[str, str]:
+    """Title and body for one kind, in the user's language.
 
-    title: str
-    body: str
-
-
-_TEMPLATES: dict[NotificationKind, _Template] = {
-    NotificationKind.COMMAND_FAILED: _Template(
-        title="Valve command failed",
-        body="Zone '{zone}': {operation} failed ({error_detail}).",
-    ),
-    NotificationKind.UNREACHABLE_PASSIVE: _Template(
-        title="Valve unreachable",
-        body="Zone '{zone}' valve has been unavailable for {duration}.",
-    ),
-    NotificationKind.UNREACHABLE_AT_IRRIGATION: _Template(
-        title="Valve unreachable at irrigation time",
-        body=(
-            "Could not start irrigation for zone '{zone}': valve unavailable "
-            "({reason}). Check the valve battery / Zigbee mesh before retrying."
-        ),
-    ),
-    NotificationKind.FLOW_METER_DEAD: _Template(
-        title="Flow meter not reporting",
-        body=(
-            "Zone '{zone}' flow meter is not reporting ({detail}). Irrigation "
-            "ran on the flow rate instead of being skipped, so the volume is "
-            "estimated rather than measured. Check the meter entity: a silent "
-            "meter is far more likely than a dry pipe."
-        ),
-    ),
-    NotificationKind.DELIVERY_UNCREDITED: _Template(
-        title="Water delivered could not be credited",
-        body=(
-            "Zone '{zone}' delivered water that could not be measured ({detail}) "
-            "and has no design flow rate to estimate it with, so its deficit is "
-            "unchanged and the zone will be watered again on the next cycle. "
-            "Set the zone's design flow rate, or fix the meter."
-        ),
-    ),
-    NotificationKind.STUCK_OPEN: _Template(
-        title="Valve stuck open — shut off mains water",
-        body=(
-            "Zone '{zone}' valve switch reports OFF but water is still flowing "
-            "({flow}). The integration has already attempted recovery and "
-            "triggered an emergency stop for every other zone. "
-            "**Manually shut off your main water valve now** and inspect "
-            "the affected valve before resuming irrigation."
-        ),
-    ),
-    NotificationKind.LEAK_DETECTED: _Template(
-        title="Leak detected",
-        body="Flow detected while every valve is closed. Last reading: {flow}.",
-    ),
-    NotificationKind.ZONE_DISABLED: _Template(
-        title="Zone disabled",
-        body="Zone '{zone}' auto-disabled after {failures} consecutive failures.",
-    ),
-    NotificationKind.BATTERY_LOW: _Template(
-        title="Battery low",
-        body="Battery for {sensor_name} is at {percent}%.",
-    ),
-    NotificationKind.IRRIGATION_INEFFECTIVE: _Template(
-        title="Irrigation appears ineffective",
-        body="Zone '{zone}': soil moisture did not rise after the last irrigation.",
-    ),
-    NotificationKind.MODEL_DRIFT: _Template(
-        title="Model drift detected",
-        body="Zone '{zone}': moisture/model correlation has dropped to {correlation}.",
-    ),
-    NotificationKind.WATER_ME_NOW: _Template(
-        title="Manual irrigation suggested",
-        body="Zone '{zone}': deficit {deficit} above threshold; water by hand.",
-    ),
-    NotificationKind.WATCHDOG_TRIGGERED: _Template(
-        title="Valve force-closed by safety watchdog",
-        body=(
-            "Zone '{zone}' valve was open for more than {duration_min} min with no "
-            "close command received. NeverDry forced it closed as a safety measure. "
-            "Check that the automation or delivery logic is working correctly."
-        ),
-    ),
-}
+    Home Assistant loads English first and lays the requested language over it, so a key a
+    translator has not reached yet degrades to English rather than to nothing. A key missing
+    everywhere would degrade to the raw identifier, which is why there is a test that will not
+    let one exist.
+    """
+    resources = await async_get_translations(hass, hass.config.language, "common", {DOMAIN})
+    return (
+        resources.get(f"{_TEXT_PREFIX}{kind.value}_title", kind.value),
+        resources.get(f"{_TEXT_PREFIX}{kind.value}_body", ""),
+    )
 
 
 # ── Internal entry ────────────────────────────────────────────────────
@@ -208,9 +155,9 @@ class ValveNotifier:
         """
         ctx = dict(context or {})
         ctx.setdefault("zone", zone)
-        template = _TEMPLATES[kind]
+        title_text, body_text = await _resolve(self._hass, kind)
         try:
-            message = template.body.format(**ctx)
+            message = body_text.format(**ctx)
         except KeyError as missing:
             _LOGGER.error(
                 "Notification %s/%s missing context key %s; using raw template",
@@ -218,7 +165,7 @@ class ValveNotifier:
                 kind.value,
                 missing,
             )
-            message = template.body
+            message = body_text
 
         key = (zone, kind)
         existing = self._active.get(key)
@@ -226,7 +173,7 @@ class ValveNotifier:
             return False
 
         notification_id = self._notification_id(zone, kind)
-        title = f"[{severity.value.upper()}] {template.title}"
+        title = f"[{severity.value.upper()}] {title_text}"
         await self._hass.services.async_call(
             self._DOMAIN,
             "create",

@@ -53,7 +53,7 @@ class TestZoneFlowRateSensor:
     def test_name(self, di_sensor):
         zone = _make_zone(di_sensor)
         sensor = ZoneFlowRateSensor(zone)
-        assert sensor._attr_name == "Design flow rate"
+        assert sensor._attr_translation_key == "flow_rate"
 
     def test_unit_metric(self, di_sensor):
         zone = _make_zone(di_sensor)
@@ -100,7 +100,7 @@ class TestZoneDurationSensor:
     def test_name(self, di_sensor):
         zone = _make_zone(di_sensor)
         sensor = ZoneDurationSensor(zone)
-        assert sensor._attr_name == "Duration"
+        assert sensor._attr_translation_key == "duration"
 
     def test_unit(self, di_sensor):
         zone = _make_zone(di_sensor)
@@ -173,7 +173,7 @@ class TestZoneLastDurationSensor:
     def test_name(self, di_sensor):
         zone = _make_zone(di_sensor)
         sensor = ZoneLastDurationSensor(zone)
-        assert sensor._attr_name == "Last duration"
+        assert sensor._attr_translation_key == "last_duration"
 
     def test_unit(self, di_sensor):
         zone = _make_zone(di_sensor)

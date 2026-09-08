@@ -410,6 +410,7 @@
         "name": "Wind speed at 2 m"
       },
       "last_source": {
+        "name": "Last source",
         "state": {
           "scheduled": "Scheduled",
           "reactive": "Deficit threshold",
@@ -420,8 +421,218 @@
           "mark_irrigated": "Marked as irrigated",
           "service_reset": "Reset"
         }
+      },
+      "et_hourly_estimate": {
+        "name": "ET Hourly Estimate"
+      },
+      "dryness_index": {
+        "name": "Dryness Index"
+      },
+      "volume": {
+        "name": "Volume"
+      },
+      "deficit": {
+        "name": "Deficit"
+      },
+      "duration": {
+        "name": "Duration"
+      },
+      "last_duration": {
+        "name": "Last duration"
+      },
+      "last_irrigated": {
+        "name": "Last irrigated"
+      },
+      "last_volume": {
+        "name": "Last volume"
+      },
+      "session_water": {
+        "name": "Session water"
+      },
+      "rain_yearly": {
+        "name": "Rain Yearly"
+      },
+      "irrigated_yearly": {
+        "name": "Irrigated Yearly"
+      },
+      "flow_rate": {
+        "name": "Design flow rate"
+      },
+      "measured_flow": {
+        "name": "Measured flow rate"
+      },
+      "meter_resolution": {
+        "name": "Water meter resolution"
+      },
+      "irrigation_mode": {
+        "name": "Irrigation mode"
+      },
+      "irrigation_time": {
+        "name": "Irrigation time"
+      },
+      "threshold": {
+        "name": "Threshold"
+      },
+      "area": {
+        "name": "Area"
+      },
+      "efficiency": {
+        "name": "Efficiency"
+      },
+      "kc": {
+        "name": "Kc"
+      },
+      "linked_valve": {
+        "name": "Valve"
+      },
+      "linked_battery": {
+        "name": "Battery"
+      },
+      "linked_water_meter": {
+        "name": "Water meter"
+      }
+    },
+    "button": {
+      "irrigate": {
+        "name": "Irrigate"
+      },
+      "stop": {
+        "name": "Stop"
+      },
+      "mark_irrigated": {
+        "name": "Mark irrigated"
+      },
+      "reset_valve": {
+        "name": "Reset valve"
+      },
+      "valve_test": {
+        "name": "Valve test (1 min)"
+      },
+      "reset_yearly_rain": {
+        "name": "Reset yearly rain"
+      },
+      "reset_yearly_water": {
+        "name": "Reset yearly water"
       }
     }
+  },
+  "services": {
+    "reset": {
+      "name": "Reset deficit",
+      "description": "Reset the soil water deficit to zero (typically called after irrigation completes)."
+    },
+    "reset_yearly_rain": {
+      "name": "Reset yearly rain",
+      "description": "Reset the year-to-date rain total to zero (system-wide). The total is a single value shared by every zone's \"Rain Yearly\" sensor and normally resets on its own on 1 January. Use this to clear a wrong value, for example after switching rain sensor type, without waiting for the new year or reinstalling. Historical statistics are left untouched."
+    },
+    "reset_yearly_water": {
+      "name": "Reset yearly water",
+      "description": "Reset the year-to-date irrigated-water total to zero for every zone. Each zone keeps its own yearly counter and normally resets on 1 January; this clears them all at once. The lifetime total delivered per zone and historical statistics are left untouched."
+    },
+    "irrigate_zone": {
+      "name": "Irrigate zone",
+      "description": "Start irrigation for a single zone. How the water is measured depends on the zone's delivery mode: on a timer, at a volume read from a water meter, or by handing a volume target to a smart valve that doses it itself.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone name",
+          "description": "The name of the zone to irrigate (as configured)."
+        }
+      }
+    },
+    "irrigate_all": {
+      "name": "Irrigate all zones",
+      "description": "Irrigate all configured zones sequentially. Each zone uses its own delivery mode. A pause between zones allows pressure stabilization. The deficit is reset after all zones complete."
+    },
+    "stop": {
+      "name": "Emergency stop",
+      "description": "Immediately close all irrigation valves. Use this to abort an irrigation cycle in progress."
+    },
+    "stop_zone": {
+      "name": "Stop zone",
+      "description": "Stop irrigation for a single zone, leaving the other zones running.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone name",
+          "description": "The zone whose irrigation should be stopped."
+        }
+      }
+    },
+    "mark_irrigated": {
+      "name": "Mark zone as irrigated",
+      "description": "Record that a zone was watered by hand, so the model credits the water and stops asking for it. Use it after watering with a hose.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone name",
+          "description": "The zone to mark as irrigated. Leave empty for all zones."
+        }
+      }
+    },
+    "set_deficit": {
+      "name": "Set deficit",
+      "description": "Set a zone's water deficit to a chosen value. Use it to correct the model after something it could not see, such as a heavy manual watering or a stretch with the rain sensor offline.",
+      "fields": {
+        "deficit_mm": {
+          "name": "Deficit (mm)",
+          "description": "Target deficit value in mm. Must be >= 0."
+        },
+        "zone_name": {
+          "name": "Zone name",
+          "description": "The zone to update. Leave empty to update all zones."
+        }
+      }
+    },
+    "reset_valve": {
+      "name": "Reset valve (unlock maintenance)",
+      "description": "Bring a zone out of maintenance and let it water again. A zone is put into maintenance after repeated valve failures, and it stays there until someone has looked at the valve.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone name",
+          "description": "The zone whose valve should be unlocked."
+        }
+      }
+    },
+    "test_valve": {
+      "name": "Valve test (supervised)",
+      "description": "Open one zone's valve for a set time and measure what it actually delivers, so the measured rate can be compared with the one the zone was built for. Watch the zone while it runs.",
+      "fields": {
+        "zone_name": {
+          "name": "Zone",
+          "description": "The zone to test."
+        },
+        "duration_min": {
+          "name": "Duration",
+          "description": "Minutes to keep the valve open. One minute makes for an unreliable measurement: a counter that steps in whole litres barely moves in that time, and a rate computed from one or two steps describes the counter's resolution rather than the zone. Longer runs cost water but are the only way to measure a slow zone at all."
+        }
+      }
+    }
+  },
+  "common": {
+    "notification_command_failed_title": "Valve command failed",
+    "notification_command_failed_body": "Zone {zone}: {operation} failed ({error_detail}).",
+    "notification_unreachable_passive_title": "Valve unreachable",
+    "notification_unreachable_passive_body": "Zone {zone} valve has been unavailable for {duration}.",
+    "notification_unreachable_at_irrigation_title": "Valve unreachable at irrigation time",
+    "notification_unreachable_at_irrigation_body": "Could not start irrigation for zone {zone}: valve unavailable ({reason}). Check the valve battery and the Zigbee mesh before retrying.",
+    "notification_flow_meter_dead_title": "Water meter not reporting",
+    "notification_flow_meter_dead_body": "Zone {zone} water meter is not reporting ({detail}). Irrigation ran on the design flow rate instead of being skipped, so the volume is estimated rather than measured. Check the meter entity: a silent meter is far more likely than a dry pipe.",
+    "notification_delivery_uncredited_title": "Water delivered could not be credited",
+    "notification_delivery_uncredited_body": "Zone {zone} delivered water that could not be measured ({detail}) and has no design flow rate to estimate it with, so its deficit is unchanged and the zone will be watered again on the next cycle. Set the zone's design flow rate, or fix the meter.",
+    "notification_stuck_open_title": "Valve stuck open: shut off mains water",
+    "notification_stuck_open_body": "Zone {zone} valve switch reports OFF but water is still flowing ({flow}). The integration has already attempted recovery and triggered an emergency stop for every other zone. **Manually shut off your main water valve now** and inspect the affected valve before resuming irrigation.",
+    "notification_leak_detected_title": "Leak detected",
+    "notification_leak_detected_body": "Flow detected while every valve is closed. Last reading: {flow}.",
+    "notification_zone_disabled_title": "Zone disabled",
+    "notification_zone_disabled_body": "Zone {zone} auto-disabled after {failures} consecutive failures.",
+    "notification_battery_low_title": "Battery low",
+    "notification_battery_low_body": "Battery for {sensor_name} is at {percent}%.",
+    "notification_irrigation_ineffective_title": "Irrigation appears ineffective",
+    "notification_irrigation_ineffective_body": "Zone {zone}: soil moisture did not rise after the last irrigation.",
+    "notification_model_drift_title": "Model drift detected",
+    "notification_model_drift_body": "Zone {zone}: moisture/model correlation has dropped to {correlation}.",
+    "notification_water_me_now_title": "Manual irrigation suggested",
+    "notification_water_me_now_body": "Zone {zone}: deficit {deficit} above threshold; water by hand.",
+    "notification_watchdog_triggered_title": "Valve force-closed by safety watchdog",
+    "notification_watchdog_triggered_body": "Zone {zone} valve was open for more than {duration_min} min with no close command received. NeverDry forced it closed as a safety measure. Check that the automation or delivery logic is working correctly."
   },
   "issues": {
     "soil_probe_needs_a_zone": {

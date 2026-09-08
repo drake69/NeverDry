@@ -132,7 +132,7 @@ class TestETAttributes:
         assert et_sensor._attr_native_unit_of_measurement == "mm/h"
 
     def test_name(self, et_sensor):
-        assert et_sensor._attr_name == "ET Hourly Estimate"
+        assert et_sensor._attr_translation_key == "et_hourly_estimate"
 
     def test_icon(self, et_sensor):
         assert et_sensor._attr_icon == "mdi:sun-thermometer"
