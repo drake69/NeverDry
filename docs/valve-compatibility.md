@@ -18,10 +18,17 @@ expose different things too. The table below is the only honest answer.
 | **Valve** | The entity NeverDry commands. `switch.*` and `valve.*` are both supported and equivalent — the integration sends the services that domain understands. |
 | **Flow rate** | An *instantaneous* volume/time reading: the witness that water is moving right now. Integrated over a run it also estimates a volume, so that estimate is only as good as the reporting cadence. |
 | **Volume counters** | *session* = restarts at zero each run, and is the best source of all: when the run ends its value already **is** the volume delivered. *daily* / *hourly* = a total that resets on a calendar boundary — usable, with the [reset caveat](#the-caveats-that-apply-to-every-counter). |
+| **Meter reports** | *When* the counter speaks, which is not the same as what it can express. *per volume* = one report per counter step, so silence really does mean no water. *on a clock* = a fixed interval whatever the flow, so silence means nothing until the interval has passed. This is the column that decides whether the meter can supervise an opening, and it is why a valve can be perfectly sound and still unable to guard. |
 | **History** | Past sessions kept on the device — the series in which delivery *decaying* over weeks becomes visible, which is how clogged drippers announce themselves. |
 | **Needs YAML?** | Whether anything beyond picking an entity is required. ❌ means genuinely nothing. |
 | **LoD** | Limit of detection — [what it is and how to measure it](#limit-of-detection-lod). Empty on every row so far, and it is the one number no config file contains. |
 | **By** | Who established the row. Rows credited to *maintainer* were read off the project's own field installation. |
+
+Three further fields live in the CSV without appearing above, because they
+describe the reporter's installation rather than the device: `flow_rate_lpm`,
+`flow_rate_measured_lpm` and `meter_resolution_l`. The first two are worth more
+as a pair than separately, since the gap between a declared rate and the one
+actually observed is invisible in either number alone.
 
 ### R / W / G — read, write, get
 
@@ -46,11 +53,11 @@ dosing below.
 ## Verified valves
 
 <!-- BEGIN GENERATED TABLE: edit valve-compatibility.csv, then run tools/build_valve_table.py -->
-| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | History | Needs config? | Verdict | Why | LoD | By |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| SONOFF **SWV** | 1.0.4 (20240820) | Z2M 2.13 | `switch.*` | m3/h | ✅ session + daily | ❌ | ❌ none | **good** | flow rate in m3/h, session counter | - | maintainer |
-| SONOFF **SWV-ZFE** | 1.0.7 (20260317) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | history | **good** | session counter | - | maintainer |
-| SONOFF **SWV-ZFE** | 1.1.0 (20260724) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | ⚠️ on request | history | **partial** | session counter, but the firmware can change its own counter units | - | maintainer |
+| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | Meter reports | History | Needs config? | Verdict | Why | LoD | By |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| SONOFF **SWV** | 1.0.4 (20240820) | Z2M 2.13 | `switch.*` | m3/h | ✅ session + daily | per volume (1 L steps) | ❌ | ❌ none | **good** | flow rate in m3/h, session counter | - | maintainer |
+| SONOFF **SWV-ZFE** | 1.0.7 (20260317) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | on a clock, ~300 s | ⚠️ on request | history | **partial** | session counter, but it reports every ~300 s on a clock, too late to supervise an opening, and the dose lands in steps that size | - | maintainer |
+| SONOFF **SWV-ZFE** | 1.1.0 (20260724) | Z2M 2.13 | `switch.*` | ❌ | ✅ session + hourly | on a clock, ~300 s | ⚠️ on request | history | **partial** | session counter, but it reports every ~300 s on a clock, too late to supervise an opening, and the dose lands in steps that size; and the firmware can change its own counter units | - | maintainer |
 
 **Verdict**, derived from the columns, never typed: *good* = delivery measurement available with no extra setup · *partial* = delivery measurement available, but with a documented caveat or extra step · *timer-only* = no delivery measurement, so NeverDry runs it on a clock
 <!-- END GENERATED TABLE -->
