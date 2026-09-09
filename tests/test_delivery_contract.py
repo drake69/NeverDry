@@ -32,6 +32,7 @@ from never_dry.const import (
     CONF_ZONE_SYSTEM_TYPE,
     CONF_ZONE_VALVE,
     CONF_ZONE_VOLUME_ENTITY,
+    DELIVERY_MODE_FLOW_METER,
     DELIVERY_MODE_VOLUME_PRESET,
     SYSTEM_TYPE_CUSTOM,
 )
@@ -592,3 +593,114 @@ class TestCase3IsNotGuardedOnTheLivePath:
 
         assert await ctrl._open_valve(zone.valve) is True
         operator.async_turn_on.assert_awaited_once()
+
+
+class TestOurOwnRefusalNeverCancelsTheCredit:
+    """T9: a check we could not conclude must not cost the zone its water.
+
+    The invariant of the contract, and the one worth the most: the verification
+    decides whether we may *trust* the meter's account of a session, never
+    whether the water that already left the pipe happened. When the guard closed
+    a healthy valve in the field, the session ended in error and the litres that
+    had run were credited to nobody -- so the deficit stood, the zone was
+    watered again the next day, and the model was wrong in the direction that
+    floods rather than the one that dries.
+
+    What is credited is what the meter finally reports, not an estimate. A
+    genuinely dry pipe therefore credits nothing, which is correct and is the
+    reason this cannot be done with time multiplied by the declared rate.
+
+    The reading has to wait for the meter's own cadence: on the field device the
+    closing tick landed three and a half minutes after the valve shut, so an
+    immediate read would return the same truncated figure that caused the whole
+    diagnosis to take a day.
+    """
+
+    @staticmethod
+    def _refused_open():
+        return MagicMock(status=OperationStatus.FAILED, error_detail="flow_unverifiable")
+
+    def _zone_and_controller(self, hass_mock, di_sensor, *, reading="100.0"):
+        zone = _zone_sensor(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+            },
+        )
+        zone._zone_deficit = 5.0
+        hass_mock.states.get = MagicMock(side_effect=_frozen_meter(zone, "sensor.flow_meter", reading))
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        return zone, ctrl
+
+    @staticmethod
+    def _capture_tasks(hass_mock):
+        """Run the deferred work deterministically instead of hoping it ran."""
+        spawn = hass_mock.async_create_task
+        tasks = []
+
+        def capture(coro):
+            task = spawn(coro)
+            tasks.append(task)
+            return task
+
+        hass_mock.async_create_task = capture
+        return tasks
+
+    @pytest.mark.asyncio
+    async def test_a_refused_opening_still_credits_what_the_meter_saw(self, hass_mock, di_sensor):
+        zone, ctrl = self._zone_and_controller(hass_mock, di_sensor)
+        driver = MagicMock()
+        driver.async_turn_on = AsyncMock(return_value=self._refused_open())
+        driver.async_settled_volume = AsyncMock(return_value=8.0)
+        ctrl._valve_operators[zone.valve] = driver
+        tasks = self._capture_tasks(hass_mock)
+
+        delivered = await ctrl._deliver_flow_meter(zone)
+        for task in tasks:
+            await task
+
+        assert delivered == 0.0, "the session did fail: the synchronous figure is honest"
+        # 8 L on 20 m2 at 0.90 efficiency is 0.36 mm of the 5 mm owed.
+        assert zone._zone_deficit == pytest.approx(5.0 - 8.0 * 0.90 / 20.0)
+
+    @pytest.mark.asyncio
+    async def test_a_dry_pipe_credits_nothing(self, hass_mock, di_sensor):
+        """The guard exists for this case, and the fix must not blunt it."""
+        zone, ctrl = self._zone_and_controller(hass_mock, di_sensor)
+        driver = MagicMock()
+        driver.async_turn_on = AsyncMock(return_value=self._refused_open())
+        driver.async_settled_volume = AsyncMock(return_value=None)
+        ctrl._valve_operators[zone.valve] = driver
+        tasks = self._capture_tasks(hass_mock)
+
+        await ctrl._deliver_flow_meter(zone)
+        for task in tasks:
+            await task
+
+        assert zone._zone_deficit == pytest.approx(5.0)
+
+    @pytest.mark.asyncio
+    async def test_the_reading_waits_for_the_meters_own_cadence(self, hass_mock, di_sensor, monkeypatch):
+        """The condition the credit depends on: read too early and it reads zero.
+
+        Not a constant and not immediate -- the same cadence that decides the
+        verification window and the settle wait.
+        """
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=6.0, cadence_s=FIELD_METER_CADENCE_S)
+        waited = []
+
+        async def record(seconds):
+            waited.append(seconds)
+
+        monkeypatch.setattr("never_dry.driver.asyncio.sleep", record)
+        driver._hass.states.get = MagicMock(
+            return_value=MagicMock(state="108.0", attributes={"unit_of_measurement": "L"}),
+        )
+
+        volume = await driver.async_settled_volume("sensor.meter", 100.0)
+
+        assert volume == pytest.approx(8.0)
+        assert waited == [driver.settle_delay_s]
+        assert waited[0] > FIELD_METER_CADENCE_S, "reading before the next tick reads the truncated figure"

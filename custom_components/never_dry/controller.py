@@ -1337,6 +1337,7 @@ class IrrigationController:
             return await self._deliver_estimated_flow(zone)
 
         if not await self._open_valve(zone.valve):
+            self._credit_when_the_meter_speaks(zone, meter_entity, initial_reading)
             return 0.0
         zone.set_irrigating(True)
         zone.async_write_ha_state()
@@ -1437,6 +1438,50 @@ class IrrigationController:
         if driver is None or baseline is None or not hasattr(driver, "schedule_flow_sample"):
             return
         driver.schedule_flow_sample(meter_entity, baseline, session_s)
+
+    def _credit_when_the_meter_speaks(self, zone, meter_entity: str, baseline: float | None) -> None:
+        """Credit water that ran during an opening we refused, once measurable.
+
+        A verification decides whether we may trust the meter's account of a
+        session. It cannot decide whether the water happened. When the guard
+        closed a healthy valve in the field the session ended in error and the
+        litres that had already run were credited to nobody, so the deficit
+        stood and the zone was watered again the next day: the model wrong in
+        the direction that floods.
+
+        What is credited is what the meter finally reports, never an estimate.
+        That is what makes this safe on the case the guard exists for: if the
+        pipe really was dry, or the valve never opened at all, the counter has
+        not moved and nothing is credited. No need to tell the two kinds of
+        refusal apart -- the meter does it.
+
+        Deferred because the answer does not exist yet. The delivery owes its
+        figure to the caller now, and the meter's closing tick lands on the
+        device's own schedule, so the reading waits for the cadence measured on
+        that meter.
+        """
+        driver = self._driver_for(zone)
+        if driver is None or baseline is None or not hasattr(driver, "async_settled_volume"):
+            return
+        self._hass.async_create_task(self._credit_settled_volume(zone, driver, meter_entity, baseline))
+
+    async def _credit_settled_volume(self, zone, driver, meter_entity: str, baseline: float) -> None:
+        """Await the settled reading and put it against the zone's deficit.
+
+        Only the deficit: the session did fail, so nothing here stamps it as an
+        irrigation. The session counters stay with the paths that completed one.
+        """
+        volume = await driver.async_settled_volume(meter_entity, baseline)
+        if volume is None:
+            return
+        deficit = zone.credit_delivery(volume)
+        zone.async_write_ha_state()
+        _LOGGER.info(
+            "Zone '%s': the opening was refused, but the meter later reported %.1fL. Credited: deficit now %.2fmm",
+            zone.zone_name,
+            volume,
+            deficit,
+        )
 
     async def _deliver_flow_rate(
         self,

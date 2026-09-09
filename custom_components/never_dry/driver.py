@@ -1581,16 +1581,35 @@ class ZoneDriver(Driver):
             return
         self._hass.async_create_task(self._record_flow_sample(meter, baseline, session_s))
 
-    async def _record_flow_sample(self, meter: str, baseline: float, session_s: float) -> None:
-        """Read the settled meter and record what the session's flow really was."""
+    async def async_settled_volume(self, meter: str, baseline: float) -> float | None:
+        """What the meter finally reports for a session, once it has spoken.
+
+        The last tick routinely lands after the valve is shut, and how long
+        after is the device's business: on the field meter it arrived three and
+        a half minutes later. Reading at the close returns a truncated figure,
+        so the wait is the meter's own cadence rather than a constant.
+
+        ``None`` means the question has no answer: an unreadable meter, or a
+        counter that did not advance. A difference that is zero or negative is
+        not a small volume, it is a reset or a stall, and a guess is worse than
+        a gap.
+
+        Public because two callers need the same settled reading for different
+        reasons -- learning the zone's real flow rate, and crediting water that
+        ran during an opening we refused -- and only the driver knows how long
+        its own meter takes to speak.
+        """
         await asyncio.sleep(self.settle_delay_s)
         final = flow_utils.read_volume_liters(self._hass, meter)
         if final is None:
-            return
+            return None
         volume = final - baseline
-        if volume <= 0:
-            # Either nothing was measured or the counter reset mid-session; both
-            # make the difference meaningless, and a guess is worse than a gap.
+        return volume if volume > 0 else None
+
+    async def _record_flow_sample(self, meter: str, baseline: float, session_s: float) -> None:
+        """Read the settled meter and record what the session's flow really was."""
+        volume = await self.async_settled_volume(meter, baseline)
+        if volume is None:
             return
         lpm = volume / (session_s / 60.0)
         self._session_flow.window.record(lpm)
