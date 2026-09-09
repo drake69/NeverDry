@@ -35,6 +35,15 @@ const I18N = {
     barUnavailable: "deficit / threshold unavailable",
     irrigateNow: "Irrigate now",
     irrigating: "Irrigating",
+    dosing: "Dosing",
+    doseByTime: "by time (declared rate)",
+    doseByMeter: "by measured volume",
+    doseByValve: "by the valve's own dose",
+    meterRefresh: "Meter reports every",
+    meterRefreshUnknown: "not measured yet",
+    meterPeriodic: "on a clock",
+    meterByVolume: "per volume",
+    meterGuardOff: "cannot verify opening",
     maintenance: "Maintenance",
     unreachable: "Valve not responding",
     waitingForValve: "waiting for first contact",
@@ -91,6 +100,15 @@ const I18N = {
     barUnavailable: "deficit / soglia non disponibili",
     irrigateNow: "Irriga ora",
     irrigating: "In irrigazione",
+    dosing: "Dosaggio",
+    doseByTime: "a tempo (portata dichiarata)",
+    doseByMeter: "a volume misurato",
+    doseByValve: "a dose sulla valvola",
+    meterRefresh: "Il contatore riporta ogni",
+    meterRefreshUnknown: "non ancora misurato",
+    meterPeriodic: "a orologio",
+    meterByVolume: "a volume",
+    meterGuardOff: "non puo' verificare l'apertura",
     maintenance: "Manutenzione",
     unreachable: "Valvola non raggiungibile",
     waitingForValve: "in attesa di risposta",
@@ -147,6 +165,15 @@ const I18N = {
     barUnavailable: "Defizit / Grenzwert nicht verfügbar",
     irrigateNow: "Jetzt bewässern",
     irrigating: "Bewässerung läuft",
+    dosing: "Dosierung",
+    doseByTime: "nach Zeit (angegebene Durchflussrate)",
+    doseByMeter: "nach gemessenem Volumen",
+    doseByValve: "nach der Dosis des Ventils",
+    meterRefresh: "Zähler meldet alle",
+    meterRefreshUnknown: "noch nicht gemessen",
+    meterPeriodic: "nach Uhr",
+    meterByVolume: "nach Volumen",
+    meterGuardOff: "kann Öffnung nicht prüfen",
     maintenance: "Wartung",
     unreachable: "Ventil antwortet nicht",
     waitingForValve: "Warte auf erste Ventil-Rückmeldung",
@@ -650,7 +677,8 @@ class NeverDryZoneCard extends HTMLElement {
         ]) +
         this._exposureCell(ents) +
         this._rows([["mdi:speedometer", ents.flowRate, t(hass, "designFlow")]]) +
-        this._measuredFlowCell(ents),
+        this._measuredFlowCell(ents) +
+        this._deliveryCell(_zoneAttrs),
     );
 
     this._updateConfigLink(ents);
@@ -740,6 +768,53 @@ class NeverDryZoneCard extends HTMLElement {
    * for — the one that says whether the zone delivers what it was designed to —
    * the cell stays and reports its own progress instead of disappearing.
    */
+  /**
+   * What this zone doses by, and what its meter is worth.
+   *
+   * The delivery mode decides who answers for the water: in `estimated_flow`
+   * the user's declared rate does, in `flow_meter` the measurement does, in
+   * `volume_preset` the valve does. Until now nothing on screen said which,
+   * so two zones behaving differently for a good reason looked identical.
+   *
+   * The refresh cadence is shown next to it because it is the number that
+   * decides whether the meter can supervise an opening at all: one reporting
+   * every 300 s on a session lasting 359 s is visibly unfit, and no single
+   * reading reveals it.
+   */
+  _deliveryCell(a) {
+    const mode = a.delivery_mode;
+    if (!mode) return "";
+    const byMode = {
+      estimated_flow: "doseByTime",
+      flow_meter: "doseByMeter",
+      volume_preset: "doseByValve",
+    };
+    const label = byMode[mode];
+    if (!label) return "";
+    let value = t(this._hass, label);
+
+    if (a.flow_meter_sensor) {
+      const cadence = Number(a.meter_refresh_s);
+      if (Number.isFinite(cadence)) {
+        const kind = a.meter_refresh_kind === "periodic" ? "meterPeriodic" : "meterByVolume";
+        value += ` · ${t(this._hass, "meterRefresh")} ${cadence}s (${t(this._hass, kind)})`;
+      } else {
+        value += ` · ${t(this._hass, "meterRefresh")} ${t(this._hass, "meterRefreshUnknown")}`;
+      }
+      if (a.meter_guard_usable === false && mode !== "estimated_flow") {
+        value += ` · ${t(this._hass, "meterGuardOff")}`;
+      }
+    }
+    return `
+        <div class="nd-cell">
+          <ha-icon icon="mdi:water-pump"></ha-icon>
+          <div class="nd-cell-txt">
+            <span class="nd-cell-lbl">${escapeHtml(t(this._hass, "dosing"))}</span>
+            <span class="nd-cell-val">${escapeHtml(value)}</span>
+          </div>
+        </div>`;
+  }
+
   _measuredFlowCell(ents) {
     const st = ents.measuredFlow;
     if (!st) return "";

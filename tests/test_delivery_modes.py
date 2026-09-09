@@ -1328,3 +1328,80 @@ class TestTheRateToEstimateWith:
         credited = ctrl._fallback_volume_estimate(zone, elapsed_s=600.0, measured=0.0)
 
         assert credited == pytest.approx(3.4 * 600.0 / 60.0)
+
+
+class TestTheMeterFactsReachTheCard:
+    """The card reads the carrier entity's attributes; the facts must be there.
+
+    Without these the user cannot see why a zone behaves as it does: a meter
+    reporting every 300 s on a session lasting 359 s is visibly unfit to
+    supervise it, but only if the number is on screen. Diagnosing it took a
+    manual read of the recorder.
+    """
+
+    def _zone_with_meter(self, hass_mock, di_sensor, cadence, resolution):
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.meter",
+            },
+        )
+        operator = MagicMock()
+        operator.meter_refresh_cadence_s = cadence
+        operator.meter_refresh_samples = 7
+        operator.meter_refresh_kind = "periodic"
+        operator.meter_guard_usable = False
+        zone._operator = operator
+        return zone
+
+    def test_the_cadence_and_its_meaning_are_published(self, hass_mock, di_sensor):
+        zone = self._zone_with_meter(hass_mock, di_sensor, cadence=300.0, resolution=2.0)
+        attrs = zone.extra_state_attributes
+        assert attrs["meter_refresh_s"] == 300
+        assert attrs["meter_refresh_kind"] == "periodic"
+        assert attrs["meter_refresh_samples"] == 7
+        assert attrs["meter_guard_usable"] is False
+
+    def test_a_zone_without_a_meter_publishes_none_of_it(self, hass_mock, di_sensor):
+        """No meter, no meter facts: empty keys would read as measured zeroes."""
+        zone = _make_zone(hass_mock, di_sensor)
+        zone._operator = None
+        assert "meter_refresh_s" not in zone.extra_state_attributes
+
+    def test_an_unmeasured_cadence_is_absent_rather_than_zero(self, hass_mock, di_sensor):
+        zone = self._zone_with_meter(hass_mock, di_sensor, cadence=None, resolution=None)
+        zone._operator.meter_refresh_cadence_s = None
+        zone._operator.meter_refresh_kind = None
+        assert "meter_refresh_s" not in zone.extra_state_attributes
+        assert zone.extra_state_attributes["meter_refresh_samples"] == 7
+
+
+class TestTheCardActuallyReadsTheDeliveryFacts:
+    """A static guard: the attributes existed for months and nothing read them.
+
+    ``delivery_mode`` and ``flow_meter_sensor`` were already published on the
+    carrier entity, and the card never mentioned either. The user could not
+    tell a zone dosing by time from one dosing by measured volume, which is
+    also the difference between who answers for the water. Reaching the card
+    is what makes a capability real, so it gets a test of its own.
+    """
+
+    def test_the_card_reads_the_delivery_mode(self):
+        src = _CARD.read_text(encoding="utf-8")
+        assert "delivery_mode" in src
+        for mode in ("estimated_flow", "flow_meter", "volume_preset"):
+            assert mode in src, f"the card cannot name {mode}"
+
+    def test_the_card_reads_the_meter_cadence(self):
+        src = _CARD.read_text(encoding="utf-8")
+        assert "meter_refresh_s" in src
+        assert "meter_refresh_kind" in src
+        assert "flow_meter_sensor" in src
+
+    def test_the_cell_is_rendered_and_not_merely_defined(self):
+        """The defect this whole change is about: defined, never called."""
+        src = _CARD.read_text(encoding="utf-8")
+        assert "_deliveryCell(" in src
+        assert src.count("_deliveryCell(") >= 2, "defined but never invoked"

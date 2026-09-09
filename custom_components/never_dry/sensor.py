@@ -2712,6 +2712,19 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             if warnings:
                 attrs["warnings"] = warnings
 
+        operator = getattr(self, "_operator", None)
+        if operator is not None and getattr(operator, "meter_refresh_samples", None) is not None:
+            # What the meter's silence is worth. A counter reporting every 300 s
+            # cannot supervise a 359 s session, and that is visible here and
+            # nowhere else: no single reading shows a cadence. Absent rather
+            # than zero while unmeasured, since a zero would read as "instant".
+            attrs["meter_refresh_samples"] = operator.meter_refresh_samples
+            attrs["meter_guard_usable"] = operator.meter_guard_usable
+            if (cadence := operator.meter_refresh_cadence_s) is not None:
+                attrs["meter_refresh_s"] = round(cadence)
+            if (kind := operator.meter_refresh_kind) is not None:
+                attrs["meter_refresh_kind"] = kind
+
         if self._last_valve_test:
             # Prefixed and flat: the card and the report block read these, and a
             # nested dict in an attribute is awkward for both.

@@ -268,3 +268,52 @@ class TestTheCadenceIsActuallyLearned:
         await driver._handle_flow_state(self._meter_event(16.0))
 
         assert driver._session_flow.refresh_cadence_s is None
+
+
+class TestTheMeterIsClassifiedNotJustMeasured:
+    """A cadence is a number; what the user needs is what it means.
+
+    Two meters with the same 1 L step behave differently: one publishes per
+    litre delivered, the other on a clock. The first can guard an opening, the
+    second cannot, and no amount of tuning changes that. So the classification
+    is published, not left for the reader to derive.
+    """
+
+    def test_a_prompt_meter_is_classified_as_publishing_per_volume(self):
+        """1 L step at 4.4 L/min is a tick every ~14 s, and that is what is seen."""
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=1.0, cadence_s=14.0)
+        assert driver.meter_refresh_kind == "volume"
+
+    def test_the_field_meter_is_classified_as_publishing_on_a_clock(self):
+        """A 2 L step at 4.4 L/min should tick every ~27 s. It reports every 300.
+
+        The gap between what the volume would imply and what the meter does is
+        the whole diagnosis: this is the SWV-ZFE.
+        """
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=2.0, cadence_s=FIELD_METER_CADENCE_S)
+        assert driver.meter_refresh_kind == "periodic"
+
+    def test_without_a_resolution_there_is_nothing_to_compare(self):
+        """Honest silence: the classification needs both quantities."""
+        driver = _zone(DeliveryMode.FLOW_METER, cadence_s=FIELD_METER_CADENCE_S)
+        assert driver.meter_refresh_kind is None
+
+    def test_guard_usable_says_no_for_the_field_meter(self):
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=2.0, cadence_s=FIELD_METER_CADENCE_S)
+        assert driver.meter_guard_usable is False
+
+    def test_guard_usable_says_yes_for_a_prompt_meter(self):
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=1.0, cadence_s=14.0)
+        assert driver.meter_guard_usable is True
+
+    def test_guard_usable_says_no_in_a_mode_that_does_not_guard(self):
+        """Not "could it", but "does it": in Case 1 nothing guards, however good the meter."""
+        driver = _zone(DeliveryMode.ESTIMATED_FLOW, resolution_l=1.0, cadence_s=14.0)
+        assert driver.meter_guard_usable is False
+
+    def test_the_sample_count_is_published_so_a_lone_reading_is_visible(self):
+        """One interval is not a cadence, and the user must be able to see that."""
+        driver = _zone(DeliveryMode.FLOW_METER)
+        assert driver.meter_refresh_samples == 0
+        driver._session_flow.observe_refresh_interval(300.0)
+        assert driver.meter_refresh_samples == 1

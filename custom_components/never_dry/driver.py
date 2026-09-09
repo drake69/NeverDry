@@ -94,6 +94,11 @@ FLOW_VERIFY_MIN_S: float = 10.0
 #: Past this, the window stops being a guard: "commanded but dry" would take
 #: too long to notice, so verification is declared inapplicable instead.
 FLOW_VERIFY_MAX_S: float = 180.0
+#: How far past ``resolution / rate`` a cadence may sit and still count as
+#: "publishes per volume". Generous: the point is to separate a meter that
+#: tracks water from one that answers to a clock, and the field gap was 11x.
+METER_KIND_TOLERANCE: float = 3.0
+
 #: There is deliberately no constant for "cadence not yet known". Two of them
 #: existed before (10 s, then 90 s) and both closed healthy valves: the second
 #: was the first made generous, which changed how long the guard waited and not
@@ -1312,6 +1317,45 @@ class ZoneDriver(Driver):
         if not resolution or rate <= 0:
             return None
         return resolution / rate * 60.0
+
+    @property
+    def meter_refresh_cadence_s(self) -> float | None:
+        """Longest observed gap between two publications of the counter."""
+        return self._session_flow.refresh_cadence_s
+
+    @property
+    def meter_refresh_samples(self) -> int:
+        """How many gaps that cadence was measured from."""
+        return self._session_flow.refresh_samples
+
+    @property
+    def meter_refresh_kind(self) -> str | None:
+        """``"volume"``, ``"periodic"``, or ``None`` while undecidable.
+
+        Compares what the meter does against what its step would imply: a
+        counter publishing per litre delivered reports at about
+        ``resolution / rate``, so a cadence far beyond that is a clock talking,
+        not water arriving. The distinction is what decides whether the meter
+        can guard an opening at all, and it is invisible in any single reading.
+        """
+        cadence = self._session_flow.refresh_cadence_s
+        expected = self.time_to_first_tick_s()
+        if cadence is None or expected is None or expected <= 0:
+            return None
+        return "volume" if cadence <= expected * METER_KIND_TOLERANCE else "periodic"
+
+    @property
+    def meter_guard_usable(self) -> bool:
+        """Whether this zone's flow verification can actually run.
+
+        Deliberately "does it" and not "could it": in ESTIMATED_FLOW nothing
+        guards however prompt the meter, because the user declared that the
+        duration is the dose.
+        """
+        if not self.flow_guard_armed:
+            return False
+        _, verdict = self.flow_verify_window()
+        return verdict is None
 
     def flow_verify_window(self) -> tuple[float, str | None]:
         """How long to wait for the first sign of flow, and why if it is hopeless.

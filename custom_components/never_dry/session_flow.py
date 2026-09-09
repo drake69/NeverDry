@@ -121,6 +121,10 @@ class SessionFlowTracker:
         #: The worst gap, not the typical one, because a verification window
         #: has to survive an opening that lands just after a report.
         self.refresh_cadence_s: float | None = None
+        #: How many intervals went into that figure. Published because one
+        #: interval is not a cadence, and the user must be able to see the
+        #: difference between "measured" and "seen once".
+        self.refresh_samples: int = 0
 
     def observe_refresh_interval(self, seconds: float) -> bool:
         """Record a gap between two counter publications; True if it widens the estimate.
@@ -132,6 +136,7 @@ class SessionFlowTracker:
         """
         if seconds <= 0:
             return False
+        self.refresh_samples += 1
         if self.refresh_cadence_s is None or seconds > self.refresh_cadence_s:
             self.refresh_cadence_s = seconds
             return True
@@ -164,6 +169,7 @@ class SessionFlowTracker:
         try:
             if (cadence := data.get("refresh_cadence_s")) is not None:
                 self.refresh_cadence_s = float(cadence)
+            self.refresh_samples = int(data.get("refresh_samples") or 0)
         except (TypeError, ValueError):
             # Same reasoning as the resolution below: an unusable stored cadence
             # means the guard cannot be armed, which is the safe direction.
@@ -184,6 +190,7 @@ class SessionFlowTracker:
                 "samples": list(self.window._samples),
                 "resolution_l": self.resolution_l,
                 "refresh_cadence_s": self.refresh_cadence_s,
+                "refresh_samples": self.refresh_samples,
             }
         )
 
@@ -195,4 +202,5 @@ class SessionFlowTracker:
             **self.window.as_dict(),
             "meter_resolution_l": self.resolution_l,
             "meter_refresh_cadence_s": self.refresh_cadence_s,
+            "meter_refresh_samples": self.refresh_samples,
         }
