@@ -21,7 +21,23 @@ action, it never refuses one) and docs/design/delivery-contract.md.
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from never_dry.driver import DeliveryMode, ZoneDriver
+from never_dry.const import (
+    CONF_ZONE_AREA,
+    CONF_ZONE_DELIVERY_MODE,
+    CONF_ZONE_DELIVERY_TIMEOUT,
+    CONF_ZONE_EFFICIENCY,
+    CONF_ZONE_FLOW_METER_SENSOR,
+    CONF_ZONE_FLOW_RATE,
+    CONF_ZONE_NAME,
+    CONF_ZONE_SYSTEM_TYPE,
+    CONF_ZONE_VALVE,
+    CONF_ZONE_VOLUME_ENTITY,
+    DELIVERY_MODE_VOLUME_PRESET,
+    SYSTEM_TYPE_CUSTOM,
+)
+from never_dry.controller import IrrigationController
+from never_dry.driver import DeliveryMode, OperationStatus, ZoneDriver
+from never_dry.sensor import IrrigationZoneSensor
 
 #: The cadence measured on the SWV-ZFE in the field, in seconds.
 FIELD_METER_CADENCE_S = 300.0
@@ -73,6 +89,43 @@ def _zone(
     if cadence_s is not None:
         driver._session_flow.refresh_cadence_s = cadence_s
     return driver
+
+
+def _zone_sensor(hass_mock, di_sensor, **overrides):
+    """A configured zone as the integration builds it, for the controller path.
+
+    The driver-level ``_zone`` above answers "would the guard arm?". This one is
+    needed for the other half of the contract, which is only decidable where the
+    water is credited: the controller.
+    """
+    config = {
+        CONF_ZONE_NAME: "TestZone",
+        CONF_ZONE_VALVE: "switch.valve_test",
+        CONF_ZONE_AREA: 20.0,
+        CONF_ZONE_SYSTEM_TYPE: SYSTEM_TYPE_CUSTOM,
+        CONF_ZONE_EFFICIENCY: 0.90,
+        CONF_ZONE_FLOW_RATE: 8.0,
+    }
+    config.update(overrides)
+    return IrrigationZoneSensor(hass_mock, config, di_sensor)
+
+
+def _frozen_meter(zone, meter_entity: str, reading: str = "100.0"):
+    """states.get side effect: the meter never moves, the valve reads "on"."""
+
+    def get_state(entity_id):
+        if entity_id == meter_entity:
+            state = MagicMock()
+            state.state = reading
+            state.attributes = {"unit_of_measurement": "L"}
+            return state
+        if entity_id == zone.valve:
+            state = MagicMock()
+            state.state = "on"
+            return state
+        return None
+
+    return get_state
 
 
 class TestCase1TheUserAnswersForTheWater:
@@ -200,6 +253,37 @@ class TestTheFieldCaseDoesNotRecur:
         cadence is unfit, whatever produced it.
         """
         assert OLD_CONSTANT_S < FIELD_METER_CADENCE_S
+
+    @pytest.mark.parametrize("phase_fraction", [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])
+    @pytest.mark.parametrize("cadence_s", [60.0, FIELD_METER_CADENCE_S])
+    def test_no_phase_of_the_meters_grid_may_refuse_a_healthy_valve(self, cadence_s, phase_fraction):
+        """The same healthy valve, opened at ten points of the meter's grid.
+
+        ``phase_fraction`` is how far into the reporting interval the valve
+        opens, so the first tick is still ``cadence x (1 - fraction)`` away.
+        NeverDry does not choose that phase: the schedule fires when it fires
+        and the device's clock is its own, which is why a verdict that depends
+        on it is a coin toss rather than a measurement.
+
+        Two cadences on purpose, because they exercise the two halves of the
+        rule and a single one would let the test pass for the wrong reason. At
+        300 s the guard must stand down; at 60 s it stays armed, so the only way
+        through is a window that outlasts the wait. The old derivation,
+        resolution over rate, gives about 14 s for this meter and fails the
+        second half at every phase but the last.
+        """
+        driver = _zone(
+            DeliveryMode.FLOW_METER,
+            resolution_l=1.0,
+            cadence_s=cadence_s,
+        )
+        window, verdict = driver.flow_verify_window()
+        wait_for_first_tick = cadence_s * (1.0 - phase_fraction)
+        assert verdict is not None or window >= wait_for_first_tick, (
+            f"opened {phase_fraction:.0%} into a {cadence_s:.0f}s grid, the first tick is "
+            f"{wait_for_first_tick:.0f}s away and the window is {window:.0f}s: "
+            f"a watering valve is closed and blamed"
+        )
 
 
 class TestFailuresAreAttributedToWhoeverCausedThem:
@@ -349,3 +433,162 @@ class TestTheSettleWaitFollowsTheMeterToo:
         """A meter reporting hourly would otherwise leave a task pending all that time."""
         driver = _zone(DeliveryMode.FLOW_METER, cadence_s=3600.0)
         assert driver.settle_delay_s <= 600.0
+
+
+class TestCase1CreditsWhatTheUserDeclared:
+    """T2: in estimated_flow the declared rate is the answer, not a proposal.
+
+    The other half of Case 1. That the guard cannot refuse the opening is only
+    useful if the water then reaches the model: a session that runs and is
+    credited nothing leaves the deficit standing, the zone is watered again
+    tomorrow, and the meter that was demoted to observer has quietly kept its
+    veto -- moved from the valve to the arithmetic.
+
+    The meter may still improve the figure when it has one to offer. What it may
+    not do is reduce the credit to zero by saying nothing.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_zone_without_a_meter_credits_the_declared_rate(self, hass_mock, di_sensor):
+        """No witness at all is the plain case, and the dose is the duration."""
+        zone = _zone_sensor(hass_mock, di_sensor)
+        zone._zone_deficit = 5.0
+        target = zone.volume_liters
+        assert target > 0, "the fixture must ask for water, or the test proves nothing"
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda duration, **kwargs: duration)
+
+        await ctrl._irrigate_zones(["TestZone"])
+
+        assert zone._total_water_delivered == pytest.approx(target, abs=0.2)
+        assert zone._zone_deficit == 0.0
+
+    @pytest.mark.asyncio
+    async def test_a_meter_that_never_moves_does_not_zero_the_credit(self, hass_mock, di_sensor):
+        """A frozen counter is an observer with nothing to say, not a verdict.
+
+        Far more likely a stalled sensor than a dry pipe: the valve was
+        commanded open and the user's own figure says what that delivers.
+        """
+        zone = _zone_sensor(
+            hass_mock,
+            di_sensor,
+            **{CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter"},
+        )
+        zone._zone_deficit = 5.0
+        target = zone.volume_liters
+        hass_mock.states.get = MagicMock(side_effect=_frozen_meter(zone, "sensor.flow_meter"))
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        ctrl._wait_with_stop_check = AsyncMock(side_effect=lambda duration, **kwargs: duration)
+
+        delivered = await ctrl._deliver_estimated_flow(zone)
+
+        assert delivered == pytest.approx(target, abs=0.2)
+
+
+class TestCase3CreditsTheDoseTheValveAccepted:
+    """T7: in volume_preset the valve answers, so its dose is the credit.
+
+    NeverDry arms a volume and the valve closes itself on it. Crediting anything
+    else would be second-guessing the only party that measured the water, and
+    the mode exists precisely because that party is better placed than we are.
+    """
+
+    @pytest.mark.asyncio
+    async def test_the_credit_is_the_dose_armed_on_the_valve(self, hass_mock, di_sensor, monkeypatch):
+        zone = _zone_sensor(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
+                CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
+                CONF_ZONE_DELIVERY_TIMEOUT: 10,
+            },
+        )
+        zone._zone_deficit = 5.0
+        target = zone.volume_liters
+        assert target > 0
+
+        # The valve reads "off" throughout: it never auto-opens, and the poll
+        # loop sees it shut and treats that as the self-close.
+        closed = MagicMock()
+        closed.state = "off"
+        hass_mock.states.get = MagicMock(return_value=closed)
+        monkeypatch.setattr("never_dry.controller.asyncio.sleep", AsyncMock())
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        delivered = await ctrl._deliver_volume_preset(zone)
+
+        assert delivered == pytest.approx(target)
+
+
+class TestCase3IsNotGuardedOnTheLivePath:
+    """T8: what the seam claims about Case 3, and what actually runs.
+
+    The plan of 2026-09-08 decided that the guard stays a gate in Cases 2 and 3
+    with the device's threshold. It is implemented for Case 2 only, and this
+    test exists so that the gap is a recorded fact rather than a belief.
+
+    ``ZoneDriver`` does arm the guard for volume_preset, but nothing on the live
+    path asks it: ``_deliver_volume_preset`` bypasses the driver deliberately,
+    because a smart valve driving its own state does not fit "I command, you
+    obey". So the arming is real and unreachable, in the same way that
+    ``deliver()`` itself is (AI-345).
+
+    This test is written to fail the day Case 3 is routed through the operator,
+    which is exactly when the divergence should be reconsidered rather than
+    silently resolved.
+    """
+
+    def test_the_driver_seam_would_guard_it(self):
+        driver = _zone(DeliveryMode.VOLUME_PRESET, resolution_l=1.0, cadence_s=14.0)
+        assert driver.flow_guard_armed is True
+        assert driver.meter_guard_usable is True
+
+    @pytest.mark.asyncio
+    async def test_but_the_live_path_never_consults_the_driver(self, hass_mock, di_sensor, monkeypatch):
+        zone = _zone_sensor(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_VOLUME_PRESET,
+                CONF_ZONE_VOLUME_ENTITY: "number.valve_volume",
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.flow_meter",
+                CONF_ZONE_DELIVERY_TIMEOUT: 10,
+            },
+        )
+        zone._zone_deficit = 5.0
+
+        closed = MagicMock()
+        closed.state = "off"
+        hass_mock.states.get = MagicMock(return_value=closed)
+        monkeypatch.setattr("never_dry.controller.asyncio.sleep", AsyncMock())
+
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        operator = MagicMock()
+        operator.async_turn_on = AsyncMock()
+        ctrl._valve_operators[zone.valve] = operator
+
+        await ctrl._deliver_volume_preset(zone)
+
+        operator.async_turn_on.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_spy_above_is_wired_and_would_have_seen_it(self, hass_mock, di_sensor):
+        """Without this, "never called" could just mean "never registered".
+
+        An assertion that something did not happen is worth exactly as much as
+        the proof that it could have. ``_open_valve`` is the seam volume_preset
+        skips, so consulting it here shows the same registration the previous
+        test relies on is live.
+        """
+        zone = _zone_sensor(hass_mock, di_sensor)
+        ctrl = IrrigationController(hass_mock, di_sensor, [zone], inter_zone_delay=0)
+        operator = MagicMock()
+        operator.async_turn_on = AsyncMock(return_value=MagicMock(status=OperationStatus.OK))
+        ctrl._valve_operators[zone.valve] = operator
+
+        assert await ctrl._open_valve(zone.valve) is True
+        operator.async_turn_on.assert_awaited_once()
