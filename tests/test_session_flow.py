@@ -231,7 +231,7 @@ class TestTheFlowVerificationWindowComesFromTheZone:
     window has to be resolution over flow rate, not a constant.
     """
 
-    def _driver_with(self, resolution=None, lpm=6.0):
+    def _driver_with(self, resolution=None, lpm=6.0, cadence=None):
         from never_dry.driver import FLOW_VERIFY_MARGIN  # noqa: F401
 
         hass = _hass_with_meter([0.0])
@@ -239,30 +239,44 @@ class TestTheFlowVerificationWindowComesFromTheZone:
         driver._flow_rate_lpm = lpm
         if resolution:
             driver._session_flow.resolution_l = resolution
+        if cadence:
+            driver._session_flow.refresh_cadence_s = cadence
         return driver
 
-    def test_without_a_known_resolution_it_is_conservative_not_strict(self):
-        """The old constant is what closed working valves; absence must not be strict."""
-        from never_dry.driver import FLOW_VERIFY_UNKNOWN_RESOLUTION_S
+    def test_without_a_known_cadence_the_guard_stands_down(self):
+        """Absence of the defining quantity must disarm, not soften.
 
+        This test used to assert ``verdict is None`` here, with a 90 s constant:
+        conservative in duration, unchanged in power. It kept the right to close
+        the valve while admitting it did not know how long to wait, and that is
+        the branch that closed a healthy zone seven times out of ten in the
+        field (2026-09-08). Waiting longer was never the fix; not judging was.
+        """
         window, verdict = self._driver_with().flow_verify_window()
-        assert window == FLOW_VERIFY_UNKNOWN_RESOLUTION_S
+        assert verdict is not None
+        assert "not applicable" in verdict
         assert window > 10.0
-        assert verdict is None
 
     def test_the_reported_case_gets_a_window_that_can_pass(self):
-        """1 L at 1.2 L/min → ~50 s to first tick, so the window must exceed it."""
-        driver = self._driver_with(resolution=1.0, lpm=1.2)
+        """GH #173: a meter that needs ~50 s to move must not be judged at 10 s.
+
+        The quantity is now the observed cadence rather than
+        ``resolution / rate``: same protection, measured on the device instead
+        of predicted from it. ``time_to_first_tick_s`` is kept as diagnostics
+        and still answers, but no longer sizes the window.
+        """
+        driver = self._driver_with(resolution=1.0, lpm=1.2, cadence=50.0)
         assert driver.time_to_first_tick_s() == pytest.approx(50.0)
         window, verdict = driver.flow_verify_window()
         assert window > 50.0
         assert verdict is None
 
     def test_a_fast_zone_keeps_a_tight_window(self):
-        """A meter that ticks immediately must not buy a lax guard."""
+        """A meter that reports promptly must not buy a lax guard."""
         from never_dry.driver import FLOW_VERIFY_MIN_S
 
-        window, verdict = self._driver_with(resolution=0.1, lpm=20.0).flow_verify_window()
+        driver = self._driver_with(resolution=0.1, lpm=20.0, cadence=2.0)
+        window, verdict = driver.flow_verify_window()
         assert window == FLOW_VERIFY_MIN_S
         assert verdict is None
 

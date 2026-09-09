@@ -113,6 +113,29 @@ class SessionFlowTracker:
         #: Smallest non-zero counter increment ever seen — the meter's limit of
         #: detection. Learned by watching deliveries, so it needs no test.
         self.resolution_l: float | None = None
+        #: Longest gap seen between two publications of the counter. Not the
+        #: same quantity as the resolution, and not derivable from it: some
+        #: meters publish per litre delivered, others on a fixed clock. On a
+        #: SONOFF SWV-ZFE the gap is ~300 s whatever the flow rate, so
+        #: ``resolution / rate`` predicts a first tick that cannot arrive.
+        #: The worst gap, not the typical one, because a verification window
+        #: has to survive an opening that lands just after a report.
+        self.refresh_cadence_s: float | None = None
+
+    def observe_refresh_interval(self, seconds: float) -> bool:
+        """Record a gap between two counter publications; True if it widens the estimate.
+
+        Takes the maximum, where :meth:`observe_step` takes the minimum, and the
+        asymmetry is deliberate: the step bounds what the meter *can* detect, so
+        the smallest is the honest one, while the cadence bounds how long it may
+        stay silent while water flows, so the longest is.
+        """
+        if seconds <= 0:
+            return False
+        if self.refresh_cadence_s is None or seconds > self.refresh_cadence_s:
+            self.refresh_cadence_s = seconds
+            return True
+        return False
 
     def observe_step(self, step: float) -> bool:
         """Record a counter increment; returns True when it lowers the estimate.
@@ -139,6 +162,13 @@ class SessionFlowTracker:
             except (TypeError, ValueError):
                 continue
         try:
+            if (cadence := data.get("refresh_cadence_s")) is not None:
+                self.refresh_cadence_s = float(cadence)
+        except (TypeError, ValueError):
+            # Same reasoning as the resolution below: an unusable stored cadence
+            # means the guard cannot be armed, which is the safe direction.
+            pass
+        try:
             if (res := data.get("resolution_l")) is not None:
                 self.resolution_l = float(res)
         except (TypeError, ValueError):
@@ -149,10 +179,20 @@ class SessionFlowTracker:
 
     async def async_save(self) -> None:
         """Persist the current window to HA storage."""
-        await self._store.async_save({"samples": list(self.window._samples), "resolution_l": self.resolution_l})
+        await self._store.async_save(
+            {
+                "samples": list(self.window._samples),
+                "resolution_l": self.resolution_l,
+                "refresh_cadence_s": self.refresh_cadence_s,
+            }
+        )
 
     def median_lpm(self) -> float | None:
         return self.window.median_lpm()
 
     def as_dict(self) -> dict[str, Any]:
-        return {**self.window.as_dict(), "meter_resolution_l": self.resolution_l}
+        return {
+            **self.window.as_dict(),
+            "meter_resolution_l": self.resolution_l,
+            "meter_refresh_cadence_s": self.refresh_cadence_s,
+        }
