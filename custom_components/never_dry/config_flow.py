@@ -16,6 +16,7 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from . import zone_device_identifier
@@ -631,6 +632,74 @@ def _unusual_zone_values(zone: dict, imperial: bool) -> list[str]:
     return warnings
 
 
+def _device_resolver(hass):
+    """Return ``entity_id -> device_id`` as the entity registry answers it.
+
+    Degrades to "cannot say" rather than raising: a registry hiccup must not
+    turn into an accusation about the user's configuration.
+    """
+
+    def resolve(entity_id):
+        if not entity_id:
+            return None
+        try:
+            entry = er.async_get(hass).async_get(entity_id)
+        except Exception:  # pragma: no cover - registry unavailable
+            return None
+        return entry.device_id if entry else None
+
+    return resolve
+
+
+def meter_ownership_warnings(zone, other_zones, device_of) -> list[str]:
+    """Report a flow meter that does not belong to this zone, and a mode without one.
+
+    ``device_of`` maps an entity id to its device id (the entity registry's
+    answer), or ``None`` when it cannot say.
+
+    Only one ownership case is reported: the meter belongs to the valve of
+    *another configured zone*. A meter on a device of its own is left alone,
+    because an in-line meter on the pipe is a legitimate installation and
+    NeverDry consumes whatever entity the user points at rather than dictating
+    the plumbing. Warning on every separate device would train the user to
+    ignore the warning that matters.
+
+    Warnings, never rejections: a valid setup we failed to imagine must not be
+    made impossible to configure.
+    """
+    warnings: list[str] = []
+    meter = zone.get(CONF_ZONE_FLOW_METER_SENSOR)
+    mode = zone.get(CONF_ZONE_DELIVERY_MODE, DEFAULT_DELIVERY_MODE)
+
+    if not meter:
+        if mode == DELIVERY_MODE_FLOW_METER:
+            warnings.append(
+                "delivery mode is 'Valve with flow meter sensor' but no flow meter is set:"
+                " the mode doses by measured volume, so the measuring entity is not optional"
+            )
+        return warnings
+
+    meter_device = device_of(meter)
+    if meter_device is None:
+        # A registry that cannot answer is not evidence of a wrong meter.
+        return warnings
+    if meter_device == device_of(zone.get(CONF_ZONE_VALVE)):
+        return warnings
+
+    for other in other_zones:
+        if other.get(CONF_ZONE_NAME) == zone.get(CONF_ZONE_NAME):
+            continue
+        if device_of(other.get(CONF_ZONE_VALVE)) == meter_device:
+            warnings.append(
+                f"the selected flow meter belongs to the valve of zone"
+                f" '{other.get(CONF_ZONE_NAME)}': it reports that zone's water, not this one's."
+                f" While that zone is idle this meter stays still, and a still meter here"
+                f" means no verified flow and a session that cannot be measured"
+            )
+            break
+    return warnings
+
+
 def _confirm_zone_schema() -> vol.Schema:
     """Checkbox form for the unusual-values confirmation step."""
     return vol.Schema({vol.Required("confirm", default=False): bool})
@@ -888,8 +957,10 @@ class NeverDryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors.update(zone_errors)
             else:
                 zone_metric = _zone_input_to_metric(user_input, imperial)
-                self._pending_warnings = _unusual_zone_values(zone_metric, imperial) + _ignored_override_warnings(
-                    zone_metric
+                self._pending_warnings = (
+                    _unusual_zone_values(zone_metric, imperial)
+                    + _ignored_override_warnings(zone_metric)
+                    + meter_ownership_warnings(zone_metric, self._zones, _device_resolver(self.hass))
                 )
                 if self._pending_warnings:
                     self._pending_zone = zone_metric
@@ -1088,7 +1159,15 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
                     data_schema=_zone_schema_initial(imperial, submitted),
                     errors=errors,
                 )
-            self._pending_warnings = _unusual_zone_values(user_input, imperial) + _ignored_override_warnings(user_input)
+            self._pending_warnings = (
+                _unusual_zone_values(user_input, imperial)
+                + _ignored_override_warnings(user_input)
+                + meter_ownership_warnings(
+                    user_input,
+                    self._config_entry.data.get(CONF_ZONES, []),
+                    _device_resolver(self.hass),
+                )
+            )
             if self._pending_warnings:
                 self._pending_zone = user_input
                 self._pending_form = submitted
@@ -1154,8 +1233,14 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
             user_input = _zone_input_to_metric(user_input, imperial)
             errors = _zone_errors(user_input)
             if not errors:
-                self._pending_warnings = _unusual_zone_values(user_input, imperial) + _ignored_override_warnings(
-                    user_input
+                self._pending_warnings = (
+                    _unusual_zone_values(user_input, imperial)
+                    + _ignored_override_warnings(user_input)
+                    + meter_ownership_warnings(
+                        user_input,
+                        self._config_entry.data.get(CONF_ZONES, []),
+                        _device_resolver(self.hass),
+                    )
                 )
                 if self._pending_warnings:
                     self._pending_zone = user_input
@@ -1488,6 +1573,9 @@ class NeverDryOptionsFlow(config_entries.OptionsFlow):
         findings = []
         for z in zones:
             findings.extend(f"- {z[CONF_ZONE_NAME]}: {w}" for w in _unusual_zone_values(z, imperial))
+            findings.extend(
+                f"- {z[CONF_ZONE_NAME]}: {w}" for w in meter_ownership_warnings(z, zones, _device_resolver(self.hass))
+            )
         return self.async_show_form(
             step_id="check_zones",
             data_schema=vol.Schema({}),
