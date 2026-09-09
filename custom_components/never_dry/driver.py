@@ -99,6 +99,11 @@ FLOW_VERIFY_MAX_S: float = 180.0
 #: tracks water from one that answers to a clock, and the field gap was 11x.
 METER_KIND_TOLERANCE: float = 3.0
 
+#: Ceiling on how long the post-close reading may wait for a late tick. The
+#: wait costs nothing but a pending background task, and a meter reporting
+#: hourly is past the point where a session-flow sample is worth keeping one.
+SETTLE_DELAY_MAX_S: float = 600.0
+
 #: There is deliberately no constant for "cadence not yet known". Two of them
 #: existed before (10 s, then 90 s) and both closed healthy valves: the second
 #: was the first made generous, which changed how long the guard waited and not
@@ -1329,6 +1334,24 @@ class ZoneDriver(Driver):
         return self._session_flow.refresh_samples
 
     @property
+    def settle_delay_s(self) -> float:
+        """How long to wait after closing before reading the meter's final word.
+
+        The last tick of a session routinely lands after the valve is shut, and
+        by how much is the meter's business, not ours: on the field meter it
+        arrived three and a half minutes later, so the fixed 30 s missed it and
+        the session flow was computed from a truncated volume.
+
+        Never shorter than the historical constant, which suits a prompt meter,
+        and capped so a slow one cannot leave a task pending indefinitely. The
+        wait runs in a background task, so it never delays the session itself.
+        """
+        cadence = self._session_flow.refresh_cadence_s
+        if cadence is None:
+            return SETTLE_DELAY_S
+        return min(max(SETTLE_DELAY_S, cadence * FLOW_VERIFY_MARGIN), SETTLE_DELAY_MAX_S)
+
+    @property
     def meter_refresh_kind(self) -> str | None:
         """``"volume"``, ``"periodic"``, or ``None`` while undecidable.
 
@@ -1560,7 +1583,7 @@ class ZoneDriver(Driver):
 
     async def _record_flow_sample(self, meter: str, baseline: float, session_s: float) -> None:
         """Read the settled meter and record what the session's flow really was."""
-        await asyncio.sleep(SETTLE_DELAY_S)
+        await asyncio.sleep(self.settle_delay_s)
         final = flow_utils.read_volume_liters(self._hass, meter)
         if final is None:
             return

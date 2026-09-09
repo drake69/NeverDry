@@ -317,3 +317,35 @@ class TestTheMeterIsClassifiedNotJustMeasured:
         assert driver.meter_refresh_samples == 0
         driver._session_flow.observe_refresh_interval(300.0)
         assert driver.meter_refresh_samples == 1
+
+
+class TestTheSettleWaitFollowsTheMeterToo:
+    """The last tick of a session lands after the valve is shut, by how much
+    the meter decides.
+
+    A fixed 30 s wait was already there for exactly this reason, and it is the
+    same shape of defect as the verification window: a constant standing in for
+    a property of the device. On the field meter the closing tick arrived three
+    and a half minutes after the valve shut, so 30 s of patience missed it and
+    the session's measured flow was computed from a truncated volume.
+
+    The wait runs in a background task and never delays the session, so
+    lengthening it costs nothing but a later diagnostic.
+    """
+
+    def test_a_prompt_meter_keeps_the_default_wait(self):
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=1.0, cadence_s=14.0)
+        assert driver.settle_delay_s == pytest.approx(30.0)
+
+    def test_the_field_meter_gets_a_wait_that_can_see_its_last_tick(self):
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=6.0, cadence_s=FIELD_METER_CADENCE_S)
+        assert driver.settle_delay_s > FIELD_METER_CADENCE_S
+
+    def test_an_unmeasured_cadence_falls_back_to_the_default(self):
+        driver = _zone(DeliveryMode.FLOW_METER)
+        assert driver.settle_delay_s == pytest.approx(30.0)
+
+    def test_the_wait_is_capped_so_a_task_cannot_hang_around_for_ever(self):
+        """A meter reporting hourly would otherwise leave a task pending all that time."""
+        driver = _zone(DeliveryMode.FLOW_METER, cadence_s=3600.0)
+        assert driver.settle_delay_s <= 600.0
