@@ -99,11 +99,26 @@ def _driver(hass) -> ZoneDriver:
     )
 
 
+@pytest.fixture
+def meter_answers_at_once(monkeypatch):
+    """Skip the wait for the meter's closing publication.
+
+    The read blocks until the counter publishes, which is the whole point of
+    it; these tests are about what the sample is made of, not about when it is
+    taken, so they let the wait return and get on with it.
+    """
+
+    async def _immediate(awaitable, timeout):
+        awaitable.close()
+        return True
+
+    monkeypatch.setattr("never_dry.driver.asyncio.wait_for", _immediate)
+
+
 class TestTheSampleComesFromTheMeterAndTheClock:
     @pytest.mark.asyncio
-    async def test_it_divides_the_counter_difference_by_the_session(self, monkeypatch):
+    async def test_it_divides_the_counter_difference_by_the_session(self, meter_answers_at_once):
         """100 L over 10 minutes is 10 L/min, whatever the zone was configured at."""
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
         hass = _hass_with_meter([1100.0])
         driver = _driver(hass)
 
@@ -114,21 +129,26 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window._samples[0] == pytest.approx(10.0)
 
     @pytest.mark.asyncio
-    async def test_it_waits_before_reading_so_late_ticks_still_count(self, monkeypatch):
-        """The last tick of a session routinely lands after the valve is shut."""
-        sleeper = AsyncMock()
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", sleeper)
+    async def test_it_waits_for_the_closing_tick_instead_of_guessing_when(self):
+        """The last tick of a session routinely lands after the valve is shut.
+
+        How long after is the meter's business, and it announces it. Reading on
+        a timer instead threw away a healthy sample on both field zones.
+        """
         hass = _hass_with_meter([1050.0])
         driver = _driver(hass)
 
-        await driver._record_flow_sample("sensor.meter", baseline=1000.0, session_s=600.0)
+        pending = asyncio.ensure_future(driver._record_flow_sample("sensor.meter", baseline=1000.0, session_s=600.0))
+        await asyncio.sleep(0)
+        assert driver._session_flow.window.sample_count == 0, "read before the meter spoke"
 
-        sleeper.assert_awaited_once()
-        assert sleeper.await_args.args[0] > 0
+        driver._note_meter_publication()
+        await asyncio.wait_for(pending, timeout=1.0)
+
+        assert driver._session_flow.window.sample_count == 1
 
     @pytest.mark.asyncio
-    async def test_a_counter_that_did_not_move_yields_no_sample(self, monkeypatch):
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
+    async def test_a_counter_that_did_not_move_yields_no_sample(self, meter_answers_at_once):
         hass = _hass_with_meter([1000.0])
         driver = _driver(hass)
 
@@ -137,9 +157,8 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window.sample_count == 0
 
     @pytest.mark.asyncio
-    async def test_a_counter_that_reset_yields_no_sample(self, monkeypatch):
+    async def test_a_counter_that_reset_yields_no_sample(self, meter_answers_at_once):
         """A reset makes the difference negative; a guess would be worse than a gap."""
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
         hass = _hass_with_meter([5.0])
         driver = _driver(hass)
 
@@ -148,8 +167,7 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window.sample_count == 0
 
     @pytest.mark.asyncio
-    async def test_an_unreadable_meter_yields_no_sample(self, monkeypatch):
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
+    async def test_an_unreadable_meter_yields_no_sample(self, meter_answers_at_once):
         hass = _hass_with_meter(["unavailable"])
         driver = _driver(hass)
 

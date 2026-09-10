@@ -18,6 +18,7 @@ Design notes: docs/design/flow-rate-provenance.md (a still meter qualifies an
 action, it never refuses one) and docs/design/delivery-contract.md.
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -446,30 +447,6 @@ class TestTheCadenceSurvivesAShortDose:
         assert driver.meter_publication_peak_s == pytest.approx(590.0)
 
 
-class TestTheWaitFollowsTheMeasuredMeter:
-    """The 30 s constant is what lost the field sample, by nine seconds."""
-
-    def test_an_unmeasured_meter_keeps_the_historical_constant(self):
-        driver = _zone(DeliveryMode.FLOW_METER)
-        assert driver.settle_delay_s == pytest.approx(30.0)
-
-    def test_a_measured_meter_is_waited_for(self):
-        driver = _zone(DeliveryMode.FLOW_METER)
-        for _ in range(3):
-            driver._session_flow.observe_publication_interval(FIELD_METER_CADENCE_S)
-
-        # 39 s late was enough to miss it; the wait now clears that by minutes.
-        assert driver.settle_delay_s > 39.0
-        assert driver.settle_delay_s == pytest.approx(FIELD_METER_CADENCE_S * 1.5)
-
-    def test_the_wait_stays_bounded_on_a_very_slow_meter(self):
-        driver = _zone(DeliveryMode.FLOW_METER)
-        for _ in range(3):
-            driver._session_flow.observe_publication_interval(599.0)
-
-        assert driver.settle_delay_s <= 600.0
-
-
 class TestMeasuringTheMeterDoesNotArmTheGuard:
     """Non-regression: the guard keeps its own, stricter evidence.
 
@@ -538,36 +515,84 @@ class TestTheMeterIsClassifiedNotJustMeasured:
         assert driver.meter_refresh_samples == 1
 
 
-class TestTheSettleWaitFollowsTheMeterToo:
-    """The last tick of a session lands after the valve is shut, by how much
-    the meter decides.
+class TestTheSettleReadWaitsForTheEventNotTheClock:
+    """The closing tick is announced; nothing had to guess when it would come.
 
-    A fixed 30 s wait was already there for exactly this reason, and it is the
-    same shape of defect as the verification window: a constant standing in for
-    a property of the device. On the field meter the closing tick arrived three
-    and a half minutes after the valve shut, so 30 s of patience missed it and
-    the session's measured flow was computed from a truncated volume.
+    The wait used to be a computed number of seconds. Both field zones lost a
+    healthy sample to it -- by 9 s on one meter and by 172 s on the other --
+    and the number could not improve on its own, because it was derived from a
+    cadence that only those same discarded sessions could have measured.
 
-    The wait runs in a background task and never delays the session, so
-    lengthening it costs nothing but a later diagnostic.
+    The driver already subscribes to the meter's publications, so the answer
+    was arriving on a callback while a sleeper waited beside it. Waiting on
+    the event needs no cadence, and works the first time a meter is ever seen.
     """
 
-    def test_a_prompt_meter_keeps_the_default_wait(self):
-        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=1.0, cadence_s=14.0)
-        assert driver.settle_delay_s == pytest.approx(30.0)
+    @staticmethod
+    def _meter_at(driver, value: float) -> None:
+        driver._hass.states.get = MagicMock(
+            return_value=MagicMock(state=str(value), attributes={"unit_of_measurement": "L"}),
+        )
 
-    def test_the_field_meter_gets_a_wait_that_can_see_its_last_tick(self):
-        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=6.0, cadence_s=FIELD_METER_CADENCE_S)
-        assert driver.settle_delay_s > FIELD_METER_CADENCE_S
-
-    def test_an_unmeasured_cadence_falls_back_to_the_default(self):
+    @pytest.mark.asyncio
+    async def test_the_reading_happens_when_the_meter_speaks(self):
+        """The field case of pino, 2026-09-10: silent at 30 s, 25 L at 202 s."""
         driver = _zone(DeliveryMode.FLOW_METER)
-        assert driver.settle_delay_s == pytest.approx(30.0)
+        self._meter_at(driver, 0.0)
 
-    def test_the_wait_is_capped_so_a_task_cannot_hang_around_for_ever(self):
-        """A meter reporting hourly would otherwise leave a task pending all that time."""
-        driver = _zone(DeliveryMode.FLOW_METER, cadence_s=3600.0)
-        assert driver.settle_delay_s <= 600.0
+        pending = asyncio.ensure_future(driver.async_settled_volume("sensor.meter", 0.0))
+        await asyncio.sleep(0)
+        assert not pending.done(), "read before the meter spoke: this is the defect"
+
+        self._meter_at(driver, 25.0)
+        driver._note_meter_publication()
+
+        assert await asyncio.wait_for(pending, timeout=1.0) == pytest.approx(25.0)
+
+    @pytest.mark.asyncio
+    async def test_a_meter_with_nothing_more_to_say_is_still_read(self, monkeypatch):
+        """The ceiling is a backstop, not a verdict.
+
+        A cumulative counter that went quiet has simply finished talking, and
+        its standing value is the right answer.
+        """
+        driver = _zone(DeliveryMode.FLOW_METER)
+        self._meter_at(driver, 108.0)
+
+        async def instant_timeout(awaitable, timeout):
+            awaitable.close()
+            raise TimeoutError
+
+        monkeypatch.setattr("never_dry.driver.asyncio.wait_for", instant_timeout)
+
+        assert await driver.async_settled_volume("sensor.meter", 100.0) == pytest.approx(8.0)
+
+    @pytest.mark.asyncio
+    async def test_a_zone_watering_again_has_no_settled_volume(self, monkeypatch):
+        """Half of two sessions is not a measurement of either."""
+        driver = _zone(DeliveryMode.FLOW_METER)
+        self._meter_at(driver, 25.0)
+        monkeypatch.setattr(type(driver), "is_open", property(lambda self: True))
+
+        pending = asyncio.ensure_future(driver.async_settled_volume("sensor.meter", 0.0))
+        await asyncio.sleep(0)
+        driver._note_meter_publication()
+
+        assert await asyncio.wait_for(pending, timeout=1.0) is None
+
+    @pytest.mark.asyncio
+    async def test_a_stale_publication_does_not_answer_for_the_next_session(self):
+        """The event is re-armed before waiting, or every read returns at once."""
+        driver = _zone(DeliveryMode.FLOW_METER)
+        self._meter_at(driver, 25.0)
+        driver._note_meter_publication()  # a publication from before this read
+
+        pending = asyncio.ensure_future(driver.async_settled_volume("sensor.meter", 0.0))
+        await asyncio.sleep(0)
+        assert not pending.done(), "an old publication satisfied a new wait"
+
+        driver._note_meter_publication()
+        assert await asyncio.wait_for(pending, timeout=1.0) == pytest.approx(25.0)
 
 
 class TestCase1CreditsWhatTheUserDeclared:
@@ -816,25 +841,24 @@ class TestOurOwnRefusalNeverCancelsTheCredit:
         assert zone._zone_deficit == pytest.approx(5.0)
 
     @pytest.mark.asyncio
-    async def test_the_reading_waits_for_the_meters_own_cadence(self, hass_mock, di_sensor, monkeypatch):
+    async def test_the_credit_waits_for_the_meter_before_it_answers(self, hass_mock, di_sensor):
         """The condition the credit depends on: read too early and it reads zero.
 
-        Not a constant and not immediate -- the same cadence that decides the
-        verification window and the settle wait.
+        Neither a constant nor immediate. What the credited figure waits for is
+        the meter's own next word, whenever that comes.
         """
         driver = _zone(DeliveryMode.FLOW_METER, resolution_l=6.0, cadence_s=FIELD_METER_CADENCE_S)
-        waited = []
+        driver._hass.states.get = MagicMock(
+            return_value=MagicMock(state="100.0", attributes={"unit_of_measurement": "L"}),
+        )
 
-        async def record(seconds):
-            waited.append(seconds)
+        pending = asyncio.ensure_future(driver.async_settled_volume("sensor.meter", 100.0))
+        await asyncio.sleep(0)
+        assert not pending.done(), "answered before the meter had spoken"
 
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", record)
         driver._hass.states.get = MagicMock(
             return_value=MagicMock(state="108.0", attributes={"unit_of_measurement": "L"}),
         )
+        driver._note_meter_publication()
 
-        volume = await driver.async_settled_volume("sensor.meter", 100.0)
-
-        assert volume == pytest.approx(8.0)
-        assert waited == [driver.settle_delay_s]
-        assert waited[0] > FIELD_METER_CADENCE_S, "reading before the next tick reads the truncated figure"
+        assert await asyncio.wait_for(pending, timeout=1.0) == pytest.approx(8.0)

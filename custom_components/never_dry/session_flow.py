@@ -13,11 +13,12 @@ opens, the meter again after it closes, the elapsed time in between:
 
 Two details carry the accuracy, and both come from the field.
 
-The reading *after* the close is deliberately delayed by ``SETTLE_DELAY_S``.
-A Zigbee counter reports on its own cadence, so the last tick of a session
+The reading *after* the close waits for the meter's next publication. A
+Zigbee counter reports on its own cadence, so the last tick of a session
 routinely lands after the valve is already shut; sampling at the instant of
-closing silently loses it. (The same late tick, read as an instantaneous
-rate, is what makes a closed valve look like it is still leaking.)
+closing silently loses it, and so does sleeping any fixed number of seconds
+chosen in advance. (The same late tick, read as an instantaneous rate, is
+what makes a closed valve look like it is still leaking.)
 
 Sessions shorter than ``MIN_SESSION_S`` are refused rather than averaged in.
 On a counter whose smallest step is a whole liter, a short run is mostly
@@ -42,9 +43,6 @@ from homeassistant.helpers.storage import Store
 WINDOW_SIZE: int = 20
 #: Below this, report nothing: a median of one or two sessions is an anecdote.
 MIN_SAMPLES: int = 3
-#: Grace after the valve closes before reading the meter, so a counter that
-#: reports late still gets counted. Not part of the measured duration.
-SETTLE_DELAY_S: float = 30.0
 #: Shorter sessions are dominated by the counter's own resolution.
 MIN_SESSION_S: float = 60.0
 #: How many publication intervals to keep. A rolling window rather than a

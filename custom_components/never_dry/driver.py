@@ -65,7 +65,7 @@ from .const import (
     DELIVERY_MODE_VOLUME_PRESET,
     FLOW_METER_POLL_INTERVAL_S,
 )
-from .session_flow import MIN_SESSION_S, SETTLE_DELAY_S, SessionFlowTracker
+from .session_flow import MIN_SESSION_S, SessionFlowTracker
 from .valve_fsm import (
     CancelAllTimers,
     CancelTimer,
@@ -415,6 +415,11 @@ class Driver(abc.ABC):
                     hass, [flow_sensor_entity_id], self._on_flow_report
                 )
         self._unsub_liveness = None
+        #: Raised every time the meter publishes. The post-close reading waits
+        #: on this rather than on a computed delay: the notification already
+        #: arrives, and sleeping a guessed number of seconds beside a callback
+        #: that is about to fire is how a healthy session was thrown away.
+        self._meter_spoke = asyncio.Event()
 
     # ── Identity ────────────────────────────────────────────────────────
 
@@ -1174,12 +1179,15 @@ class Driver(abc.ABC):
             self._note_meter_movement()
         await self._dispatch(ValveEvent.OBS_FLOW_POSITIVE if moving else ValveEvent.OBS_FLOW_ZERO)
 
-    def _note_meter_publication(self) -> None:  # noqa: B027
-        """Hook: the counter just published, changed value or not.
+    def _note_meter_publication(self) -> None:
+        """The counter just published, changed value or not.
 
-        Same reason as :meth:`_note_meter_movement` for living here as a no-op:
-        only a zone keeps a tracker to remember it in.
+        Waking the settle reading belongs here rather than in the zone: any
+        actuator with a meter can be waited on, and what a zone adds on top is
+        only the remembering. Subclasses that time the cadence override this
+        and call up first.
         """
+        self._meter_spoke.set()
 
     def _note_meter_movement(self) -> None:  # noqa: B027
         """Hook: the counter just advanced.
@@ -1370,6 +1378,7 @@ class ZoneDriver(Driver):
           irrigations a counter simply stands still, and the day-long silence
           that produces describes the schedule, not the device.
         """
+        super()._note_meter_publication()
         now = monotonic()
         watched = self.is_open or (
             self._last_seen_open_at is not None and now - self._last_seen_open_at <= METER_WATCH_AFTER_CLOSE_S
@@ -1442,32 +1451,6 @@ class ZoneDriver(Driver):
     def meter_publication_samples(self) -> int:
         """How many intervals the median rests on."""
         return self._session_flow.publication_samples
-
-    @property
-    def settle_delay_s(self) -> float:
-        """How long to wait after closing before reading the meter's final word.
-
-        The last tick of a session routinely lands after the valve is shut, and
-        by how much is the meter's business, not ours: on the field meter it
-        arrived three and a half minutes later, so the fixed 30 s missed it and
-        the session flow was computed from a truncated volume.
-
-        Never shorter than the historical constant, which suits a prompt meter,
-        and capped so a slow one cannot leave a task pending indefinitely. The
-        wait runs in a background task, so it never delays the session itself:
-        on a slow meter the sample simply lands minutes after the session was
-        reported complete.
-
-        Built on the *typical* gap between publications, falling back to the
-        worst gap between advances where that is all there is. The constant was
-        what lost the field case this fixes: a meter on a five-minute clock
-        spoke 39 s after the close, and the fixed 30 s wait had already given
-        up, so a healthy session taught the zone nothing.
-        """
-        cadence = self._session_flow.publication_median_s or self._session_flow.refresh_cadence_s
-        if cadence is None:
-            return SETTLE_DELAY_S
-        return min(max(SETTLE_DELAY_S, cadence * FLOW_VERIFY_MARGIN), SETTLE_DELAY_MAX_S)
 
     @property
     def meter_refresh_kind(self) -> str | None:
@@ -1691,9 +1674,9 @@ class ZoneDriver(Driver):
         is the only one holding the baseline and the elapsed time. Reaching into
         a private method for this was the wrong seam.
 
-        Deferred rather than awaited: the caller owes its result to the zone now,
-        and ``SETTLE_DELAY_S`` of waiting would show up as a session that takes
-        half a minute longer to finish than it did.
+        Deferred rather than awaited: the caller owes its result to the zone
+        now, and the reading waits for the meter's closing publication, which
+        on a slow counter lands minutes later.
         """
         if session_s < MIN_SESSION_S:
             return
@@ -1707,8 +1690,9 @@ class ZoneDriver(Driver):
         a half minutes later. Reading at the close returns a truncated figure,
         so the wait is the meter's own cadence rather than a constant.
 
-        ``None`` means the question has no answer: an unreadable meter, or a
-        counter that did not advance. A difference that is zero or negative is
+        ``None`` means the question has no answer: an unreadable meter, a
+        counter that did not advance, or a zone that started watering again
+        while we were still waiting. A difference that is zero or negative is
         not a small volume, it is a reset or a stall, and a guess is worse than
         a gap.
 
@@ -1717,12 +1701,51 @@ class ZoneDriver(Driver):
         ran during an opening we refused -- and only the driver knows how long
         its own meter takes to speak.
         """
-        await asyncio.sleep(self.settle_delay_s)
+        spoke = await self._wait_for_the_meter_to_speak()
+        if self.is_open:
+            # A new session began while we waited. Whatever the counter shows
+            # now belongs partly to it, and half of two sessions is not a
+            # measurement of either.
+            return None
         final = flow_utils.read_volume_liters(self._hass, meter)
         if final is None:
             return None
         volume = final - baseline
-        return volume if volume > 0 else None
+        if volume <= 0:
+            return None
+        if not spoke:
+            _LOGGER.debug(
+                "Driver '%s' read the meter without a closing publication; the figure may be short by one counter step",
+                self._name,
+            )
+        return volume
+
+    async def _wait_for_the_meter_to_speak(self) -> bool:
+        """Block until the meter publishes, or the ceiling runs out.
+
+        The wait used to be a computed number of seconds, derived from the
+        meter's measured cadence, and that was one indirection too many. The
+        publication is already an event this driver subscribes to; sleeping a
+        guessed interval next to a callback that is about to fire meant the
+        answer arrived and found nobody waiting for it. In the field it missed
+        by 9 s on one zone and by 172 s on another, and on a meter whose
+        cadence had never been measured -- which is every meter, at first --
+        the guess could not improve, because measuring the cadence needs the
+        very sessions the guess was discarding.
+
+        Waiting for the event needs no cadence at all. The ceiling is only a
+        backstop against a meter that has already said everything it intends
+        to: reading anyway is right, since a cumulative counter that went quiet
+        is simply a counter with nothing to add.
+
+        Returns whether a publication actually arrived, for the log.
+        """
+        self._meter_spoke.clear()
+        try:
+            await asyncio.wait_for(self._meter_spoke.wait(), timeout=SETTLE_DELAY_MAX_S)
+        except TimeoutError:
+            return False
+        return True
 
     async def _record_flow_sample(self, meter: str, baseline: float, session_s: float) -> None:
         """Read the settled meter and record what the session's flow really was."""
