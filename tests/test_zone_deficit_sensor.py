@@ -17,6 +17,7 @@ from never_dry.const import (
 from never_dry.sensor import (
     IrrigationZoneSensor,
     ZoneDeficitSensor,
+    ZoneDurationSensor,
     ZoneRainSensor,
     ZoneSessionWaterSensor,
     ZoneYearlyWaterSensor,
@@ -89,6 +90,41 @@ class TestTheCardIsToldWhenASessionEnds:
 
         assert zone._last_volume_delivered == pytest.approx(20.0)
         assert zone._session_water_delivered == 0.0, "a running total outlived the run"
+
+
+class TestACompletedRunTellsTheCardToo:
+    """The branch a successful delivery takes was the silent one.
+
+    ``_settle_irrigated_zones`` splits: a partial run settles through the zone
+    and notifies, a full one resets the deficit and did not. So the figures
+    that change at a close refreshed on every interrupted irrigation and on no
+    completed one, which is the case that happens every day.
+    """
+
+    def test_a_full_delivery_notifies_the_session_channel(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        zone._zone_deficit = 10.0
+        fired = []
+        zone.register_session_listener(lambda: fired.append(True))
+
+        zone.reset_deficit("automatic", delivered_liters=222.0, duration_s=82)
+
+        assert fired, "a completed irrigation left the card showing the deficit it had just paid"
+
+    def test_the_expected_duration_reads_zero_once_the_zone_is_full(self, di_sensor):
+        """What the user sees, not merely what the model holds."""
+        zone = _make_zone(di_sensor)
+        zone._zone_deficit = 10.0
+        sensor = ZoneDurationSensor(zone)
+        sensor.hass = MagicMock()
+        written = []
+        sensor.async_write_ha_state = lambda: written.append(sensor.native_value)
+
+        assert sensor.native_value > 0
+        zone.reset_deficit("automatic", delivered_liters=222.0, duration_s=82)
+
+        assert sensor.native_value == 0
+        assert written and written[-1] == 0, "the zero was reached but never written out"
 
 
 class TestZoneDeficitSensorProperties:

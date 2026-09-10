@@ -2616,6 +2616,14 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._zone.mark_irrigated(
             source=source, at=datetime.now(), credited_liters=delivered_liters, duration_s=duration_s
         )
+        # The same channel ``settle_cycle`` uses, and for the same reason. This
+        # is the branch a *successful* delivery takes, so leaving it silent meant
+        # the figures that change at the close were refreshed on every partial
+        # run and on no complete one -- the case that happens every day. On the
+        # field install the expected duration stood at 80 s, the value written
+        # while the deficit was still owed, for as long as it took the next tick
+        # to arrive (pino, 2026-09-10).
+        self.notify_session_listeners()
 
     @property
     def volume_liters(self) -> float:
