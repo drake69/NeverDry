@@ -36,14 +36,15 @@ const I18N = {
     irrigateNow: "Irrigate now",
     irrigating: "Irrigating",
     dosing: "Dosing",
-    doseByTime: "by time (declared rate)",
-    doseByMeter: "by measured volume",
-    doseByValve: "by the valve's own dose",
-    meterRefresh: "Meter reports every",
+    doseByTime: "by time",
+    doseByMeter: "by volume",
+    doseByValve: "by the valve",
+    meterRefresh: "Meter refresh",
     meterRefreshUnknown: "not measured yet",
     meterPeriodic: "on a clock",
     meterByVolume: "per volume",
     meterGuardOff: "cannot verify opening",
+    meterMeasuring: "measuring",
     maintenance: "Maintenance",
     unreachable: "Valve not responding",
     waitingForValve: "waiting for first contact",
@@ -101,14 +102,15 @@ const I18N = {
     irrigateNow: "Irriga ora",
     irrigating: "In irrigazione",
     dosing: "Dosaggio",
-    doseByTime: "a tempo (portata dichiarata)",
-    doseByMeter: "a volume misurato",
-    doseByValve: "a dose sulla valvola",
-    meterRefresh: "Il contatore riporta ogni",
+    doseByTime: "a tempo",
+    doseByMeter: "a volume",
+    doseByValve: "a dose valvola",
+    meterRefresh: "Aggiornamento contatore",
     meterRefreshUnknown: "non ancora misurato",
     meterPeriodic: "a orologio",
     meterByVolume: "a volume",
     meterGuardOff: "non puo' verificare l'apertura",
+    meterMeasuring: "in misura",
     maintenance: "Manutenzione",
     unreachable: "Valvola non raggiungibile",
     waitingForValve: "in attesa di risposta",
@@ -166,14 +168,15 @@ const I18N = {
     irrigateNow: "Jetzt bewässern",
     irrigating: "Bewässerung läuft",
     dosing: "Dosierung",
-    doseByTime: "nach Zeit (angegebene Durchflussrate)",
-    doseByMeter: "nach gemessenem Volumen",
-    doseByValve: "nach der Dosis des Ventils",
-    meterRefresh: "Zähler meldet alle",
+    doseByTime: "nach Zeit",
+    doseByMeter: "nach Volumen",
+    doseByValve: "nach Ventildosis",
+    meterRefresh: "Zähler-Aktualisierung",
     meterRefreshUnknown: "noch nicht gemessen",
     meterPeriodic: "nach Uhr",
     meterByVolume: "nach Volumen",
     meterGuardOff: "kann Öffnung nicht prüfen",
+    meterMeasuring: "wird gemessen",
     maintenance: "Wartung",
     unreachable: "Ventil antwortet nicht",
     waitingForValve: "Warte auf erste Ventil-Rückmeldung",
@@ -678,7 +681,8 @@ class NeverDryZoneCard extends HTMLElement {
         this._exposureCell(ents) +
         this._rows([["mdi:speedometer", ents.flowRate, t(hass, "designFlow")]]) +
         this._measuredFlowCell(ents) +
-        this._deliveryCell(_zoneAttrs),
+        this._deliveryCell(_zoneAttrs) +
+        this._meterRefreshCell(_zoneAttrs),
     );
 
     this._updateConfigLink(ents);
@@ -776,10 +780,11 @@ class NeverDryZoneCard extends HTMLElement {
    * `volume_preset` the valve does. Until now nothing on screen said which,
    * so two zones behaving differently for a good reason looked identical.
    *
-   * The refresh cadence is shown next to it because it is the number that
-   * decides whether the meter can supervise an opening at all: one reporting
-   * every 300 s on a session lasting 359 s is visibly unfit, and no single
-   * reading reveals it.
+   * The meter's refresh cadence used to ride along in this same value, and
+   * that was the mistake: a cell value is clipped with an ellipsis at one
+   * column's width, so three facts joined by separators meant the last two
+   * were never read. It now has its own cell, and the qualifiers that used to
+   * lengthen the value live in the label, which wraps instead of truncating.
    */
   _deliveryCell(a) {
     const mode = a.delivery_mode;
@@ -791,25 +796,53 @@ class NeverDryZoneCard extends HTMLElement {
     };
     const label = byMode[mode];
     if (!label) return "";
-    let value = t(this._hass, label);
-
-    if (a.flow_meter_sensor) {
-      const cadence = Number(a.meter_refresh_s);
-      if (Number.isFinite(cadence)) {
-        const kind = a.meter_refresh_kind === "periodic" ? "meterPeriodic" : "meterByVolume";
-        value += ` · ${t(this._hass, "meterRefresh")} ${cadence}s (${t(this._hass, kind)})`;
-      } else {
-        value += ` · ${t(this._hass, "meterRefresh")} ${t(this._hass, "meterRefreshUnknown")}`;
-      }
-      if (a.meter_guard_usable === false && mode !== "estimated_flow") {
-        value += ` · ${t(this._hass, "meterGuardOff")}`;
-      }
-    }
     return `
         <div class="nd-cell">
           <ha-icon icon="mdi:water-pump"></ha-icon>
           <div class="nd-cell-txt">
             <span class="nd-cell-lbl">${escapeHtml(t(this._hass, "dosing"))}</span>
+            <span class="nd-cell-val">${escapeHtml(t(this._hass, label))}</span>
+          </div>
+        </div>`;
+  }
+
+  /**
+   * How often this zone's counter speaks, and what that is worth.
+   *
+   * The typical gap, not the worst one: the worst is what sizes the wait for
+   * a late tick, and showing it here would make a prompt meter look slow. Two
+   * states short of a number are distinguished on purpose, because they call
+   * for different things from the user: "not measured yet" means no interval
+   * has been timed at all, while "measuring (1/3)" means the figure is coming
+   * on its own and there is nothing to do.
+   *
+   * A meter that cannot supervise an opening says so in the label rather than
+   * the value: the label wraps, the value is clipped, and a caveat that gets
+   * cut off is worse than no caveat.
+   */
+  _meterRefreshCell(a) {
+    if (!a.flow_meter_sensor) return "";
+    let label = t(this._hass, "meterRefresh");
+    if (a.meter_guard_usable === false && a.delivery_mode !== "estimated_flow") {
+      label += `, ${t(this._hass, "meterGuardOff")}`;
+    }
+    const median = Number(a.meter_refresh_s);
+    const samples = Number(a.meter_refresh_samples) || 0;
+    const need = Number(a.meter_refresh_min_samples) || 3;
+    let value;
+    if (Number.isFinite(median) && samples >= need) {
+      const kind = a.meter_refresh_kind === "periodic" ? "meterPeriodic" : "meterByVolume";
+      value = `${median}s (${t(this._hass, kind)})`;
+    } else if (samples > 0) {
+      value = `${t(this._hass, "meterMeasuring")} (${samples}/${need})`;
+    } else {
+      value = t(this._hass, "meterRefreshUnknown");
+    }
+    return `
+        <div class="nd-cell">
+          <ha-icon icon="mdi:timer-sync-outline"></ha-icon>
+          <div class="nd-cell-txt">
+            <span class="nd-cell-lbl">${escapeHtml(label)}</span>
             <span class="nd-cell-val">${escapeHtml(value)}</span>
           </div>
         </div>`;

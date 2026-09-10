@@ -52,6 +52,11 @@ from homeassistant.helpers.event import (
     async_track_time_interval,
 )
 
+try:  # HA 2024.4+ reports every publication, changed value or not.
+    from homeassistant.helpers.event import async_track_state_report_event
+except ImportError:  # pragma: no cover - below the supported floor
+    async_track_state_report_event = None
+
 from . import flow_utils
 from .const import (
     DEFAULT_DELIVERY_TIMEOUT_S,
@@ -103,6 +108,15 @@ METER_KIND_TOLERANCE: float = 3.0
 #: wait costs nothing but a pending background task, and a meter reporting
 #: hourly is past the point where a session-flow sample is worth keeping one.
 SETTLE_DELAY_MAX_S: float = 600.0
+
+#: How long after the last sight of an open valve the meter is still being
+#: timed, and equally the longest gap that counts as a cadence at all.
+#: Deliberately the same number as the settle ceiling above, for the same
+#: reason: a cadence longer than the longest wait we would ever act on is a
+#: cadence there is no use in having measured. It is generous where the settle
+#: delay is careful because the two do different things -- observing costs
+#: nothing and cannot misfire, while waiting delays a sample.
+METER_WATCH_AFTER_CLOSE_S: float = SETTLE_DELAY_MAX_S
 
 #: There is deliberately no constant for "cadence not yet known". Two of them
 #: existed before (10 s, then 90 s) and both closed healthy valves: the second
@@ -389,8 +403,17 @@ class Driver(abc.ABC):
 
         self._unsub_switch = async_track_state_change_event(hass, [entity_id], self._on_switch_state)
         self._unsub_flow = None
+        #: Publications that carry no change of value. A counter reporting on a
+        #: clock repeats itself between two litres, and that repetition is the
+        #: only evidence of its cadence available without running water --
+        #: which is what a zone whose valve will not open can still offer.
+        self._unsub_flow_report = None
         if flow_sensor_entity_id:
             self._unsub_flow = async_track_state_change_event(hass, [flow_sensor_entity_id], self._on_flow_state)
+            if async_track_state_report_event is not None:
+                self._unsub_flow_report = async_track_state_report_event(
+                    hass, [flow_sensor_entity_id], self._on_flow_report
+                )
         self._unsub_liveness = None
 
     # ── Identity ────────────────────────────────────────────────────────
@@ -519,6 +542,8 @@ class Driver(abc.ABC):
             self._unsub_switch()
         if self._unsub_flow:
             self._unsub_flow()
+        if self._unsub_flow_report:
+            self._unsub_flow_report()
         if self._unsub_liveness:
             self._unsub_liveness()
             self._unsub_liveness = None
@@ -1067,6 +1092,17 @@ class Driver(abc.ABC):
         """HA callback: schedule the async flow-state handler."""
         self._hass.async_create_task(self._handle_flow_state(event))
 
+    @callback
+    def _on_flow_report(self, event) -> None:
+        """HA callback: the meter published without changing value.
+
+        Deliberately does **not** reach the state machine. A republication is
+        not an observation of flow: feeding it in as OBS_FLOW_ZERO would let a
+        chatty device argue that a running zone is dry. It times the meter and
+        nothing else.
+        """
+        self._note_meter_publication()
+
     async def _handle_switch_state(self, event) -> None:
         """Map an actuator state change to the matching FSM observation."""
         new_state = event.data.get("new_state")
@@ -1115,6 +1151,9 @@ class Driver(abc.ABC):
         new_state = event.data.get("new_state")
         if new_state is None:
             return
+        # Timed before the value is even parsed: a publication is a publication
+        # whether or not we can make sense of what it carries.
+        self._note_meter_publication()
         try:
             value = float(new_state.state)
         except (ValueError, TypeError):
@@ -1134,6 +1173,13 @@ class Driver(abc.ABC):
         if moving:
             self._note_meter_movement()
         await self._dispatch(ValveEvent.OBS_FLOW_POSITIVE if moving else ValveEvent.OBS_FLOW_ZERO)
+
+    def _note_meter_publication(self) -> None:  # noqa: B027
+        """Hook: the counter just published, changed value or not.
+
+        Same reason as :meth:`_note_meter_movement` for living here as a no-op:
+        only a zone keeps a tracker to remember it in.
+        """
 
     def _note_meter_movement(self) -> None:  # noqa: B027
         """Hook: the counter just advanced.
@@ -1202,6 +1248,12 @@ class ZoneDriver(Driver):
         self._auto_open_grace_s = auto_open_grace_s
         self._session_flow = SessionFlowTracker(hass, entity_id)
         self._device_entities: tuple[str, ...] | None = None
+        #: Publication timing state. Kept apart from the movement timing above
+        #: because the two answer different questions and accept different
+        #: evidence: this one counts repetitions and runs on past the close.
+        self._last_publication_at: float | None = None
+        self._last_publication_counted: bool = False
+        self._last_seen_open_at: float | None = None
         hass.async_create_task(self._session_flow.async_load())
 
     @property
@@ -1297,6 +1349,43 @@ class ZoneDriver(Driver):
         if self._session_flow.observe_refresh_interval(now - previous):
             self._hass.async_create_task(self._session_flow.async_save())
 
+    def _note_meter_publication(self) -> None:
+        """Time the gap between two publications of the counter.
+
+        Where :meth:`_note_meter_movement` waits for the counter to *advance*
+        and only while the valve is open, this counts every time the device
+        speaks, and keeps listening past the close. Both departures are needed
+        for the case that motivated this: a meter on a five-minute clock, dosed
+        for under three minutes, advances at most once per session and delivers
+        its closing word after the valve is already shut. Under the older rule
+        it could never be measured at all, and the zone was told its cadence
+        was unknown forever.
+
+        Two conditions decide whether a gap is a cadence rather than a calendar
+        entry, and both endpoints must satisfy them:
+
+        * the valve was open, or has been open within
+          ``METER_WATCH_AFTER_CLOSE_S``, so the meter was under observation;
+        * the gap itself fits in that same window, because between two
+          irrigations a counter simply stands still, and the day-long silence
+          that produces describes the schedule, not the device.
+        """
+        now = monotonic()
+        watched = self.is_open or (
+            self._last_seen_open_at is not None and now - self._last_seen_open_at <= METER_WATCH_AFTER_CLOSE_S
+        )
+        previous, self._last_publication_at = self._last_publication_at, now
+        counted, self._last_publication_counted = self._last_publication_counted, watched
+        if self.is_open:
+            self._last_seen_open_at = now
+        if not watched or not counted or previous is None:
+            return
+        interval = now - previous
+        if interval > METER_WATCH_AFTER_CLOSE_S:
+            return
+        if self._session_flow.observe_publication_interval(interval):
+            self._hass.async_create_task(self._session_flow.async_save())
+
     def record_meter_resolution(self, step: float) -> None:
         """Register a counter increment observed outside a delivery (a test)."""
         if self._session_flow.observe_step(step):
@@ -1334,6 +1423,27 @@ class ZoneDriver(Driver):
         return self._session_flow.refresh_samples
 
     @property
+    def meter_publication_median_s(self) -> float | None:
+        """Typical gap between two publications of the counter.
+
+        This is the figure the card shows, and the honest answer to "how often
+        does my meter report". The worst case below is what the machinery uses;
+        showing that one and calling it the cadence is what made a meter look
+        slower than it is.
+        """
+        return self._session_flow.publication_median_s
+
+    @property
+    def meter_publication_peak_s(self) -> float | None:
+        """Worst gap in the window. Diagnostics, not screen."""
+        return self._session_flow.publication_peak_s
+
+    @property
+    def meter_publication_samples(self) -> int:
+        """How many intervals the median rests on."""
+        return self._session_flow.publication_samples
+
+    @property
     def settle_delay_s(self) -> float:
         """How long to wait after closing before reading the meter's final word.
 
@@ -1344,9 +1454,17 @@ class ZoneDriver(Driver):
 
         Never shorter than the historical constant, which suits a prompt meter,
         and capped so a slow one cannot leave a task pending indefinitely. The
-        wait runs in a background task, so it never delays the session itself.
+        wait runs in a background task, so it never delays the session itself:
+        on a slow meter the sample simply lands minutes after the session was
+        reported complete.
+
+        Built on the *typical* gap between publications, falling back to the
+        worst gap between advances where that is all there is. The constant was
+        what lost the field case this fixes: a meter on a five-minute clock
+        spoke 39 s after the close, and the fixed 30 s wait had already given
+        up, so a healthy session taught the zone nothing.
         """
-        cadence = self._session_flow.refresh_cadence_s
+        cadence = self._session_flow.publication_median_s or self._session_flow.refresh_cadence_s
         if cadence is None:
             return SETTLE_DELAY_S
         return min(max(SETTLE_DELAY_S, cadence * FLOW_VERIFY_MARGIN), SETTLE_DELAY_MAX_S)
@@ -1361,7 +1479,7 @@ class ZoneDriver(Driver):
         not water arriving. The distinction is what decides whether the meter
         can guard an opening at all, and it is invisible in any single reading.
         """
-        cadence = self._session_flow.refresh_cadence_s
+        cadence = self._session_flow.publication_median_s or self._session_flow.refresh_cadence_s
         expected = self.time_to_first_tick_s()
         if cadence is None or expected is None or expected <= 0:
             return None

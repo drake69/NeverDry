@@ -326,9 +326,12 @@ class TestTheCadenceIsActuallyLearned:
         driver._dispatch = AsyncMock()
         monkeypatch.setattr(type(driver), "is_open", property(lambda self: True))
 
-        # One reading per advance: the first advance starts the clock, the
-        # second closes the interval.
-        clock = iter([1000.0, 1000.0 + FIELD_METER_CADENCE_S])
+        # Two consumers read the clock per publication now: every report is
+        # timed for the publication cadence, and an advance is timed again for
+        # this one. The advances land on readings 3 and 5, so those are the two
+        # that have to sit a cadence apart.
+        t0 = 1000.0
+        clock = iter([t0, t0, t0, t0 + FIELD_METER_CADENCE_S, t0 + FIELD_METER_CADENCE_S])
         monkeypatch.setattr("never_dry.driver.monotonic", lambda: next(clock))
 
         await driver._handle_flow_state(self._meter_event(10.0))  # first level, no movement yet
@@ -352,6 +355,137 @@ class TestTheCadenceIsActuallyLearned:
         await driver._handle_flow_state(self._meter_event(10.0))
         await driver._handle_flow_state(self._meter_event(16.0))
 
+        assert driver._session_flow.refresh_cadence_s is None
+
+
+class TestTheCadenceSurvivesAShortDose:
+    """The field case of 2026-09-09, and why the older rule could never see it.
+
+    Melograno was dosed for 171 s by a meter on a 300 s clock. Across the whole
+    session the counter never advanced, so it never spoke twice while open and
+    the cadence stayed unmeasured for ever. Its closing word landed 39 s after
+    the valve shut -- outside the old rule in both respects, being neither an
+    advance nor something observed while open.
+
+    So publications are timed rather than advances, and the timing runs on past
+    the close. Both departures are needed: either one alone still misses this.
+    """
+
+    @staticmethod
+    def _meter_event(value: float):
+        event = MagicMock()
+        state = MagicMock()
+        state.state = str(value)
+        event.data = {"new_state": state}
+        return event
+
+    @pytest.mark.asyncio
+    async def test_the_closing_tick_after_the_valve_shut_still_teaches_the_cadence(self, monkeypatch):
+        """21:05:02 open, 21:09:21 closed, 21:10:00 the meter finally speaks."""
+        driver = _zone(DeliveryMode.FLOW_METER)
+        driver._dispatch = AsyncMock()
+        open_now = True
+        monkeypatch.setattr(type(driver), "is_open", property(lambda self: open_now))
+
+        now = 1000.0
+        monkeypatch.setattr("never_dry.driver.monotonic", lambda: now)
+        await driver._handle_flow_state(self._meter_event(19.0))  # while open
+
+        open_now = False  # the valve shuts, and the meter has not spoken since
+        now = 1000.0 + 298.0
+        await driver._handle_flow_state(self._meter_event(39.0))
+
+        assert driver._session_flow.publication_median_s == pytest.approx(298.0)
+
+    @pytest.mark.asyncio
+    async def test_a_republication_with_no_new_water_is_still_a_publication(self, monkeypatch):
+        """A meter repeating itself is timing information, not a flow observation.
+
+        It must reach the cadence and nothing else: fed to the state machine a
+        repeat would argue that a running zone is dry.
+        """
+        driver = _zone(DeliveryMode.FLOW_METER)
+        driver._dispatch = AsyncMock()
+        monkeypatch.setattr(type(driver), "is_open", property(lambda self: True))
+
+        now = 1000.0
+        monkeypatch.setattr("never_dry.driver.monotonic", lambda: now)
+        driver._on_flow_report(self._meter_event(19.0))
+        now = 1000.0 + FIELD_METER_CADENCE_S
+        driver._on_flow_report(self._meter_event(19.0))
+
+        assert driver._session_flow.publication_median_s == pytest.approx(FIELD_METER_CADENCE_S)
+        driver._dispatch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_silence_between_two_irrigations_is_not_a_cadence(self, monkeypatch):
+        """Both ends of a gap must be under observation, and the gap must fit.
+
+        A zone watered once a day would otherwise report a cadence of 24 hours,
+        which is the schedule talking, not the meter.
+        """
+        driver = _zone(DeliveryMode.FLOW_METER)
+        driver._dispatch = AsyncMock()
+        monkeypatch.setattr(type(driver), "is_open", property(lambda self: True))
+
+        now = 1000.0
+        monkeypatch.setattr("never_dry.driver.monotonic", lambda: now)
+        await driver._handle_flow_state(self._meter_event(19.0))
+        now = 1000.0 + 86400.0  # same time tomorrow
+        await driver._handle_flow_state(self._meter_event(25.0))
+
+        assert driver._session_flow.publication_median_s is None
+
+    def test_what_reaches_the_card_is_the_median_not_the_worst_case(self):
+        """One long gap is an artefact -- a restart, a device off the mesh."""
+        driver = _zone(DeliveryMode.FLOW_METER)
+        for interval in (300.0, 300.0, 300.0, 590.0):
+            driver._session_flow.observe_publication_interval(interval)
+
+        assert driver.meter_publication_median_s == pytest.approx(300.0)
+        assert driver.meter_publication_peak_s == pytest.approx(590.0)
+
+
+class TestTheWaitFollowsTheMeasuredMeter:
+    """The 30 s constant is what lost the field sample, by nine seconds."""
+
+    def test_an_unmeasured_meter_keeps_the_historical_constant(self):
+        driver = _zone(DeliveryMode.FLOW_METER)
+        assert driver.settle_delay_s == pytest.approx(30.0)
+
+    def test_a_measured_meter_is_waited_for(self):
+        driver = _zone(DeliveryMode.FLOW_METER)
+        for _ in range(3):
+            driver._session_flow.observe_publication_interval(FIELD_METER_CADENCE_S)
+
+        # 39 s late was enough to miss it; the wait now clears that by minutes.
+        assert driver.settle_delay_s > 39.0
+        assert driver.settle_delay_s == pytest.approx(FIELD_METER_CADENCE_S * 1.5)
+
+    def test_the_wait_stays_bounded_on_a_very_slow_meter(self):
+        driver = _zone(DeliveryMode.FLOW_METER)
+        for _ in range(3):
+            driver._session_flow.observe_publication_interval(599.0)
+
+        assert driver.settle_delay_s <= 600.0
+
+
+class TestMeasuringTheMeterDoesNotArmTheGuard:
+    """Non-regression: the guard keeps its own, stricter evidence.
+
+    Publication timing is generous on purpose -- it observes, and observing
+    cannot misfire. The guard closes valves, so it still rests on the worst gap
+    between *advances while water flows*. Letting the lenient measurement arm
+    the strict decision is exactly how a healthy valve gets closed again.
+    """
+
+    def test_a_measured_publication_cadence_leaves_verification_inapplicable(self):
+        driver = _zone(DeliveryMode.FLOW_METER, resolution_l=1.0)
+        for _ in range(5):
+            driver._session_flow.observe_publication_interval(20.0)
+
+        _, verdict = driver.flow_verify_window()
+        assert verdict is not None
         assert driver._session_flow.refresh_cadence_s is None
 
 

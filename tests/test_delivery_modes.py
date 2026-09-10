@@ -1349,6 +1349,11 @@ class TestTheMeterFactsReachTheCard:
             },
         )
         operator = MagicMock()
+        # What the card shows is the typical gap; the worst one rides along
+        # because it is what sizes the post-close wait.
+        operator.meter_publication_median_s = cadence
+        operator.meter_publication_peak_s = cadence
+        operator.meter_publication_samples = 7
         operator.meter_refresh_cadence_s = cadence
         operator.meter_refresh_samples = 7
         operator.meter_refresh_kind = "periodic"
@@ -1375,6 +1380,7 @@ class TestTheMeterFactsReachTheCard:
         zone._operator.meter_refresh_cadence_s = None
         zone._operator.meter_refresh_kind = None
         assert "meter_refresh_s" not in zone.extra_state_attributes
+        assert "meter_refresh_peak_s" not in zone.extra_state_attributes
         assert zone.extra_state_attributes["meter_refresh_samples"] == 7
 
 
@@ -1405,3 +1411,34 @@ class TestTheCardActuallyReadsTheDeliveryFacts:
         src = _CARD.read_text(encoding="utf-8")
         assert "_deliveryCell(" in src
         assert src.count("_deliveryCell(") >= 2, "defined but never invoked"
+
+    def test_the_meter_has_a_cell_of_its_own_and_it_is_rendered(self):
+        """Three facts in one value are two facts nobody reads.
+
+        A cell value is clipped at one column's width, so the cadence appended
+        after the dosing mode was cut off on every zone that had one. Splitting
+        it is the fix, and a split cell that is never invoked is the same
+        defect wearing a different name.
+        """
+        src = _CARD.read_text(encoding="utf-8")
+        assert src.count("_meterRefreshCell(") >= 2, "defined but never invoked"
+
+    def test_the_card_can_tell_measuring_from_never_measured(self):
+        """Two silences that ask different things of the user.
+
+        "Not measured yet" invites a look at the configuration; "measuring
+        (1/3)" says the figure is on its way and there is nothing to do. The
+        threshold comes from the integration rather than a number retyped here,
+        because the two drifting apart is how a card starts lying quietly.
+        """
+        src = _CARD.read_text(encoding="utf-8")
+        assert "meter_refresh_min_samples" in src
+        assert "meterMeasuring" in src
+        assert "meterRefreshUnknown" in src
+
+    def test_the_qualifiers_moved_out_of_the_clipped_line(self):
+        """The guard caveat belongs to the label, which wraps, not the value."""
+        src = _CARD.read_text(encoding="utf-8")
+        cell = src.split("_meterRefreshCell(a) {", 1)[1].split("\n  }", 1)[0]
+        assert "meterGuardOff" in cell, "the caveat left the dosing cell but never arrived"
+        assert "label +=" in cell, "the caveat must lengthen the label, not the value"
