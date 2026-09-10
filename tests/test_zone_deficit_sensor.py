@@ -18,6 +18,7 @@ from never_dry.sensor import (
     IrrigationZoneSensor,
     ZoneDeficitSensor,
     ZoneRainSensor,
+    ZoneSessionWaterSensor,
     ZoneYearlyWaterSensor,
 )
 
@@ -40,6 +41,54 @@ def _make_zone(di_sensor, name="Orto", area=20.0, efficiency=0.90):
         CONF_ZONE_THRESHOLD: 15.0,
     }
     return IrrigationZoneSensor(_make_hass(), zone_config, di_sensor)
+
+
+class TestTheCardIsToldWhenASessionEnds:
+    """Refreshing on the periodic broadcast alone is refreshing too late.
+
+    The deficit is settled and the session tally cleared the instant a run
+    closes, but a sensor that only listens to the dryness tick keeps showing
+    the previous state until the next one. The minutes right after a run are
+    exactly when somebody looks: on the field install the deficit read 0.34 mm
+    for three minutes after the model had settled it to zero (pino,
+    2026-09-10), which reads as the irrigation having achieved nothing.
+    """
+
+    @staticmethod
+    def _sensor_that_records_writes(cls, zone):
+        sensor = cls(zone)
+        sensor.hass = MagicMock()
+        writes = []
+        sensor.async_write_ha_state = lambda: writes.append(True)
+        return sensor, writes
+
+    def test_the_deficit_refreshes_when_the_session_closes(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        _sensor, writes = self._sensor_that_records_writes(ZoneDeficitSensor, zone)
+
+        zone.notify_session_listeners()
+
+        assert writes, "the deficit waited for the next tick to show a settled run"
+
+    def test_the_session_tally_refreshes_when_the_session_closes(self, di_sensor):
+        zone = _make_zone(di_sensor)
+        _sensor, writes = self._sensor_that_records_writes(ZoneSessionWaterSensor, zone)
+
+        zone.notify_session_listeners()
+
+        assert writes, "the zero written at the close would not be seen until the next tick"
+
+    def test_a_closed_session_leaves_its_water_in_last_volume_not_in_the_tally(self, di_sensor):
+        """Where the delivered figure lives after the run, and where it does not."""
+        zone = _make_zone(di_sensor)
+        zone._zone_deficit = 10.0
+        # As a flow-metered run leaves it: the tally has been rising live.
+        zone._session_water_delivered = 12.0
+
+        zone.settle_cycle(20.0, source="automatic", at=datetime(2026, 9, 10, 8, 46), duration_s=82)
+
+        assert zone._last_volume_delivered == pytest.approx(20.0)
+        assert zone._session_water_delivered == 0.0, "a running total outlived the run"
 
 
 class TestZoneDeficitSensorProperties:

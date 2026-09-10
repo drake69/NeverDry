@@ -563,8 +563,8 @@ class TestSettleWaterAccounting:
 
         assert zone._zone_deficit == 0.0
         assert zone._total_water_delivered == pytest.approx(total_before + target, abs=0.2)
-        assert zone._session_water_delivered == pytest.approx(target, abs=0.2)
         assert zone._last_volume_delivered == pytest.approx(target, abs=0.2)
+        assert zone._session_water_delivered == 0.0, "the cycle closed, so its running total did too"
 
     @pytest.mark.asyncio
     async def test_partial_flow_meter_delivery_credits_actual_volume(self, controller, zone_orto):
@@ -583,7 +583,8 @@ class TestSettleWaterAccounting:
         # Partial: deficit reduced but not zero, counters reflect partial volume.
         assert zone._zone_deficit > 0.0
         assert zone._total_water_delivered == pytest.approx(partial, abs=0.2)
-        assert zone._session_water_delivered == pytest.approx(partial, abs=0.2)
+        assert zone._last_volume_delivered == pytest.approx(partial, abs=0.2)
+        assert zone._session_water_delivered == 0.0
 
     def test_estimated_flow_no_timeout_in_attributes(self, hass_mock, di_sensor):
         zone = _make_zone(hass_mock, di_sensor)

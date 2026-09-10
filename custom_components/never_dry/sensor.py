@@ -2807,9 +2807,19 @@ class ZoneDeficitSensor(SensorEntity):
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
+        # And on session close, not only on the periodic broadcast. The deficit
+        # is settled the moment a run ends, and waiting for the next tick left
+        # the figure showing the debt the irrigation had just paid off -- which
+        # is exactly the minute somebody looks (field, pino 2026-09-10: 0.34 mm
+        # on screen, 0.00 in the model, for the three minutes after the close).
+        zone_sensor.register_session_listener(self._on_session_update)
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    def _on_session_update(self) -> None:
         if getattr(self, "hass", None):
             self.async_write_ha_state()
 
@@ -2919,9 +2929,16 @@ class ZoneSessionWaterSensor(SensorEntity):
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
+        # A running total has to stop running the moment the run does, or the
+        # zero written at the close is not seen until the next hourly tick.
+        zone_sensor.register_session_listener(self._on_session_update)
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    def _on_session_update(self) -> None:
         if getattr(self, "hass", None):
             self.async_write_ha_state()
 

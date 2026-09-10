@@ -68,8 +68,8 @@ class TestPartialDeliverySettlesThroughTheZone:
         _settle_partial(controller, zone, delivered=20.0, target=50.0)
 
         assert zone._last_volume_delivered == 20.0
-        assert zone._session_water_delivered == 20.0
         assert zone._total_water_delivered == 20.0
+        assert zone._session_water_delivered == 0.0, "the run is over, so its running total is too"
         assert zone._yearly_water_delivered == 20.0
         assert zone._last_irrigation_source == "automatic"
         assert zone._last_irrigated is not None
@@ -186,7 +186,8 @@ class TestManualSessionSettlesThroughTheZone:
 
         assert zone._last_irrigation_source == "manual"
         assert zone._total_water_delivered > 0
-        assert zone._session_water_delivered > 0
+        assert zone._last_volume_delivered > 0
+        assert zone._session_water_delivered == 0.0
 
     def test_a_close_never_clears_the_whole_deficit(self, hass_mock, di_sensor):
         """The rule this path exists to keep: only mark_irrigated zeroes it."""

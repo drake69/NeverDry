@@ -136,8 +136,8 @@ class TestResetDeficitAccounting:
 
         assert zone._zone_deficit == 0.0
         assert zone._last_volume_delivered == needed
-        assert zone._session_water_delivered == needed
         assert zone._total_water_delivered == needed
+        assert zone._session_water_delivered == 0.0
 
     def test_credits_explicit_delivered_volume(self, di_sensor):
         """Flow-metered full delivery: credit the measured volume, not the
@@ -151,8 +151,8 @@ class TestResetDeficitAccounting:
 
         assert zone._zone_deficit == 0.0
         assert zone._last_volume_delivered == pytest.approx(measured, abs=0.1)
-        assert zone._session_water_delivered == pytest.approx(measured, abs=0.1)
         assert zone._total_water_delivered == pytest.approx(measured, abs=0.1)
+        assert zone._session_water_delivered == 0.0
 
 
 class TestNativeValue:
