@@ -187,7 +187,9 @@ def _assert_partial_with_residual(zone, *, max_running_s):
     assert zone._last_irrigation_source != "manual"
     # History written once: totals match the single credited session.
     assert zone._total_water_delivered == pytest.approx(delivered, abs=0.06)
-    assert zone._session_water_delivered == pytest.approx(delivered, abs=0.06)
+    assert zone._last_volume_delivered == pytest.approx(delivered, abs=0.06)
+    # However the session ended, its running total stops running with it.
+    assert zone._session_water_delivered == 0.0
     assert zone._last_irrigated is not None
     # Running time coherent with the credited volume (guard-flow credit:
     # delivered = FLOW x elapsed / 60 -> elapsed = delivered x 60 / FLOW).

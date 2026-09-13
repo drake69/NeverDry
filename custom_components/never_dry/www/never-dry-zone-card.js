@@ -35,6 +35,16 @@ const I18N = {
     barUnavailable: "deficit / threshold unavailable",
     irrigateNow: "Irrigate now",
     irrigating: "Irrigating",
+    dosing: "Dosing",
+    doseByTime: "by time",
+    doseByMeter: "by volume",
+    doseByValve: "by the valve",
+    meterRefresh: "Meter refresh",
+    meterRefreshUnknown: "not measured yet",
+    meterPeriodic: "on a clock",
+    meterByVolume: "per volume",
+    meterGuardOff: "cannot verify opening",
+    meterMeasuring: "measuring",
     maintenance: "Maintenance",
     unreachable: "Valve not responding",
     waitingForValve: "waiting for first contact",
@@ -91,6 +101,16 @@ const I18N = {
     barUnavailable: "deficit / soglia non disponibili",
     irrigateNow: "Irriga ora",
     irrigating: "In irrigazione",
+    dosing: "Dosaggio",
+    doseByTime: "a tempo",
+    doseByMeter: "a volume",
+    doseByValve: "a dose valvola",
+    meterRefresh: "Aggiornamento contatore",
+    meterRefreshUnknown: "non ancora misurato",
+    meterPeriodic: "a orologio",
+    meterByVolume: "a volume",
+    meterGuardOff: "non puo' verificare l'apertura",
+    meterMeasuring: "in misura",
     maintenance: "Manutenzione",
     unreachable: "Valvola non raggiungibile",
     waitingForValve: "in attesa di risposta",
@@ -147,6 +167,16 @@ const I18N = {
     barUnavailable: "Defizit / Grenzwert nicht verfügbar",
     irrigateNow: "Jetzt bewässern",
     irrigating: "Bewässerung läuft",
+    dosing: "Dosierung",
+    doseByTime: "nach Zeit",
+    doseByMeter: "nach Volumen",
+    doseByValve: "nach Ventildosis",
+    meterRefresh: "Zähler-Aktualisierung",
+    meterRefreshUnknown: "noch nicht gemessen",
+    meterPeriodic: "nach Uhr",
+    meterByVolume: "nach Volumen",
+    meterGuardOff: "kann Öffnung nicht prüfen",
+    meterMeasuring: "wird gemessen",
     maintenance: "Wartung",
     unreachable: "Ventil antwortet nicht",
     waitingForValve: "Warte auf erste Ventil-Rückmeldung",
@@ -650,7 +680,9 @@ class NeverDryZoneCard extends HTMLElement {
         ]) +
         this._exposureCell(ents) +
         this._rows([["mdi:speedometer", ents.flowRate, t(hass, "designFlow")]]) +
-        this._measuredFlowCell(ents),
+        this._measuredFlowCell(ents) +
+        this._deliveryCell(_zoneAttrs) +
+        this._meterRefreshCell(_zoneAttrs),
     );
 
     this._updateConfigLink(ents);
@@ -740,6 +772,82 @@ class NeverDryZoneCard extends HTMLElement {
    * for — the one that says whether the zone delivers what it was designed to —
    * the cell stays and reports its own progress instead of disappearing.
    */
+  /**
+   * What this zone doses by, and what its meter is worth.
+   *
+   * The delivery mode decides who answers for the water: in `estimated_flow`
+   * the user's declared rate does, in `flow_meter` the measurement does, in
+   * `volume_preset` the valve does. Until now nothing on screen said which,
+   * so two zones behaving differently for a good reason looked identical.
+   *
+   * The meter's refresh cadence used to ride along in this same value, and
+   * that was the mistake: a cell value is clipped with an ellipsis at one
+   * column's width, so three facts joined by separators meant the last two
+   * were never read. It now has its own cell, and the qualifiers that used to
+   * lengthen the value live in the label, which wraps instead of truncating.
+   */
+  _deliveryCell(a) {
+    const mode = a.delivery_mode;
+    if (!mode) return "";
+    const byMode = {
+      estimated_flow: "doseByTime",
+      flow_meter: "doseByMeter",
+      volume_preset: "doseByValve",
+    };
+    const label = byMode[mode];
+    if (!label) return "";
+    return `
+        <div class="nd-cell">
+          <ha-icon icon="mdi:water-pump"></ha-icon>
+          <div class="nd-cell-txt">
+            <span class="nd-cell-lbl">${escapeHtml(t(this._hass, "dosing"))}</span>
+            <span class="nd-cell-val">${escapeHtml(t(this._hass, label))}</span>
+          </div>
+        </div>`;
+  }
+
+  /**
+   * How often this zone's counter speaks, and what that is worth.
+   *
+   * The typical gap, not the worst one: the worst is what sizes the wait for
+   * a late tick, and showing it here would make a prompt meter look slow. Two
+   * states short of a number are distinguished on purpose, because they call
+   * for different things from the user: "not measured yet" means no interval
+   * has been timed at all, while "measuring (1/3)" means the figure is coming
+   * on its own and there is nothing to do.
+   *
+   * A meter that cannot supervise an opening says so in the label rather than
+   * the value: the label wraps, the value is clipped, and a caveat that gets
+   * cut off is worse than no caveat.
+   */
+  _meterRefreshCell(a) {
+    if (!a.flow_meter_sensor) return "";
+    let label = t(this._hass, "meterRefresh");
+    if (a.meter_guard_usable === false && a.delivery_mode !== "estimated_flow") {
+      label += `, ${t(this._hass, "meterGuardOff")}`;
+    }
+    const median = Number(a.meter_refresh_s);
+    const samples = Number(a.meter_refresh_samples) || 0;
+    const need = Number(a.meter_refresh_min_samples) || 3;
+    let value;
+    if (Number.isFinite(median) && samples >= need) {
+      const kind = a.meter_refresh_kind === "periodic" ? "meterPeriodic" : "meterByVolume";
+      value = `${median}s (${t(this._hass, kind)})`;
+    } else if (samples > 0) {
+      value = `${t(this._hass, "meterMeasuring")} (${samples}/${need})`;
+    } else {
+      value = t(this._hass, "meterRefreshUnknown");
+    }
+    return `
+        <div class="nd-cell">
+          <ha-icon icon="mdi:timer-sync-outline"></ha-icon>
+          <div class="nd-cell-txt">
+            <span class="nd-cell-lbl">${escapeHtml(label)}</span>
+            <span class="nd-cell-val">${escapeHtml(value)}</span>
+          </div>
+        </div>`;
+  }
+
   _measuredFlowCell(ents) {
     const st = ents.measuredFlow;
     if (!st) return "";

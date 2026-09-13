@@ -99,11 +99,26 @@ def _driver(hass) -> ZoneDriver:
     )
 
 
+@pytest.fixture
+def meter_answers_at_once(monkeypatch):
+    """Skip the wait for the meter's closing publication.
+
+    The read blocks until the counter publishes, which is the whole point of
+    it; these tests are about what the sample is made of, not about when it is
+    taken, so they let the wait return and get on with it.
+    """
+
+    async def _immediate(awaitable, timeout):
+        awaitable.close()
+        return True
+
+    monkeypatch.setattr("never_dry.driver.asyncio.wait_for", _immediate)
+
+
 class TestTheSampleComesFromTheMeterAndTheClock:
     @pytest.mark.asyncio
-    async def test_it_divides_the_counter_difference_by_the_session(self, monkeypatch):
+    async def test_it_divides_the_counter_difference_by_the_session(self, meter_answers_at_once):
         """100 L over 10 minutes is 10 L/min, whatever the zone was configured at."""
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
         hass = _hass_with_meter([1100.0])
         driver = _driver(hass)
 
@@ -114,21 +129,26 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window._samples[0] == pytest.approx(10.0)
 
     @pytest.mark.asyncio
-    async def test_it_waits_before_reading_so_late_ticks_still_count(self, monkeypatch):
-        """The last tick of a session routinely lands after the valve is shut."""
-        sleeper = AsyncMock()
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", sleeper)
+    async def test_it_waits_for_the_closing_tick_instead_of_guessing_when(self):
+        """The last tick of a session routinely lands after the valve is shut.
+
+        How long after is the meter's business, and it announces it. Reading on
+        a timer instead threw away a healthy sample on both field zones.
+        """
         hass = _hass_with_meter([1050.0])
         driver = _driver(hass)
 
-        await driver._record_flow_sample("sensor.meter", baseline=1000.0, session_s=600.0)
+        pending = asyncio.ensure_future(driver._record_flow_sample("sensor.meter", baseline=1000.0, session_s=600.0))
+        await asyncio.sleep(0)
+        assert driver._session_flow.window.sample_count == 0, "read before the meter spoke"
 
-        sleeper.assert_awaited_once()
-        assert sleeper.await_args.args[0] > 0
+        driver._note_meter_publication()
+        await asyncio.wait_for(pending, timeout=1.0)
+
+        assert driver._session_flow.window.sample_count == 1
 
     @pytest.mark.asyncio
-    async def test_a_counter_that_did_not_move_yields_no_sample(self, monkeypatch):
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
+    async def test_a_counter_that_did_not_move_yields_no_sample(self, meter_answers_at_once):
         hass = _hass_with_meter([1000.0])
         driver = _driver(hass)
 
@@ -137,9 +157,8 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window.sample_count == 0
 
     @pytest.mark.asyncio
-    async def test_a_counter_that_reset_yields_no_sample(self, monkeypatch):
+    async def test_a_counter_that_reset_yields_no_sample(self, meter_answers_at_once):
         """A reset makes the difference negative; a guess would be worse than a gap."""
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
         hass = _hass_with_meter([5.0])
         driver = _driver(hass)
 
@@ -148,8 +167,7 @@ class TestTheSampleComesFromTheMeterAndTheClock:
         assert driver._session_flow.window.sample_count == 0
 
     @pytest.mark.asyncio
-    async def test_an_unreadable_meter_yields_no_sample(self, monkeypatch):
-        monkeypatch.setattr("never_dry.driver.asyncio.sleep", AsyncMock())
+    async def test_an_unreadable_meter_yields_no_sample(self, meter_answers_at_once):
         hass = _hass_with_meter(["unavailable"])
         driver = _driver(hass)
 
@@ -231,7 +249,7 @@ class TestTheFlowVerificationWindowComesFromTheZone:
     window has to be resolution over flow rate, not a constant.
     """
 
-    def _driver_with(self, resolution=None, lpm=6.0):
+    def _driver_with(self, resolution=None, lpm=6.0, cadence=None):
         from never_dry.driver import FLOW_VERIFY_MARGIN  # noqa: F401
 
         hass = _hass_with_meter([0.0])
@@ -239,30 +257,44 @@ class TestTheFlowVerificationWindowComesFromTheZone:
         driver._flow_rate_lpm = lpm
         if resolution:
             driver._session_flow.resolution_l = resolution
+        if cadence:
+            driver._session_flow.refresh_cadence_s = cadence
         return driver
 
-    def test_without_a_known_resolution_it_is_conservative_not_strict(self):
-        """The old constant is what closed working valves; absence must not be strict."""
-        from never_dry.driver import FLOW_VERIFY_UNKNOWN_RESOLUTION_S
+    def test_without_a_known_cadence_the_guard_stands_down(self):
+        """Absence of the defining quantity must disarm, not soften.
 
+        This test used to assert ``verdict is None`` here, with a 90 s constant:
+        conservative in duration, unchanged in power. It kept the right to close
+        the valve while admitting it did not know how long to wait, and that is
+        the branch that closed a healthy zone seven times out of ten in the
+        field (2026-09-08). Waiting longer was never the fix; not judging was.
+        """
         window, verdict = self._driver_with().flow_verify_window()
-        assert window == FLOW_VERIFY_UNKNOWN_RESOLUTION_S
+        assert verdict is not None
+        assert "not applicable" in verdict
         assert window > 10.0
-        assert verdict is None
 
     def test_the_reported_case_gets_a_window_that_can_pass(self):
-        """1 L at 1.2 L/min → ~50 s to first tick, so the window must exceed it."""
-        driver = self._driver_with(resolution=1.0, lpm=1.2)
+        """GH #173: a meter that needs ~50 s to move must not be judged at 10 s.
+
+        The quantity is now the observed cadence rather than
+        ``resolution / rate``: same protection, measured on the device instead
+        of predicted from it. ``time_to_first_tick_s`` is kept as diagnostics
+        and still answers, but no longer sizes the window.
+        """
+        driver = self._driver_with(resolution=1.0, lpm=1.2, cadence=50.0)
         assert driver.time_to_first_tick_s() == pytest.approx(50.0)
         window, verdict = driver.flow_verify_window()
         assert window > 50.0
         assert verdict is None
 
     def test_a_fast_zone_keeps_a_tight_window(self):
-        """A meter that ticks immediately must not buy a lax guard."""
+        """A meter that reports promptly must not buy a lax guard."""
         from never_dry.driver import FLOW_VERIFY_MIN_S
 
-        window, verdict = self._driver_with(resolution=0.1, lpm=20.0).flow_verify_window()
+        driver = self._driver_with(resolution=0.1, lpm=20.0, cadence=2.0)
+        window, verdict = driver.flow_verify_window()
         assert window == FLOW_VERIFY_MIN_S
         assert verdict is None
 

@@ -59,6 +59,8 @@ def test_every_row_declares_the_columns_the_verdict_rule_reads():
         "history",
         "needs_config",
         "caveat",
+        "meter_update_s",
+        "meter_update_kind",
         "reported_by",
     }
     rows = list(csv.DictReader(_CSV.open(encoding="utf-8")))
@@ -95,3 +97,39 @@ def test_a_row_with_no_measurement_is_timer_only_not_bad():
     tier, reason = module._verdict(barebones)
     assert tier == "timer-only"
     assert "clock" in reason or "delivered" in reason
+
+
+def test_a_meter_that_speaks_on_a_clock_cannot_be_top_tier():
+    """The row that caused the field failure of 2026-09-08 must not read "good".
+
+    A SONOFF SWV-ZFE reports every 300 s whatever the flow. Everything else about it
+    looks excellent on this table -- a session counter, an hourly total -- and on those
+    columns alone the old rule rated it top tier. Someone choosing hardware from that
+    row would buy a valve NeverDry cannot supervise, which is the failure this page
+    exists to prevent.
+    """
+    module = _builder()
+    on_a_clock = {
+        "flow_rate": "no",
+        "volume_session": "yes",
+        "volume_aggregate": "hourly",
+        "history": "on_request",
+        "needs_config": "history",
+        "caveat": "",
+        "meter_update_s": "300",
+        "meter_update_kind": "periodic",
+    }
+    tier, reason = module._verdict(on_a_clock)
+    assert tier == "partial"
+    assert "300" in reason, "the reason must name the cadence that caused it"
+
+    prompt = {**on_a_clock, "meter_update_s": "14", "meter_update_kind": "volume"}
+    assert module._verdict(prompt)[0] == "good", "a prompt meter must not be dragged down with it"
+
+
+def test_an_unmeasured_cadence_is_not_read_as_a_fast_one():
+    """Unknown is not a synonym for fine, and it must not silently become one."""
+    module = _builder()
+    assert module._guards_openings({"meter_update_s": ""}) is None
+    assert module._guards_openings({"meter_update_s": "300"}) is False
+    assert module._guards_openings({"meter_update_s": "14"}) is True

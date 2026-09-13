@@ -43,6 +43,44 @@ _TIERS = {
     "timer-only": "no delivery measurement, so NeverDry runs it on a clock",
 }
 
+# The longest window still worth waiting for before a guard stops being a guard, mirroring
+# FLOW_VERIFY_MAX_S in driver.py. A meter may only supervise an opening if a full reporting
+# interval, plus the margin the driver applies, fits inside it.
+_MAX_USEFUL_WINDOW_S = 180.0
+_WINDOW_MARGIN = 1.5
+
+
+def _guards_openings(row: dict[str, str]) -> bool | None:
+    """Whether this meter can tell a dry pipe from a counter that has not spoken yet.
+
+    ``None`` while the cadence is unmeasured, which is not the same as "no": it means
+    the quantity that decides has not been established for this firmware.
+
+    Not a column anyone types. A meter's ability to supervise an opening follows from
+    how often it reports, and a row where the two disagreed would be the hand-written
+    verdict this generator exists to abolish.
+    """
+    raw = (row.get("meter_update_s") or "").strip().lstrip("~")
+    if not raw:
+        return None
+    try:
+        cadence = float(raw)
+    except ValueError:
+        return None
+    return cadence * _WINDOW_MARGIN <= _MAX_USEFUL_WINDOW_S
+
+
+def _reporting(row: dict[str, str]) -> str:
+    """How this meter speaks, as one cell: the cadence and what kind of clock it is."""
+    cadence = (row.get("meter_update_s") or "").strip()
+    kind = (row.get("meter_update_kind") or "").strip()
+    step = (row.get("meter_resolution_l") or "").strip()
+    if kind == "volume":
+        return f"per volume ({step} L steps)" if step else "per volume"
+    if kind == "periodic":
+        return f"on a clock, ~{cadence} s" if cadence else "on a clock"
+    return "-"
+
 
 def _verdict(row: dict[str, str]) -> tuple[str, str]:
     """Return ``(tier, reason)`` for one CSV row."""
@@ -62,13 +100,27 @@ def _verdict(row: dict[str, str]) -> tuple[str, str]:
         evidence.append(f"{row['volume_aggregate']} counter only")
 
     # A caveat that touches the delivery measurement is not a footnote: it is the difference
-    # between a number you can trust and one you cannot. It costs the row its top tier.
+    # between a number you can trust and one you cannot. It costs the row its top tier, and
+    # a row can carry more than one, so they accumulate rather than shadow each other.
+    caveats = []
+    if _guards_openings(row) is False:
+        # A meter reporting on a clock delivers its count late and in coarse jumps, so it can
+        # neither supervise an opening nor stop a dose precisely. That is what the field
+        # failure of 2026-09-08 cost, and a table calling such a row "good" would repeat it.
+        cadence = (row.get("meter_update_s") or "").strip()
+        caveats.append(
+            f"it reports every ~{cadence} s on a clock, too late to supervise an opening, "
+            f"and the dose lands in steps that size"
+        )
     if row["caveat"] == "unit_change":
-        return "partial", f"{', '.join(evidence)}, but the firmware can change its own counter units"
+        caveats.append("the firmware can change its own counter units")
     if not has_session and has_aggregate:
-        return "partial", f"{', '.join(evidence)}, subject to the calendar-reset caveat"
+        caveats.append("it is subject to the calendar-reset caveat")
     if row["needs_config"] not in ("", "none") and row["needs_config"] != "history":
-        return "partial", f"{', '.join(evidence)}, reachable only after a documented step"
+        caveats.append("it is reachable only after a documented step")
+
+    if caveats:
+        return "partial", f"{', '.join(evidence)}, but {'; and '.join(caveats)}"
     return "good", ", ".join(evidence)
 
 
@@ -82,9 +134,9 @@ def _cell(value: str) -> str:
 def render() -> str:
     rows = list(csv.DictReader(_CSV.open(encoding="utf-8")))
     out = [
-        "| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | History | "
-        "Needs config? | Verdict | Why | LoD | By |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Vendor / model | Firmware | Via | Valve | Flow rate | Volume counters | Meter reports | "
+        "History | Needs config? | Verdict | Why | LoD | By |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         tier, reason = _verdict(row)
@@ -100,6 +152,7 @@ def render() -> str:
             f"| {row['via']} | `{row['valve_domain']}.*` "
             f"| {_cell(row['flow_rate'])} "
             f"| {'✅ ' + ' + '.join(counters) if counters else '❌'} "
+            f"| {_reporting(row)} "
             f"| {_cell(row['history'])} | {_cell(row['needs_config'])} "
             f"| **{tier}** | {reason} | {_cell(row['lod'])} | {row['reported_by']} |"
         )

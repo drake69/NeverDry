@@ -121,6 +121,7 @@ from .const import (
 from .controller import IrrigationController
 from .environment import DEFAULT_LATITUDE, Environment, RainSensorType
 from .services import async_setup_services
+from .session_flow import MIN_PUBLICATION_SAMPLES
 from .unit_convert import LITERS_TO_GALLONS, LPM_TO_GPH, LPM_TO_LPH
 from .valve_fsm import FailureKind, ValveState
 from .water_balance_model import (
@@ -2615,6 +2616,14 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
         self._zone.mark_irrigated(
             source=source, at=datetime.now(), credited_liters=delivered_liters, duration_s=duration_s
         )
+        # The same channel ``settle_cycle`` uses, and for the same reason. This
+        # is the branch a *successful* delivery takes, so leaving it silent meant
+        # the figures that change at the close were refreshed on every partial
+        # run and on no complete one -- the case that happens every day. On the
+        # field install the expected duration stood at 80 s, the value written
+        # while the deficit was still owed, for as long as it took the next tick
+        # to arrive (pino, 2026-09-10).
+        self.notify_session_listeners()
 
     @property
     def volume_liters(self) -> float:
@@ -2712,6 +2721,27 @@ class IrrigationZoneSensor(SensorEntity, RestoreEntity):
             if warnings:
                 attrs["warnings"] = warnings
 
+        operator = getattr(self, "_operator", None)
+        if operator is not None and getattr(operator, "meter_publication_samples", None) is not None:
+            # What the meter's silence is worth. A counter reporting every 300 s
+            # cannot supervise a 359 s session, and that is visible here and
+            # nowhere else: no single reading shows a cadence. Absent rather
+            # than zero while unmeasured, since a zero would read as "instant".
+            attrs["meter_guard_usable"] = operator.meter_guard_usable
+            # What the card shows is the typical gap between publications, and
+            # the count of intervals behind it, so "measured" is visibly
+            # different from "seen once". The worst case rides along for
+            # diagnostics: it is what sizes the post-close wait, and reading a
+            # long wait against a short cadence is otherwise puzzling.
+            attrs["meter_refresh_samples"] = operator.meter_publication_samples
+            attrs["meter_refresh_min_samples"] = MIN_PUBLICATION_SAMPLES
+            if (median := operator.meter_publication_median_s) is not None:
+                attrs["meter_refresh_s"] = round(median)
+            if (peak := operator.meter_publication_peak_s) is not None:
+                attrs["meter_refresh_peak_s"] = round(peak)
+            if (kind := operator.meter_refresh_kind) is not None:
+                attrs["meter_refresh_kind"] = kind
+
         if self._last_valve_test:
             # Prefixed and flat: the card and the report block read these, and a
             # nested dict in an attribute is awkward for both.
@@ -2785,9 +2815,19 @@ class ZoneDeficitSensor(SensorEntity):
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
+        # And on session close, not only on the periodic broadcast. The deficit
+        # is settled the moment a run ends, and waiting for the next tick left
+        # the figure showing the debt the irrigation had just paid off -- which
+        # is exactly the minute somebody looks (field, pino 2026-09-10: 0.34 mm
+        # on screen, 0.00 in the model, for the three minutes after the close).
+        zone_sensor.register_session_listener(self._on_session_update)
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    def _on_session_update(self) -> None:
         if getattr(self, "hass", None):
             self.async_write_ha_state()
 
@@ -2897,9 +2937,16 @@ class ZoneSessionWaterSensor(SensorEntity):
         if device_info:
             self._attr_device_info = device_info
         zone_sensor._dryness.register_zone_listener(self._on_update)
+        # A running total has to stop running the moment the run does, or the
+        # zero written at the close is not seen until the next hourly tick.
+        zone_sensor.register_session_listener(self._on_session_update)
 
     def _on_update(self, dt_h: float, et_h: float, rain: float) -> None:
         """Update when the dryness sensor broadcasts."""
+        if getattr(self, "hass", None):
+            self.async_write_ha_state()
+
+    def _on_session_update(self) -> None:
         if getattr(self, "hass", None):
             self.async_write_ha_state()
 

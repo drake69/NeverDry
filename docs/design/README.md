@@ -27,7 +27,11 @@ New contributors: see [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) first.
 - [`flow-rate-provenance.md`](flow-rate-provenance.md) — **Accepted (ADR)**: the
   three flow rates (design, telemetered, historical), which one answers which
   question, and why a still meter may qualify an action but never refuse one.
-  Read before touching flow verification, leak detection or delivery planning.
+  Also distinguishes a meter's resolution from its reporting cadence, which are
+  two quantities and were long treated as one. Read before touching flow
+  verification, leak detection or delivery planning; then read
+  [`delivery-contract.md`](delivery-contract.md), which says who answers for the
+  water in each delivery mode.
 - [`unit-system.md`](unit-system.md) — metric-internal architecture (SI core,
   imperial only at the edges).
 - [`dependency-management.md`](dependency-management.md) — **Accepted (ADR)**: why
@@ -52,6 +56,15 @@ New contributors: see [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) first.
   which rain-delay evidence ships first, and how far a freeze may be overridden.
   Discussion:
   [#74](https://github.com/never-dry/NeverDry/issues/74).
+  *Status: Draft → Proposed (RFC) → Accepted (ADR).*
+- [`delivery-contract.md`](delivery-contract.md): **Proposed (RFC)**. What a
+  zone's delivery mode declares beyond how a session ends. Each mode names who
+  answers for the water (the user, NeverDry, or the valve), and that decides
+  which witness the system may appeal to: why a flow guard in `estimated_flow`
+  is somebody else's check, why in `flow_meter` the guard's threshold belongs to
+  the device and not to us, and why the deficit falls in all three modes under
+  three different titles. Written from the field failure of 2026-09-08.
+  Discussion: [#232](https://github.com/never-dry/NeverDry/pull/232).
   *Status: Draft → Proposed (RFC) → Accepted (ADR).*
 - [`soil-moisture-model.md`](soil-moisture-model.md) — **Draft**: what a soil
   probe's reading is allowed to mean. Argues that "site-level" is not a physical

@@ -614,7 +614,8 @@ class TestManualValveDetection:
         )
         controller._on_valve_state_change(self._make_valve_event("switch.valve_orto", "on", "off"))
 
-        assert zone_orto._session_water_delivered == pytest.approx(40.0, abs=0.5)
+        assert zone_orto._last_volume_delivered == pytest.approx(40.0, abs=0.5)
+        assert zone_orto._session_water_delivered == 0.0, "the manual session ended with the close"
         assert zone_orto._total_water_delivered - total_before == pytest.approx(40.0, abs=0.5)
         assert zone_orto._yearly_water_delivered - yearly_before == pytest.approx(40.0, abs=0.5)
 

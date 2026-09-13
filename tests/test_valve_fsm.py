@@ -129,6 +129,30 @@ def test_open_timeout(fsm_no_flow):
     assert fsm_no_flow.last_failure == FailureKind.OPEN_FAILED
 
 
+def test_an_unverifiable_flow_lets_the_run_proceed(fsm_with_flow):
+    """The transition that separates the field defect from its fix.
+
+    ``TIMEOUT_FLOW`` and ``FLOW_UNVERIFIABLE`` reach the FSM from the same
+    timer, in the same state, and mean opposite things: the first is "the pipe
+    is dry", the second is "we could not tell, because this meter's cadence is
+    longer than any window worth waiting". Only the first may close the valve.
+
+    Untested until now, which meant the whole fix could be reverted at this
+    line and the suite would stay green -- the driver would still decline to
+    arm the guard, the FSM would still close the valve, and the field failure
+    of 2026-09-08 would come back with every one of its tests passing.
+    """
+    _drive_to(fsm_with_flow, ValveEvent.CMD_OPEN, ValveEvent.OBS_SWITCH_ON)
+    assert fsm_with_flow.state == ValveState.OPEN
+
+    r = fsm_with_flow.dispatch(ValveEvent.FLOW_UNVERIFIABLE)
+
+    assert r.to_state == ValveState.OPEN_VERIFIED, "the session must go on watering"
+    assert r.failure is None, "an inconclusive check of ours is not the valve's failure"
+    assert SendSwitchOff() not in r.actions
+    assert fsm_with_flow.failure_count == 0
+
+
 def test_actuation_failure_sends_switch_off(fsm_with_flow):
     """TIMEOUT_FLOW from OPEN emits SendSwitchOff as belt-and-suspenders."""
     _drive_to(fsm_with_flow, ValveEvent.CMD_OPEN, ValveEvent.OBS_SWITCH_ON)

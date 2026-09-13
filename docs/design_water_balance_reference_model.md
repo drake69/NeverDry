@@ -1,7 +1,7 @@
 # Design — Water-Balance Reference Model
 
 **Status:** Draft (RFC)
-**Last updated:** 2026-07-23
+**Last updated:** 2026-09-09
 **Related:** #123, [Domain Object Model](design_domain_object_model.md), backlog AI-189 (bug), AI-174 (per-zone VWC RFC)
 
 ## Why this document exists
@@ -53,13 +53,28 @@ inert until a later phase wires today's `DrynessIndexSensor` ET/VWC fork onto it
 | **Rain** (→ `rain_delta`) | **System feed** | one sensor for all zones, applied to every zone's balance |
 | **Deficit** (`+ ET·Kc·Δt − rain − irrigation`) | **Zone** | authoritative state |
 | **Kc, threshold, area, valve, irrigation state** | **Zone** | — |
-| **VWC sensor + `field_capacity` + `root_depth`** | **System (interim)** | until AI-174 → then per-zone |
+| **VWC sensor, system** (`vwc_sensor`, model params) | **System** | drives the deficit in VWC mode, bypassing ET |
+| **VWC probe, per zone** (`vwc_sensor` on the zone) | **Zone** | shipped. It does *not* own the zone's deficit: it publishes its reading and the deficit that reading alone would imply, beside the model's. AI-174 is the model-level work that would let a zone's deficit follow its own probe |
+| **`field_capacity`, `root_depth`** | **Neither** | not exposed in any form, system or zone. Fixed at 0.30 / 0.30 in `const.py` |
 
 So the only permanent system-level things are the two environmental **feeds**
-(temperature, rain). Everything else lives in the zone. The VWC model
-(`vwc_sensor`, `field_capacity`, `root_depth`) is system-level only until the
-per-zone VWC work (AI-174) lands, after which nothing but the feeds remains
-shared.
+(temperature, rain). Everything else lives in the zone, or is on its way there.
+
+The VWC row above was one line until 2026-09-09, reading "system-level until
+AI-174 lands". It had become false in one of its three parts and misleading in
+the other two, which is why it is now three rows. A zone can bind its own probe
+today, and that binding shipped without AI-174, because it gave the probe a role
+that does not require owning a deficit: characterising the soil, and revealing a
+hydraulic fault when water is delivered and the moisture does not move. What
+AI-174 still owes is the model-level step, a zone's deficit following its own
+probe.
+
+`field_capacity` and `root_depth` are the part worth reading twice. They are not
+system-level parameters, they are not parameters at all: no form writes them, so
+every installation runs on 0.30 / 0.30. They are also the two numbers a per-zone
+probe would be best placed to establish, since the plateau a probe settles at
+after drainage *is* that soil's field capacity. The measurement that could fix
+the constant is already bound to the zone, and the constant is still a constant.
 
 ## Decisions
 

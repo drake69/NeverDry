@@ -563,8 +563,8 @@ class TestSettleWaterAccounting:
 
         assert zone._zone_deficit == 0.0
         assert zone._total_water_delivered == pytest.approx(total_before + target, abs=0.2)
-        assert zone._session_water_delivered == pytest.approx(target, abs=0.2)
         assert zone._last_volume_delivered == pytest.approx(target, abs=0.2)
+        assert zone._session_water_delivered == 0.0, "the cycle closed, so its running total did too"
 
     @pytest.mark.asyncio
     async def test_partial_flow_meter_delivery_credits_actual_volume(self, controller, zone_orto):
@@ -583,7 +583,8 @@ class TestSettleWaterAccounting:
         # Partial: deficit reduced but not zero, counters reflect partial volume.
         assert zone._zone_deficit > 0.0
         assert zone._total_water_delivered == pytest.approx(partial, abs=0.2)
-        assert zone._session_water_delivered == pytest.approx(partial, abs=0.2)
+        assert zone._last_volume_delivered == pytest.approx(partial, abs=0.2)
+        assert zone._session_water_delivered == 0.0
 
     def test_estimated_flow_no_timeout_in_attributes(self, hass_mock, di_sensor):
         zone = _make_zone(hass_mock, di_sensor)
@@ -1328,3 +1329,117 @@ class TestTheRateToEstimateWith:
         credited = ctrl._fallback_volume_estimate(zone, elapsed_s=600.0, measured=0.0)
 
         assert credited == pytest.approx(3.4 * 600.0 / 60.0)
+
+
+class TestTheMeterFactsReachTheCard:
+    """The card reads the carrier entity's attributes; the facts must be there.
+
+    Without these the user cannot see why a zone behaves as it does: a meter
+    reporting every 300 s on a session lasting 359 s is visibly unfit to
+    supervise it, but only if the number is on screen. Diagnosing it took a
+    manual read of the recorder.
+    """
+
+    def _zone_with_meter(self, hass_mock, di_sensor, cadence, resolution):
+        zone = _make_zone(
+            hass_mock,
+            di_sensor,
+            **{
+                CONF_ZONE_DELIVERY_MODE: DELIVERY_MODE_FLOW_METER,
+                CONF_ZONE_FLOW_METER_SENSOR: "sensor.meter",
+            },
+        )
+        operator = MagicMock()
+        # What the card shows is the typical gap; the worst one rides along
+        # because it is what sizes the post-close wait.
+        operator.meter_publication_median_s = cadence
+        operator.meter_publication_peak_s = cadence
+        operator.meter_publication_samples = 7
+        operator.meter_refresh_cadence_s = cadence
+        operator.meter_refresh_samples = 7
+        operator.meter_refresh_kind = "periodic"
+        operator.meter_guard_usable = False
+        zone._operator = operator
+        return zone
+
+    def test_the_cadence_and_its_meaning_are_published(self, hass_mock, di_sensor):
+        zone = self._zone_with_meter(hass_mock, di_sensor, cadence=300.0, resolution=2.0)
+        attrs = zone.extra_state_attributes
+        assert attrs["meter_refresh_s"] == 300
+        assert attrs["meter_refresh_kind"] == "periodic"
+        assert attrs["meter_refresh_samples"] == 7
+        assert attrs["meter_guard_usable"] is False
+
+    def test_a_zone_without_a_meter_publishes_none_of_it(self, hass_mock, di_sensor):
+        """No meter, no meter facts: empty keys would read as measured zeroes."""
+        zone = _make_zone(hass_mock, di_sensor)
+        zone._operator = None
+        assert "meter_refresh_s" not in zone.extra_state_attributes
+
+    def test_an_unmeasured_cadence_is_absent_rather_than_zero(self, hass_mock, di_sensor):
+        zone = self._zone_with_meter(hass_mock, di_sensor, cadence=None, resolution=None)
+        zone._operator.meter_refresh_cadence_s = None
+        zone._operator.meter_refresh_kind = None
+        assert "meter_refresh_s" not in zone.extra_state_attributes
+        assert "meter_refresh_peak_s" not in zone.extra_state_attributes
+        assert zone.extra_state_attributes["meter_refresh_samples"] == 7
+
+
+class TestTheCardActuallyReadsTheDeliveryFacts:
+    """A static guard: the attributes existed for months and nothing read them.
+
+    ``delivery_mode`` and ``flow_meter_sensor`` were already published on the
+    carrier entity, and the card never mentioned either. The user could not
+    tell a zone dosing by time from one dosing by measured volume, which is
+    also the difference between who answers for the water. Reaching the card
+    is what makes a capability real, so it gets a test of its own.
+    """
+
+    def test_the_card_reads_the_delivery_mode(self):
+        src = _CARD.read_text(encoding="utf-8")
+        assert "delivery_mode" in src
+        for mode in ("estimated_flow", "flow_meter", "volume_preset"):
+            assert mode in src, f"the card cannot name {mode}"
+
+    def test_the_card_reads_the_meter_cadence(self):
+        src = _CARD.read_text(encoding="utf-8")
+        assert "meter_refresh_s" in src
+        assert "meter_refresh_kind" in src
+        assert "flow_meter_sensor" in src
+
+    def test_the_cell_is_rendered_and_not_merely_defined(self):
+        """The defect this whole change is about: defined, never called."""
+        src = _CARD.read_text(encoding="utf-8")
+        assert "_deliveryCell(" in src
+        assert src.count("_deliveryCell(") >= 2, "defined but never invoked"
+
+    def test_the_meter_has_a_cell_of_its_own_and_it_is_rendered(self):
+        """Three facts in one value are two facts nobody reads.
+
+        A cell value is clipped at one column's width, so the cadence appended
+        after the dosing mode was cut off on every zone that had one. Splitting
+        it is the fix, and a split cell that is never invoked is the same
+        defect wearing a different name.
+        """
+        src = _CARD.read_text(encoding="utf-8")
+        assert src.count("_meterRefreshCell(") >= 2, "defined but never invoked"
+
+    def test_the_card_can_tell_measuring_from_never_measured(self):
+        """Two silences that ask different things of the user.
+
+        "Not measured yet" invites a look at the configuration; "measuring
+        (1/3)" says the figure is on its way and there is nothing to do. The
+        threshold comes from the integration rather than a number retyped here,
+        because the two drifting apart is how a card starts lying quietly.
+        """
+        src = _CARD.read_text(encoding="utf-8")
+        assert "meter_refresh_min_samples" in src
+        assert "meterMeasuring" in src
+        assert "meterRefreshUnknown" in src
+
+    def test_the_qualifiers_moved_out_of_the_clipped_line(self):
+        """The guard caveat belongs to the label, which wraps, not the value."""
+        src = _CARD.read_text(encoding="utf-8")
+        cell = src.split("_meterRefreshCell(a) {", 1)[1].split("\n  }", 1)[0]
+        assert "meterGuardOff" in cell, "the caveat left the dosing cell but never arrived"
+        assert "label +=" in cell, "the caveat must lengthen the label, not the value"

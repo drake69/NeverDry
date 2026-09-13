@@ -13,11 +13,12 @@ opens, the meter again after it closes, the elapsed time in between:
 
 Two details carry the accuracy, and both come from the field.
 
-The reading *after* the close is deliberately delayed by ``SETTLE_DELAY_S``.
-A Zigbee counter reports on its own cadence, so the last tick of a session
+The reading *after* the close waits for the meter's next publication. A
+Zigbee counter reports on its own cadence, so the last tick of a session
 routinely lands after the valve is already shut; sampling at the instant of
-closing silently loses it. (The same late tick, read as an instantaneous
-rate, is what makes a closed valve look like it is still leaking.)
+closing silently loses it, and so does sleeping any fixed number of seconds
+chosen in advance. (The same late tick, read as an instantaneous rate, is
+what makes a closed valve look like it is still leaking.)
 
 Sessions shorter than ``MIN_SESSION_S`` are refused rather than averaged in.
 On a counter whose smallest step is a whole liter, a short run is mostly
@@ -42,11 +43,15 @@ from homeassistant.helpers.storage import Store
 WINDOW_SIZE: int = 20
 #: Below this, report nothing: a median of one or two sessions is an anecdote.
 MIN_SAMPLES: int = 3
-#: Grace after the valve closes before reading the meter, so a counter that
-#: reports late still gets counted. Not part of the measured duration.
-SETTLE_DELAY_S: float = 30.0
 #: Shorter sessions are dominated by the counter's own resolution.
 MIN_SESSION_S: float = 60.0
+#: How many publication intervals to keep. A rolling window rather than a
+#: running figure because the quantity is reported to the user as a median,
+#: and a median needs the samples it came from.
+PUBLICATION_WINDOW_SIZE: int = 20
+#: Below this the cadence is shown as still being measured. One interval is an
+#: accident, two are a coincidence; the same reasoning as MIN_SAMPLES above.
+MIN_PUBLICATION_SAMPLES: int = 3
 
 _STORAGE_VERSION: int = 1
 
@@ -113,6 +118,92 @@ class SessionFlowTracker:
         #: Smallest non-zero counter increment ever seen — the meter's limit of
         #: detection. Learned by watching deliveries, so it needs no test.
         self.resolution_l: float | None = None
+        #: Longest gap seen between two publications of the counter. Not the
+        #: same quantity as the resolution, and not derivable from it: some
+        #: meters publish per litre delivered, others on a fixed clock. On a
+        #: SONOFF SWV-ZFE the gap is ~300 s whatever the flow rate, so
+        #: ``resolution / rate`` predicts a first tick that cannot arrive.
+        #: The worst gap, not the typical one, because a verification window
+        #: has to survive an opening that lands just after a report.
+        self.refresh_cadence_s: float | None = None
+        #: How many intervals went into that figure. Published because one
+        #: interval is not a cadence, and the user must be able to see the
+        #: difference between "measured" and "seen once".
+        self.refresh_samples: int = 0
+        #: Gaps between two *publications* of the counter, whether or not the
+        #: value changed. A separate quantity from ``refresh_cadence_s`` above,
+        #: which times *advances* and only while water is flowing: that one
+        #: bounds how long a meter may stay silent mid-delivery, and the guard
+        #: is built on its worst case. This one answers the plainer question
+        #: the user asks -- how often does my counter speak -- and is reported
+        #: as a median, because what belongs on screen is the typical
+        #: behaviour, not the worst one.
+        self.publication_intervals: deque[float] = deque(maxlen=PUBLICATION_WINDOW_SIZE)
+        #: Median at the last save, so a stable cadence stops rewriting the
+        #: store every time the meter reports.
+        self._saved_publication_median: float | None = None
+
+    def observe_refresh_interval(self, seconds: float) -> bool:
+        """Record a gap between two counter publications; True if it widens the estimate.
+
+        Takes the maximum, where :meth:`observe_step` takes the minimum, and the
+        asymmetry is deliberate: the step bounds what the meter *can* detect, so
+        the smallest is the honest one, while the cadence bounds how long it may
+        stay silent while water flows, so the longest is.
+        """
+        if seconds <= 0:
+            return False
+        self.refresh_samples += 1
+        if self.refresh_cadence_s is None or seconds > self.refresh_cadence_s:
+            self.refresh_cadence_s = seconds
+            return True
+        return False
+
+    def observe_publication_interval(self, seconds: float) -> bool:
+        """Record a gap between two publications; True when it is worth saving.
+
+        Every accepted interval enters the window, but a store write is only
+        worth doing when the number the user sees actually moves. A meter
+        settled at 300 s would otherwise rewrite its file on every report.
+        """
+        if seconds <= 0:
+            return False
+        self.publication_intervals.append(seconds)
+        median = self.publication_median_s
+        if median is None:
+            return False
+        if self._saved_publication_median is None or round(median) != round(self._saved_publication_median):
+            self._saved_publication_median = median
+            return True
+        return False
+
+    @property
+    def publication_samples(self) -> int:
+        """How many intervals the cadence was measured from."""
+        return len(self.publication_intervals)
+
+    @property
+    def publication_median_s(self) -> float | None:
+        """Typical gap between two publications, or ``None`` while unmeasured.
+
+        Median rather than mean because the outliers here are artefacts, not
+        behaviour: a restart of Home Assistant, or a device that dropped off
+        the mesh for an hour, produce one enormous gap that says nothing about
+        the meter. A mean would follow it; the median ignores it.
+        """
+        if not self.publication_intervals:
+            return None
+        ordered = sorted(self.publication_intervals)
+        n = len(ordered)
+        mid = n // 2
+        if n % 2:
+            return ordered[mid]
+        return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+    @property
+    def publication_peak_s(self) -> float | None:
+        """Worst gap in the window. Diagnostics only; the card shows the median."""
+        return max(self.publication_intervals) if self.publication_intervals else None
 
     def observe_step(self, step: float) -> bool:
         """Record a counter increment; returns True when it lowers the estimate.
@@ -139,6 +230,22 @@ class SessionFlowTracker:
             except (TypeError, ValueError):
                 continue
         try:
+            if (cadence := data.get("refresh_cadence_s")) is not None:
+                self.refresh_cadence_s = float(cadence)
+            self.refresh_samples = int(data.get("refresh_samples") or 0)
+        except (TypeError, ValueError):
+            # Same reasoning as the resolution below: an unusable stored cadence
+            # means the guard cannot be armed, which is the safe direction.
+            pass
+        for gap in data.get("publication_intervals", []):
+            try:
+                value = float(gap)
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                self.publication_intervals.append(value)
+        self._saved_publication_median = self.publication_median_s
+        try:
             if (res := data.get("resolution_l")) is not None:
                 self.resolution_l = float(res)
         except (TypeError, ValueError):
@@ -149,10 +256,26 @@ class SessionFlowTracker:
 
     async def async_save(self) -> None:
         """Persist the current window to HA storage."""
-        await self._store.async_save({"samples": list(self.window._samples), "resolution_l": self.resolution_l})
+        await self._store.async_save(
+            {
+                "samples": list(self.window._samples),
+                "resolution_l": self.resolution_l,
+                "refresh_cadence_s": self.refresh_cadence_s,
+                "refresh_samples": self.refresh_samples,
+                "publication_intervals": list(self.publication_intervals),
+            }
+        )
 
     def median_lpm(self) -> float | None:
         return self.window.median_lpm()
 
     def as_dict(self) -> dict[str, Any]:
-        return {**self.window.as_dict(), "meter_resolution_l": self.resolution_l}
+        return {
+            **self.window.as_dict(),
+            "meter_resolution_l": self.resolution_l,
+            "meter_refresh_cadence_s": self.refresh_cadence_s,
+            "meter_refresh_samples": self.refresh_samples,
+            "meter_publication_median_s": self.publication_median_s,
+            "meter_publication_peak_s": self.publication_peak_s,
+            "meter_publication_samples": self.publication_samples,
+        }

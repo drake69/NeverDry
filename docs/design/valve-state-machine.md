@@ -56,6 +56,7 @@ stateDiagram-v2
 
     OPEN --> OPEN_VERIFIED: OBS_FLOW_POSITIVE<br/>CancelTimer(flow)
     OPEN --> IDLE: TIMEOUT_FLOW<br/>SendSwitchOff<br/>NotifyFailure(ACTUATION_FAILED)
+    OPEN --> OPEN_VERIFIED: FLOW_UNVERIFIABLE<br/>CancelTimer(flow)<br/>(the check does not apply here)
     OPEN --> REQ_CLOSE: CMD_CLOSE<br/>CancelTimer(flow)<br/>SendSwitchOff<br/>StartTimer(close)
     OPEN --> IDLE: OBS_SWITCH_OFF (external close)<br/>CancelAllTimers<br/>(counter reset)
 
@@ -142,7 +143,8 @@ itself have produced the false `CLOSE_VERIFICATION_FAILED`.
 | Kind | Condition | Likely cause |
 |---|---|---|
 | `OPEN_FAILED` | `REQ_OPEN` did not see `OBS_SWITCH_ON` within `open_timeout_s` | Zigbee packet loss, sleepy device |
-| `ACTUATION_FAILED` | Switch reported on but flow stayed at zero | Water shut off upstream, stuck/calcified valve, broken flow sensor |
+| `ACTUATION_FAILED` | Switch reported on but the meter did not move inside a window we chose | Water shut off upstream, stuck/calcified valve, broken flow sensor, **or a window shorter than the meter's reporting cadence**, which is our fault and not the device's |
+| `FLOW_UNVERIFIABLE` | Not a failure: no window can distinguish a dry pipe from a counter that has not spoken yet | A meter that publishes on a clock, or one whose cadence has never been measured. The run proceeds with flow demoted to observer |
 | `CLOSE_VERIFICATION_FAILED` | `REQ_CLOSE` did not see `OBS_SWITCH_OFF` within `close_timeout_s` | Zigbee packet loss |
 | `CLOSE_LEAK` | Switch reported off but flow stayed positive | Valve mechanically stuck open — most dangerous mode |
 
@@ -151,7 +153,7 @@ itself have produced the false `CLOSE_VERIFICATION_FAILED`.
 | Setting | Default | Notes |
 |---|---|---|
 | `open_timeout_s` | 10.0 | `REQ_OPEN` → `OBS_SWITCH_ON` |
-| `flow_verify_timeout_s` | 10.0 | `OPEN` → `OBS_FLOW_POSITIVE` (flow meter only) |
+| `flow_verify_timeout_s` | 10.0 | `OPEN` → `OBS_FLOW_POSITIVE` (flow meter only). **The dataclass default, not the value in force**: `ZoneDriver.flow_verify_window()` decides it per zone from that meter's measured cadence, and returns a verdict instead of a window when no cadence can support one |
 | `close_timeout_s` | 10.0 | `REQ_CLOSE` → `OBS_SWITCH_OFF` |
 | `leak_timeout_s` | 10.0 | `CLOSED` → `OBS_FLOW_ZERO` (flow meter only) |
 | `max_consecutive_failures` | 3 in `FsmConfig`, **6** in production | Threshold for entering `MAINTENANCE`. `ValveOperator` always overrides the FSM default with `max_retries + 1` |
@@ -202,6 +204,7 @@ in total). Physical failures are surfaced immediately:
 | `OPEN_FAILED` | ✓ | Likely Zigbee packet loss / sleepy device — second try often lands |
 | `CLOSE_VERIFICATION_FAILED` | ✓ | Same comms class |
 | `ACTUATION_FAILED` | ✗ | Hydraulic / mechanical issue — retry cannot unblock it |
+| `FLOW_UNVERIFIABLE` | n/a | Never raised as a failure. It is the verdict that keeps the previous row honest: when the check could not conclude, saying so is not the same as accusing the valve |
 | `CLOSE_LEAK` | ✗ | Stuck-open valve — retry wastes water during the second close attempt |
 
 Default backoff: `(1.0s, 2.0s, 4.0s, 8.0s, 16.0s)` — exponential, indexed

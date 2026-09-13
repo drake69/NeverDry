@@ -194,9 +194,21 @@ class TestWaterCounters:
         counters = WaterCounters()
         counters.credit(120.0, year=2026)
         assert counters.last_volume_l == 120.0
-        assert counters.session_water_l == 120.0
         assert counters.total_water_l == 120.0
         assert counters.yearly_water_l == 120.0
+        assert counters.session_water_l == 0.0, "crediting is not what makes a session's running total"
+
+    def test_ending_a_session_clears_only_its_running_total(self):
+        """What the run delivered survives in ``last_volume_l``; the tally does not."""
+        counters = WaterCounters()
+        counters.session_water_l = 18.0
+        counters.credit(120.0, year=2026)
+
+        counters.end_session()
+
+        assert counters.session_water_l == 0.0
+        assert counters.last_volume_l == 120.0
+        assert counters.total_water_l == 120.0
 
     def test_lifetime_accumulates_while_last_is_replaced(self):
         counters = WaterCounters()
